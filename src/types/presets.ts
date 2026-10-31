@@ -21,7 +21,7 @@ export type StandardPresetName =
 /**
  * Module augmentation hook for global preset autocomplete across a project:
  * ```ts
- * declare module 'image-upload-kit' {
+ * declare module 'img-upload-kit' {
  *   interface UploadKitRegister {
  *     presets: 'product-main' | 'product-thumb' | 'user-avatar';
  *   }

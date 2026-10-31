@@ -18,8 +18,8 @@
 ## 2. Basic React Usage
 
 ```tsx
-import { AnimatedImage } from 'image-upload-kit/react';
-import 'image-upload-kit/styles.css';
+import { AnimatedImage } from 'img-upload-kit/react';
+import 'img-upload-kit/styles.css';
 
 export function ProductHero({ image }: { image: UploadedImageData }) {
   return (
@@ -39,8 +39,8 @@ Pass `next/image` via the `as` prop. `AnimatedImage` forwards image props (`fill
 
 ```tsx
 import Image from 'next/image';
-import { AnimatedImage } from 'image-upload-kit/react';
-import 'image-upload-kit/styles.css';
+import { AnimatedImage } from 'img-upload-kit/react';
+import 'img-upload-kit/styles.css';
 
 export function Banner({ image }: { image: UploadedImageData }) {
   return (
@@ -105,7 +105,7 @@ import {
   createFallbackBlurSvg,
   resolveMeaningfulColor,
   resolvePlaceholderUrl,
-} from 'image-upload-kit/react';
+} from 'img-upload-kit/react';
 
 // Returns undefined for empty or generic black/white DB placeholders:
 resolveMeaningfulColor('#ffffff'); // -> undefined
@@ -152,7 +152,7 @@ const svg = createFallbackBlurSvg('#3a7bd5');
 For completely custom DOM structures, use `useImageReveal` directly:
 
 ```tsx
-import { useImageReveal } from 'image-upload-kit/react';
+import { useImageReveal } from 'img-upload-kit/react';
 
 export function CustomBlurUpImage({ src, alt, placeholderUrl }: Props) {
   const { isLoaded, showPlaceholder, hasError, imgRef, handleLoad, handleError } =

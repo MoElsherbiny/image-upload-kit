@@ -1,10 +1,10 @@
 # AGENTS.md — AI Agent Contributor Guide
 
-Reference guide for AI agents and developers working on `image-upload-kit`.
+Reference guide for AI agents and developers working on `img-upload-kit`.
 
 ## 1. Core Mission & Guardrails
 
-- **Package**: `image-upload-kit` (standalone npm package at `E:\Personal-Projects\image-upload-kit`).
+- **Package**: `img-upload-kit` (standalone npm package at `E:\Personal-Projects\image-upload-kit`).
 - **Core Function**: Sharp AVIF/WebP image optimization, smart size-guarding, WebP LQIP & BlurHash generation, 4-edge ambient color extraction, pluggable `StorageAdapter`, and flexible React + Headless UI components.
 - **Author**: Mo Elsherbiny (`https://www.buildwithsherbo.com/`, GitHub: `@MoElsherbiny`).
 - **Strict Hard Constraint**: **Every file across the entire repository MUST remain <= 300 lines**. Enforced by ESLint `max-lines`. Never create or modify a file to exceed 300 lines.
@@ -68,7 +68,7 @@ src/
 1. **Tier 1 (CSS Tokens)**: `--iuk-*` CSS custom properties with automatic dark mode & RTL support.
 2. **Tier 2 (Unstyled + Slots)**: `unstyled?: boolean`, per-slot `classNames` & `styles`, `data-slot`, and `data-state="idle|dragging|uploading|ready|error|disabled"`. Hidden file inputs MUST retain `HIDDEN_INPUT_STYLE`.
 3. **Tier 3 (Slot Renderers)**: Partial custom renderers (`renderDropzone`, `renderPreview`, `renderHeader`, `renderEmptyDropzone`, `renderTile`, `renderAddMore`).
-4. **Tier 4 (Headless Primitives)**: Zero-opinion hooks & render-props (`useSingleUpload`, `useMultiUpload`, `<HeadlessSingleUpload>`, `<HeadlessMultiUpload>`) from `image-upload-kit/headless`.
+4. **Tier 4 (Headless Primitives)**: Zero-opinion hooks & render-props (`useSingleUpload`, `useMultiUpload`, `<HeadlessSingleUpload>`, `<HeadlessMultiUpload>`) from `img-upload-kit/headless`.
 
 ## 5. AnimatedImage Component
 

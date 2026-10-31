@@ -1,6 +1,6 @@
 # Architecture & Internals
 
-`image-upload-kit` is engineered as a modular, runtime-conscious TypeScript package where client bundles stay completely free of Node/Sharp dependencies and server pipelines remain independent of UI frameworks.
+`img-upload-kit` is engineered as a modular, runtime-conscious TypeScript package where client bundles stay completely free of Node/Sharp dependencies and server pipelines remain independent of UI frameworks.
 
 ## 1. Module Dependency Graph
 
@@ -76,7 +76,7 @@ Why enforce a hard ceiling?
 
 ## 4. Universal Preset System & `UploadKitRegister`
 
-Hardcoding domain-specific categories (such as `homepage` or `brochure`) inside an npm library forces consumers into awkward workarounds. Instead, `image-upload-kit` separates **visual roles** from **domain entities**:
+Hardcoding domain-specific categories (such as `homepage` or `brochure`) inside an npm library forces consumers into awkward workarounds. Instead, `img-upload-kit` separates **visual roles** from **domain entities**:
 
 1. **Built-In Visual Roles (`STANDARD_PRESETS`)**:
    - `thumbnail` (`600x600`, Q78, raster-only)
@@ -93,7 +93,7 @@ Hardcoding domain-specific categories (such as `homepage` or `brochure`) inside 
    By augmenting `UploadKitRegister` in a project `.d.ts` file, `UploadPresetName` narrows globally across `<SingleImageUpload preset="..." />`, `<MultiImageUpload preset="..." />`, and server helpers:
 
    ```ts
-   declare module 'image-upload-kit' {
+   declare module 'img-upload-kit' {
      interface UploadKitRegister {
        presets: 'product-hero' | 'product-thumb' | 'author-avatar';
      }

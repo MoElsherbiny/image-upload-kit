@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `image-upload-kit` will be documented in this file.
+All notable changes to `img-upload-kit` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **AnimatedImage Component (`image-upload-kit/react`)**:
+- **AnimatedImage Component (`img-upload-kit/react`)**:
   - High-performance progressive blur-up display component with GPU-accelerated crossfade.
   - Native `<img>` attribute pass-through and framework-agnostic `as` prop (e.g. `as={Image}` for Next.js with `imageComponentProps`).
   - Hierarchical placeholder fallback cascade: `blurDataUrl` (LQIP) > `blurHash` (client canvas decode) > `blurColor` (gradient SVG).
@@ -50,25 +50,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Core Types & Utilities (`image-upload-kit`)**:
+- **Core Types & Utilities (`img-upload-kit`)**:
   - Universal project-agnostic visual role presets (`thumbnail`, `avatar`, `card`, `cover`, `hero`, `logo`, `original`).
   - `defineUploadPresets` helper and `UploadKitRegister` TypeScript module augmentation for global preset autocomplete.
   - Bilingual (`en` / `ar`) file validation, quality level presets, byte formatters, and RGB/HEX color utilities.
-- **Server Optimization & Upload Pipeline (`image-upload-kit/server`)**:
+- **Server Optimization & Upload Pipeline (`img-upload-kit/server`)**:
   - `createImageUploader` with preset inheritance, path sanitization, SHA-256 content hashing, retry handling, and `AsyncSemaphore` concurrency control.
   - `createUploadHttpHandler` returning Web Standard `POST` and `DELETE` Fetch handlers (`Request` -> `Response`) compatible with Next.js App Router, Remix, React Router, Hono, SvelteKit, and Node servers.
   - `optimizeImage` powered by Sharp with smart AVIF size-guarding (preventing file bloat on pre-compressed JPEGs), WebP fallback, and SVG passthrough.
   - `generateBlurPlaceholder` generating compact WebP LQIP data URLs, optional BlurHash strings, and 4-edge weighted dominant color histograms.
-- **Pluggable Storage Adapters (`image-upload-kit/storage`)**:
+- **Pluggable Storage Adapters (`img-upload-kit/storage`)**:
   - `StorageAdapter` contract and `createStorageAdapter` authoring helper.
   - Built-in `createSupabaseStorageAdapter`, `createS3StorageAdapter` (AWS S3, Cloudflare R2, MinIO, DigitalOcean Spaces), `createLocalFsStorageAdapter` (with path-traversal protection), and `createMemoryStorageAdapter`.
   - `onUploadRecord` hook for persisting upload metadata to Prisma, Drizzle, or analytics pipelines.
-- **Blur Manifest Service (`image-upload-kit/blur`)**:
+- **Blur Manifest Service (`img-upload-kit/blur`)**:
   - `BlurService` and `createBlurService` with bounded `LRUCache`, normalized URL/path lookup, and SVG fallback placeholders.
-- **Pure React UI & Styles (`image-upload-kit/react`, `image-upload-kit/styles.css`)**:
+- **Pure React UI & Styles (`img-upload-kit/react`, `img-upload-kit/styles.css`)**:
   - Framework-agnostic `<ImageUploadProvider>`, `<ImageUpload>`, `<SingleImageUpload>`, `<MultiImageUpload>`, `<BlurImage>`, and `<QualitySelector>`.
   - First-class English & Arabic (`dir="rtl"`) localization, custom `renderImage` adapter slot, and themeable `--iuk-*` CSS custom properties.
-- **Headless Hooks & Primitives (`image-upload-kit/headless`)**:
+- **Headless Hooks & Primitives (`img-upload-kit/headless`)**:
   - Unstyled controllers: `HeadlessSingleUpload`, `HeadlessMultiUpload`, `useSingleUpload`, `useMultiUpload`, `useImageUpload`, `useDropzone`, `useFilePreview`.
-- **Blur Manifest CLI (`image-upload-kit/cli`)**:
-  - `image-upload-kit` / `blur-cli` binaries (`generate`, `validate`, `sync`, `cleanup`, `health`, `inspect`) for build-time `blur-hashes.json` generation.
+- **Blur Manifest CLI (`img-upload-kit/cli`)**:
+  - `img-upload-kit` / `blur-cli` binaries (`generate`, `validate`, `sync`, `cleanup`, `health`, `inspect`) for build-time `blur-hashes.json` generation.

@@ -1,5 +1,5 @@
 {
-  "name": "@mo-elsherbiny/image-upload-kit",
+  "name": "img-upload-kit",
   "version": "1.1.1",
   "publishConfig": {
     "access": "public"
@@ -42,6 +42,7 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
+    "img-upload-kit": "dist/cli.js",
     "image-upload-kit": "dist/cli.js",
     "blur-cli": "dist/cli.js"
   },

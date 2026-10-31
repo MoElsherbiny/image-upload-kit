@@ -37,6 +37,8 @@ function isDirectCliExecution(entryArg?: string): boolean {
     normalized.endsWith('/cli.js') ||
     normalized.endsWith('/cli.cjs') ||
     normalized.endsWith('/cli/index.ts') ||
+    normalized.endsWith('/bin/img-upload-kit') ||
+    normalized.endsWith('/.bin/img-upload-kit') ||
     normalized.endsWith('/bin/image-upload-kit') ||
     normalized.endsWith('/.bin/image-upload-kit') ||
     normalized.endsWith('/bin/blur-cli') ||

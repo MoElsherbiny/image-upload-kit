@@ -1,6 +1,6 @@
-# Contributing to `image-upload-kit`
+# Contributing to `img-upload-kit`
 
-Thank you for contributing to `image-upload-kit`! To keep the package modular, framework-agnostic, and easy to audit, all contributions follow strict architectural guardrails.
+Thank you for contributing to `img-upload-kit`! To keep the package modular, framework-agnostic, and easy to audit, all contributions follow strict architectural guardrails.
 
 ## Architectural Principles
 

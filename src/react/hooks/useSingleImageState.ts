@@ -74,7 +74,10 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
     quality: QUALITY_PRESETS[qualityLevel].value,
     endpoint, uploader, headers, withCredentials, locale,
     onSuccess: (data) => {
-      setPreview(`${data.url}${data.url.includes('?') ? '&' : '?'}t=${Date.now()}`);
+      const nextPreviewUrl = /^(?:blob:|data:)/i.test(data.url)
+        ? data.url
+        : `${data.url}${data.url.includes('?') ? '&' : '?'}t=${Date.now()}`;
+      setPreview(nextPreviewUrl);
       setSizeInfo({ original: data.originalSize || 0, optimized: data.size });
       const normColor = data.blurColor || DEFAULT_BLUR_COLOR;
       setBlurColor(normColor);
@@ -107,7 +110,9 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
         : rawAlt;
     const nextColor = incomingObj?.blurColor || DEFAULT_BLUR_COLOR;
 
-    if ((nextPreview ? nextPreview.split('?')[0] : null) !== (preview ? preview.split('?')[0] : null)) setPreview(nextPreview);
+    const stripCacheQuery = (u: string | null) =>
+      u && !/^(?:blob:|data:)/i.test(u) ? u.split('?')[0] : u;
+    if (stripCacheQuery(nextPreview) !== stripCacheQuery(preview)) setPreview(nextPreview);
     if (nextAlt !== altText && (nextPreview !== preview || nextAlt.trim() !== '' || !altText.trim())) setAltText(nextAlt);
 
     const nextIsFallback = nextColor === DEFAULT_BLUR_COLOR;

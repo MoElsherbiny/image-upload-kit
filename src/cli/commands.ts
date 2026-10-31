@@ -35,9 +35,9 @@ export function createCliProgram(): Command {
   const program = new Command();
 
   program
-    .name('image-upload-kit')
+    .name('img-upload-kit')
     .description('LQIP, BlurHash, and dominant color manifest CLI tooling')
-    .version('1.0.0');
+    .version('1.1.1');
 
   program
     .command('generate')

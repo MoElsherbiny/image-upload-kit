@@ -6,12 +6,12 @@ Copy-paste integration patterns for popular React meta-frameworks, Node/Edge ser
 
 ## 1. Next.js App Router + Custom `next/image` Renderer
 
-`image-upload-kit` has zero `next/*` dependencies, so it works seamlessly in Next.js App Router while letting you plug `next/image` into `<ImageUploadProvider>`.
+`img-upload-kit` has zero `next/*` dependencies, so it works seamlessly in Next.js App Router while letting you plug `next/image` into `<ImageUploadProvider>`.
 
 ### Route Handler (`app/api/upload/route.ts`)
 
 ```ts
-import { createUploadHttpHandler } from 'image-upload-kit/server';
+import { createUploadHttpHandler } from 'img-upload-kit/server';
 import { uploader } from '@/lib/uploader';
 
 export const runtime = 'nodejs'; // Required for Sharp native processing
@@ -29,8 +29,8 @@ export const { POST, DELETE } = createUploadHttpHandler({
 
 import Image from 'next/image';
 import type { ReactNode } from 'react';
-import { ImageUploadProvider } from 'image-upload-kit/react';
-import 'image-upload-kit/styles.css';
+import { ImageUploadProvider } from 'img-upload-kit/react';
+import 'img-upload-kit/styles.css';
 
 export function AppUploadProvider({ children }: { children: ReactNode }) {
   return (
@@ -65,7 +65,7 @@ Because Hono uses Web Standard `Request` and `Response`, `{ POST, DELETE }` moun
 
 ```ts
 import { Hono } from 'hono';
-import { createUploadHttpHandler } from 'image-upload-kit/server';
+import { createUploadHttpHandler } from 'img-upload-kit/server';
 import { uploader } from './uploader';
 
 const app = new Hono();
@@ -82,7 +82,7 @@ export default app;
 ```ts
 import express from 'express';
 import { Readable } from 'node:stream';
-import { createUploadHttpHandler } from 'image-upload-kit/server';
+import { createUploadHttpHandler } from 'img-upload-kit/server';
 import { uploader } from './uploader';
 
 const app = express();
@@ -114,7 +114,7 @@ app.all('/api/upload', async (req, res) => {
 ```ts
 // app/routes/api.upload.ts
 import type { ActionFunctionArgs } from 'react-router';
-import { createUploadHttpHandler } from 'image-upload-kit/server';
+import { createUploadHttpHandler } from 'img-upload-kit/server';
 import { uploader } from '~/lib/uploader.server';
 
 const { POST, DELETE } = createUploadHttpHandler({ uploader });
@@ -142,8 +142,8 @@ import {
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { createImageUploader } from 'image-upload-kit/server';
-import { createS3StorageAdapter } from 'image-upload-kit/storage';
+import { createImageUploader } from 'img-upload-kit/server';
+import { createS3StorageAdapter } from 'img-upload-kit/storage';
 
 const s3 = new S3Client({
   region: 'auto', // Use 'auto' for Cloudflare R2, or e.g. 'us-east-1' for AWS S3
@@ -177,8 +177,8 @@ Pass a server-side service-role Supabase client directly — no wrapper classes 
 
 ```ts
 import { createClient } from '@supabase/supabase-js';
-import { createImageUploader } from 'image-upload-kit/server';
-import { createSupabaseStorageAdapter } from 'image-upload-kit/storage';
+import { createImageUploader } from 'img-upload-kit/server';
+import { createSupabaseStorageAdapter } from 'img-upload-kit/storage';
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL!,

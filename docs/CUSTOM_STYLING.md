@@ -1,19 +1,19 @@
 # Custom Styling & Headless UI Guide
 
-`image-upload-kit` provides **4 progressive customization tiers** for both single and multi-image uploads — ranging from 5 lines of CSS variables to 100% headless hooks and render-prop controllers.
+`img-upload-kit` provides **4 progressive customization tiers** for both single and multi-image uploads — ranging from 5 lines of CSS variables to 100% headless hooks and render-prop controllers.
 
 | Tier | Best For | Keep Built-In Modals & Dock? | Requires `styles.css`? |
 | --- | --- | --- | --- |
 | **1. `--iuk-*` CSS Tokens** | Brand colors, radii, fonts, dark mode | Yes | Yes |
 | **2. `classNames`, `styles` & `unstyled`** | Full Tailwind CSS or CSS Modules restyling | Yes | Optional (`unstyled`) |
 | **3. Partial Slot Renderers (`render*`)** | Custom dropzone or card JSX + built-in modals | Yes | Yes (for modals/dock) |
-| **4. Headless (`image-upload-kit/headless`)** | Bespoke avatars, masonry grids, design systems | Bring your own | No |
+| **4. Headless (`img-upload-kit/headless`)** | Bespoke avatars, masonry grids, design systems | Bring your own | No |
 
 ---
 
 ## Approach 1: CSS Design Tokens (`--iuk-*`)
 
-Import `image-upload-kit/styles.css` once and override `--iuk-*` custom properties globally (`:root`) or inside any scoped wrapper. Dark mode activates automatically via `prefers-color-scheme: dark`, `.dark`, or `[data-theme="dark"]`.
+Import `img-upload-kit/styles.css` once and override `--iuk-*` custom properties globally (`:root`) or inside any scoped wrapper. Dark mode activates automatically via `prefers-color-scheme: dark`, `.dark`, or `[data-theme="dark"]`.
 
 ```css
 /* Theme colors, radii, and shadows in 5 lines of CSS */
@@ -41,12 +41,12 @@ Available token groups in `tokens.css`: `--iuk-bg`, `--iuk-surface`, `--iuk-surf
 Every semantic element exposes a named slot (`classNames` & inline `styles`), `data-slot="..."`, and deterministic `data-state` attributes:
 
 - **`data-state` priority**: `'disabled'` > `'dragging'` > `'uploading'` > `'error'` > `'ready'` > `'idle'`.
-- **`unstyled={true}`**: Strips all built-in `iuk-*` classes (eliminating specificity overrides), sets `data-unstyled="true"`, and keeps `<input type="file">` accessibly hidden via inline clip styles even without `image-upload-kit/styles.css`.
+- **`unstyled={true}`**: Strips all built-in `iuk-*` classes (eliminating specificity overrides), sets `data-unstyled="true"`, and keeps `<input type="file">` accessibly hidden via inline clip styles even without `img-upload-kit/styles.css`.
 
 ### Single Upload with Tailwind CSS (`unstyled`)
 
 ```tsx
-import { SingleImageUpload } from 'image-upload-kit/react';
+import { SingleImageUpload } from 'img-upload-kit/react';
 
 <SingleImageUpload
   unstyled preset="cover" label="Cover Artwork" showQualitySelector={false}
@@ -72,7 +72,7 @@ import { SingleImageUpload } from 'image-upload-kit/react';
 ### Multi Upload with Tailwind CSS (`unstyled`)
 
 ```tsx
-import { MultiImageUpload } from 'image-upload-kit/react';
+import { MultiImageUpload } from 'img-upload-kit/react';
 
 <MultiImageUpload
   mode="multiple" unstyled preset="card" label="Gallery" showQualitySelector={false}
@@ -104,7 +104,7 @@ import { MultiImageUpload } from 'image-upload-kit/react';
 Apply your design system once across every uploader in your application (per-component `classNames` and `styles` merge cleanly on top):
 
 ```tsx
-import { ImageUploadProvider } from 'image-upload-kit/react';
+import { ImageUploadProvider } from 'img-upload-kit/react';
 
 <ImageUploadProvider
   endpoint="/api/upload"
@@ -126,8 +126,8 @@ Want bespoke dropzone or card JSX **without** rebuilding `<AltTextModal />`, `<B
 - **Multi**: `renderHeader(ctx)`, `renderEmptyDropzone(ctx)`, `renderTile(ctx)`, `renderAddMore(ctx)` (return `null` to hide)
 
 ```tsx
-import { MultiImageUpload, SingleImageUpload } from 'image-upload-kit/react';
-import 'image-upload-kit/styles.css';
+import { MultiImageUpload, SingleImageUpload } from 'img-upload-kit/react';
+import 'img-upload-kit/styles.css';
 
 <SingleImageUpload
   value={cover} onChange={setCover}
@@ -173,14 +173,14 @@ import 'image-upload-kit/styles.css';
 
 ---
 
-## Approach 4: 100% Headless Controllers (`image-upload-kit/headless`)
+## Approach 4: 100% Headless Controllers (`img-upload-kit/headless`)
 
-For complete DOM freedom with zero shipped markup or CSS, use `<HeadlessSingleUpload>`, `<HeadlessMultiUpload>`, or the `useSingleUpload` / `useMultiUpload` hooks from `image-upload-kit/headless`.
+For complete DOM freedom with zero shipped markup or CSS, use `<HeadlessSingleUpload>`, `<HeadlessMultiUpload>`, or the `useSingleUpload` / `useMultiUpload` hooks from `img-upload-kit/headless`.
 
 ### Custom Circular Avatar (`<HeadlessSingleUpload>`)
 
 ```tsx
-import { HeadlessSingleUpload } from 'image-upload-kit/headless';
+import { HeadlessSingleUpload } from 'img-upload-kit/headless';
 
 export function CircularAvatarUploader({ value, onChange }: AvatarProps) {
   return (
@@ -218,7 +218,7 @@ export function CircularAvatarUploader({ value, onChange }: AvatarProps) {
 ### Custom Masonry / Grid (`<HeadlessMultiUpload>` & Hooks)
 
 ```tsx
-import { HeadlessMultiUpload, useSingleUpload, useMultiUpload } from 'image-upload-kit/headless';
+import { HeadlessMultiUpload, useSingleUpload, useMultiUpload } from 'img-upload-kit/headless';
 
 export function MasonryGalleryUploader({ value, onChange }: GalleryProps) {
   return (
