@@ -27,9 +27,15 @@ function sanitizeRelativePath(inputPath: string): string {
   return parts.join('/');
 }
 
+export interface LocalFsStorageAdapter extends StorageAdapter {
+  getPublicUrl(bucket: string, relativePath: string): string;
+  list(bucket: string, folder?: string): Promise<StorageFileEntry[]>;
+  deleteByUrl(url: string): Promise<boolean>;
+}
+
 export function createLocalFsStorageAdapter(
   options: LocalFsStorageOptions,
-): StorageAdapter {
+): LocalFsStorageAdapter {
   const resolvedRoot = path.resolve(options.rootDir);
   const baseUrl = (options.baseUrl ?? '/uploads').replace(/\/+$/, '');
   const includeBucket = options.includeBucketInPath !== false;

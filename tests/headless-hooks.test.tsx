@@ -48,15 +48,15 @@ describe('Headless Subpath Re-exports (Feature 12)', () => {
 
   it('useDropzone tracks drag state and dispatches drop events with disabled guard', () => {
     const onDrop = vi.fn();
-    let captured: ReturnType<typeof useDropzone> | null = null;
+    let captured!: ReturnType<typeof useDropzone>;
     function Consumer() { captured = useDropzone({ onDrop }); return null; }
     renderToStaticMarkup(<Consumer />);
-    expect(captured?.isDragging).toBe(false);
+    expect(captured.isDragging).toBe(false);
 
     const dummyFile = { name: 'test.png', size: 1024 } as unknown as File;
     const preventDefault = vi.fn();
     const stopPropagation = vi.fn();
-    captured?.dragHandlers.onDrop({
+    captured.dragHandlers.onDrop({
       preventDefault, stopPropagation, dataTransfer: { files: [dummyFile] as unknown as FileList },
     } as unknown as DragEvent);
     expect(preventDefault).toHaveBeenCalled();
@@ -66,28 +66,28 @@ describe('Headless Subpath Re-exports (Feature 12)', () => {
     const onDropDisabled = vi.fn();
     function DisabledConsumer() { captured = useDropzone({ disabled: true, onDrop: onDropDisabled }); return null; }
     renderToStaticMarkup(<DisabledConsumer />);
-    captured?.dragHandlers.onDrop({
+    captured.dragHandlers.onDrop({
       preventDefault: vi.fn(), stopPropagation: vi.fn(), dataTransfer: { files: [dummyFile] as unknown as FileList },
     } as unknown as DragEvent);
     expect(onDropDisabled).not.toHaveBeenCalled();
   });
 
   it('useFilePreview exposes createPreview function', () => {
-    let captured: ReturnType<typeof useFilePreview> | null = null;
+    let captured!: ReturnType<typeof useFilePreview>;
     function Consumer() { captured = useFilePreview(); return null; }
     renderToStaticMarkup(<Consumer />);
-    expect(typeof captured?.createPreview).toBe('function');
+    expect(typeof captured.createPreview).toBe('function');
   });
 
   it('useImageUpload initializes with default idle state and exposes upload action', () => {
-    let captured: ReturnType<typeof useImageUpload> | null = null;
+    let captured!: ReturnType<typeof useImageUpload>;
     function Consumer() { captured = useImageUpload({ preset: 'thumbnail' }); return null; }
     renderToStaticMarkup(<Consumer />);
-    expect(typeof captured?.uploadImage).toBe('function');
-    expect(typeof captured?.reset).toBe('function');
-    expect(captured?.isUploading).toBe(false);
-    expect(captured?.progress).toBe(0);
-    expect(captured?.uploadMessage).toBe('');
+    expect(typeof captured.uploadImage).toBe('function');
+    expect(typeof captured.reset).toBe('function');
+    expect(captured.isUploading).toBe(false);
+    expect(captured.progress).toBe(0);
+    expect(captured.uploadMessage).toBe('');
   });
 });
 
@@ -203,7 +203,7 @@ describe('useMultiUpload - Queue Management, Stats & Prop Getters', () => {
       'removeSelected', 'retryFailed', 'openFileDialog', 'openFolderDialog',
     ] as const;
     actionKeys.forEach((key) => {
-      expect(typeof (ctrl as Record<string, unknown>)[key]).toBe('function');
+      expect(typeof ctrl[key]).toBe('function');
     });
 
     expect(() => {
@@ -254,7 +254,7 @@ describe('useMultiUpload - Queue Management, Stats & Prop Getters', () => {
 
 describe('Headless Primitives - Zero DOM Overhead & Slot Delegation', () => {
   it('HeadlessSingleUpload renders children directly without wrapper DOM tags', () => {
-    let captured: ReturnType<typeof useSingleUpload> | null = null;
+    let captured!: ReturnType<typeof useSingleUpload>;
     const html = renderToStaticMarkup(
       <HeadlessSingleUpload value={sample1} onChange={noop}>
         {(ctrl) => {
@@ -263,14 +263,14 @@ describe('Headless Primitives - Zero DOM Overhead & Slot Delegation', () => {
         }}
       </HeadlessSingleUpload>,
     );
-    expect(captured?.state).toBe('ready');
-    expect(captured?.preview).toBe(sample1.url);
+    expect(captured.state).toBe('ready');
+    expect(captured.preview).toBe(sample1.url);
     expect(html).toBe(`<div data-testid="custom-single" data-state="ready">${sample1.url}</div>`);
     expect(html).not.toContain('iuk-');
   });
 
   it('HeadlessMultiUpload renders children directly without wrapper DOM tags', () => {
-    let captured: ReturnType<typeof useMultiUpload> | null = null;
+    let captured!: ReturnType<typeof useMultiUpload>;
     const html = renderToStaticMarkup(
       <HeadlessMultiUpload value={[sample1, sample2]} maxImages={5} onChange={noop}>
         {(ctrl) => {
@@ -283,8 +283,8 @@ describe('Headless Primitives - Zero DOM Overhead & Slot Delegation', () => {
         }}
       </HeadlessMultiUpload>,
     );
-    expect(captured?.remainingCount).toBe(3);
-    expect(captured?.items).toHaveLength(2);
+    expect(captured.remainingCount).toBe(3);
+    expect(captured.items).toHaveLength(2);
     expect(html).toContain('data-testid="custom-multi"');
     expect(html).toContain('data-remaining="3"');
     expect(html).toContain(sample1.url);

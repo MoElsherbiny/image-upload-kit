@@ -132,8 +132,10 @@ export function AnimatedImage({
   const duration = Math.max(0, animationDuration);
 
   const containerStyle: CSSProperties = {
-    backgroundColor: resolveMeaningfulColor(blurColor) ?? 'var(--iuk-animated-image-bg, rgba(38, 45, 56, 0.4))',
-    ['--iuk-animated-image-duration' as string]: `${duration}ms`,
+    backgroundColor:
+      resolveMeaningfulColor(blurColor) ??
+      (unstyled ? undefined : 'var(--iuk-animated-image-bg, rgba(38, 45, 56, 0.4))'),
+    ...(unstyled ? undefined : { ['--iuk-animated-image-duration' as string]: `${duration}ms` }),
     ...wrapperStyle,
   };
 

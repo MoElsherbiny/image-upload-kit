@@ -24,6 +24,10 @@ export interface StorageFileEntry {
   size?: number;
 }
 
+export type StorageUploadOptions = StorageUploadParams;
+export type StorageFileMetadata = StorageFileEntry;
+export type StorageListResult = StorageFileEntry[];
+
 export interface StorageAdapter {
   /**
    * Upload optimized image bytes to your storage backend and return its public URL.

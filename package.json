@@ -1,12 +1,15 @@
 {
-  "name": "image-upload-kit",
+  "name": "@mo-elsherbiny/image-upload-kit",
   "version": "1.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Full-featured image upload, Sharp AVIF/WebP optimization, LQIP & BlurHash generation, dominant edge-color extraction, pluggable StorageAdapter, and customizable/headless React UI components.",
   "author": "Mo Elsherbiny <mo@buildwithsherbo.com> (https://www.buildwithsherbo.com/)",
   "homepage": "https://www.buildwithsherbo.com/",
   "repository": {
     "type": "git",
-    "url": "https://github.com/MoElsherbiny/image-upload-kit.git"
+    "url": "git+https://github.com/MoElsherbiny/image-upload-kit.git"
   },
   "bugs": {
     "url": "https://github.com/MoElsherbiny/image-upload-kit/issues"
@@ -39,8 +42,8 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "image-upload-kit": "./dist/cli.js",
-    "blur-cli": "./dist/cli.js"
+    "image-upload-kit": "dist/cli.js",
+    "blur-cli": "dist/cli.js"
   },
   "exports": {
     ".": {
@@ -89,6 +92,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run typecheck && npm run test && npm run build"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp"
+    ]
   },
   "dependencies": {
     "blurhash": "^2.0.5",

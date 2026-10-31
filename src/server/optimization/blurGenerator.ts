@@ -49,9 +49,13 @@ export async function generateBlurPlaceholder(
 
   try {
     let processBuffer = buffer;
-    const isSvg = /<svg/i.test(buffer.toString('utf8', 0, 1024));
+    const isSvg = /<svg[\s>]/i.test(buffer.toString('utf8', 0, 1024));
     if (isSvg) {
-      processBuffer = await sharp(buffer)
+      const normalizedSvg = buffer
+        .toString('utf8')
+        .replace(/<svg\b/gi, '<svg')
+        .replace(/<\/svg\s*>/gi, '</svg>');
+      processBuffer = await sharp(Buffer.from(normalizedSvg, 'utf8'))
         .resize(targetWidth, targetWidth, { fit: 'inside' })
         .png()
         .toBuffer();

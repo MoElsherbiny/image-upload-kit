@@ -15,6 +15,9 @@ export interface StoredMemoryObject {
 }
 
 export interface MemoryStorageAdapter extends StorageAdapter {
+  getPublicUrl(bucket: string, path: string): string;
+  list(bucket: string, folder?: string): Promise<StorageFileEntry[]>;
+  deleteByUrl(url: string): Promise<boolean>;
   getObject(bucket: string, path: string): StoredMemoryObject | undefined;
   clear(): void;
   readonly size: number;

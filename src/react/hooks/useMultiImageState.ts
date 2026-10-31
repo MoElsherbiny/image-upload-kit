@@ -164,6 +164,7 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
         .replace('{imageSuffix}', imageFiles.length > 1 ? 's' : '')
         .replace('{skippedCount}', String(skipped))
         .replace('{skippedSuffix}', skipped > 1 ? 's' : '');
+      setInfoMessage(msg);
       if (infoTimeoutRef.current) clearTimeout(infoTimeoutRef.current);
       infoTimeoutRef.current = setTimeout(() => setInfoMessage(''), 5000);
     }

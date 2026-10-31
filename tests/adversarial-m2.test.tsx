@@ -193,21 +193,35 @@ describe('Adversarial Scenario 3: Timer Unmount Safety', () => {
 });
 
 describe('Adversarial Scenario 4: Headless Prop Getters & Accessibility', () => {
+  interface MockDropzoneEvent {
+    key?: string;
+    defaultPrevented: boolean;
+    preventDefault: () => void;
+  }
+  interface DropzoneOverrides {
+    className?: string;
+    role?: string;
+    tabIndex?: number;
+    'aria-label'?: string;
+    onClick?: (e: MockDropzoneEvent) => void;
+    onKeyDown?: (e: MockDropzoneEvent) => void;
+  }
+
   it('merges custom overrides, handles keyboard triggers, and prevents default when intercepted', () => {
     let fileDialogOpened = false;
     const openFileDialog = () => { fileDialogOpened = true; };
 
-    const getDropzoneProps = (overrides?: Record<string, any>) => ({
+    const getDropzoneProps = (overrides?: DropzoneOverrides) => ({
       ...overrides,
       role: overrides?.role ?? 'button',
       tabIndex: overrides?.tabIndex ?? 0,
       'aria-label': overrides?.['aria-label'] ?? 'Upload image',
       'data-state': 'idle',
-      onClick: (e: any) => {
+      onClick: (e: MockDropzoneEvent) => {
         overrides?.onClick?.(e);
         if (!e.defaultPrevented) openFileDialog();
       },
-      onKeyDown: (e: any) => {
+      onKeyDown: (e: MockDropzoneEvent) => {
         overrides?.onKeyDown?.(e);
         if (!e.defaultPrevented && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault();
@@ -238,19 +252,21 @@ describe('Adversarial Scenario 4: Headless Prop Getters & Accessibility', () => 
     expect(fileDialogOpened).toBe(true);
 
     fileDialogOpened = false;
-    const interceptedProps = getDropzoneProps({ onClick: (e: any) => e.preventDefault() });
+    const interceptedProps = getDropzoneProps({ onClick: (e: MockDropzoneEvent) => e.preventDefault() });
     const clickEvt = { defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } };
     interceptedProps.onClick(clickEvt);
     expect(fileDialogOpened).toBe(false);
   });
 
   it('verifies hidden input clip styling and click stopPropagation', () => {
+    interface MockClickEvt { stopPropagation: () => void; }
+    interface InputOverrides { style?: Record<string, string | number>; onClick?: (e: MockClickEvt) => void; }
     let propagationStopped = false;
-    const getInputProps = (overrides?: Record<string, any>) => ({
+    const getInputProps = (overrides?: InputOverrides) => ({
       ...overrides,
       type: 'file',
-      style: { position: 'absolute', clip: 'rect(0, 0, 0, 0)', ...overrides?.style },
-      onClick: (e: any) => {
+      style: { position: 'absolute', clip: 'rect(0, 0, 0, 0)', ...overrides?.style } as Record<string, string | number>,
+      onClick: (e: MockClickEvt) => {
         overrides?.onClick?.(e);
         e.stopPropagation();
       },

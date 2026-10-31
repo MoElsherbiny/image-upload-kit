@@ -6,8 +6,10 @@ export * from './utils/validators';
 // Re-export core storage contracts & standard in-memory adapter
 export type {
   StorageAdapter,
+  StorageUploadParams,
   StorageUploadOptions,
   StorageUploadResult,
+  StorageFileEntry,
   StorageListResult,
   StorageFileMetadata,
 } from './storage/types';
@@ -20,6 +22,7 @@ export type {
   BlurPlaceholderType,
   BlurServiceConfig,
 } from './blur/types';
+export type { BlurServiceOptions } from './blur/blurService';
 export {
   decodeBlurHashToDataURL,
   getBlurData,

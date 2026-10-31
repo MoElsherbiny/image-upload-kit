@@ -198,7 +198,7 @@ describe('Progress Dock Visibility & Lifecycle (Feature 10)', () => {
     expect(html).toMatch(/width:\s*100%/);
     expect(html).toMatch(/width:\s*45%/);
     expect((html.match(/iuk-progress-bar__fill/g) || []).length).toBe(2);
-    expect((html.match(/iuk-progress-item/g) || []).length).toBe(3);
+    expect((html.match(/class="iuk-progress-item"/g) || []).length).toBe(3);
   });
 
   it('supports custom image renderer for progress item thumbnails', () => {

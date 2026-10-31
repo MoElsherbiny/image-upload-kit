@@ -61,3 +61,8 @@ export interface BlurData {
   blurHash?: string;
   hasBlur: boolean;
 }
+
+export interface BlurServiceConfig {
+  cacheSize?: number;
+  manifest?: BlurManifestData | Record<string, BlurManifestEntry>;
+}

@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { defineConfig } from 'tsup';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { defineConfig, type Options } from 'tsup';
 
 const CSS_LAYERS = [
   'src/react/styles/tokens.css',
@@ -19,61 +19,67 @@ async function bundleModularStyles(): Promise<void> {
   await writeFile('dist/styles.css', banner + chunks.join('\n\n'), 'utf8');
 }
 
-export default defineConfig([
-  {
-    entry: {
-      index: 'src/index.ts',
-      server: 'src/server/index.ts',
-      storage: 'src/storage/index.ts',
-      blur: 'src/blur/index.ts',
+export default defineConfig(async (options): Promise<Options[]> => {
+  if (!options.watch) {
+    await rm('dist', { recursive: true, force: true });
+  }
+
+  return [
+    {
+      entry: {
+        index: 'src/index.ts',
+        server: 'src/server/index.ts',
+        storage: 'src/storage/index.ts',
+        blur: 'src/blur/index.ts',
+      },
+      format: ['esm', 'cjs'],
+      dts: true,
+      clean: false,
+      sourcemap: true,
+      splitting: false,
+      treeshake: true,
+      external: [
+        'react',
+        'react-dom',
+        'sharp',
+        'lqip-modern',
+        'blurhash',
+        'commander',
+        'lucide-react',
+      ],
     },
-    format: ['esm', 'cjs'],
-    dts: true,
-    clean: true,
-    sourcemap: true,
-    splitting: false,
-    treeshake: true,
-    external: [
-      'react',
-      'react-dom',
-      'sharp',
-      'lqip-modern',
-      'blurhash',
-      'commander',
-      'lucide-react',
-    ],
-  },
-  {
-    entry: {
-      react: 'src/react/index.ts',
-      headless: 'src/react/headless/index.ts',
+    {
+      entry: {
+        react: 'src/react/index.ts',
+        headless: 'src/react/headless/index.ts',
+      },
+      format: ['esm', 'cjs'],
+      dts: true,
+      clean: false,
+      sourcemap: true,
+      splitting: false,
+      treeshake: true,
+      banner: {
+        js: "'use client';",
+      },
+      external: ['react', 'react-dom', 'lucide-react'],
+      async onSuccess() {
+        await bundleModularStyles();
+      },
     },
-    format: ['esm', 'cjs'],
-    dts: true,
-    clean: false,
-    sourcemap: true,
-    splitting: false,
-    treeshake: true,
-    banner: {
-      js: "'use client';",
+    {
+      entry: {
+        cli: 'src/cli/index.ts',
+      },
+      format: ['esm', 'cjs'],
+      dts: true,
+      clean: false,
+      sourcemap: true,
+      splitting: false,
+      banner: {
+        js: '#!/usr/bin/env node',
+      },
+      external: ['sharp', 'lqip-modern', 'blurhash', 'commander'],
     },
-    external: ['react', 'react-dom', 'lucide-react'],
-    async onSuccess() {
-      await bundleModularStyles();
-    },
-  },
-  {
-    entry: {
-      cli: 'src/cli/index.ts',
-    },
-    format: ['esm', 'cjs'],
-    dts: true,
-    clean: false,
-    sourcemap: true,
-    splitting: false,
-    banner: {
-      js: '#!/usr/bin/env node',
-    },
-    external: ['sharp', 'lqip-modern', 'blurhash', 'commander'],
-  },
-]);
+  ];
+});

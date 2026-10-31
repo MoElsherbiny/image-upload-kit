@@ -164,20 +164,20 @@ describe('HTTP Handler Validation Error Mapping', () => {
 
     // 2. Disallowed preset -> 400
     const formBadPreset = new FormData();
-    formBadPreset.append('file', new File([await makeImg('png', 30, 30)], 'a.png', { type: 'image/png' }));
+    formBadPreset.append('file', new File([new Uint8Array(await makeImg('png', 30, 30))], 'a.png', { type: 'image/png' }));
     formBadPreset.append('preset', 'forbidden');
     expect((await post(formBadPreset)).status).toBe(400);
 
     // 3. Oversized file -> 400
     const formOversized = new FormData();
-    formOversized.append('file', new File([await makeImg('png', 250, 250)], 'big.png', { type: 'image/png' }));
+    formOversized.append('file', new File([new Uint8Array(8192)], 'big.png', { type: 'image/png' }));
     const overRes = await post(formOversized);
     expect(overRes.status).toBe(400);
     expect(((await overRes.json()) as { error: string }).error).toContain('exceeds maximum');
 
     // 4. Disallowed MIME format -> 400
     const formBadFmt = new FormData();
-    formBadFmt.append('file', new File([await makeImg('jpeg', 30, 30)], 'pic.jpg', { type: 'image/jpeg' }));
+    formBadFmt.append('file', new File([new Uint8Array(await makeImg('jpeg', 30, 30))], 'pic.jpg', { type: 'image/jpeg' }));
     const badFmtRes = await post(formBadFmt);
     expect(badFmtRes.status).toBe(400);
     expect(((await badFmtRes.json()) as { error: string }).error).toContain('not allowed');
@@ -201,7 +201,7 @@ describe('HTTP Handler Validation Error Mapping', () => {
       uploader: createImageUploader({ storage: brokenStorage }),
     });
     const formOk = new FormData();
-    formOk.append('file', new File([await makeImg('png', 30, 30)], 'ok.png', { type: 'image/png' }));
+    formOk.append('file', new File([new Uint8Array(await makeImg('png', 30, 30))], 'ok.png', { type: 'image/png' }));
     const err500Res = await brokenHandler.POST(
       new Request('http://localhost/api/upload', { method: 'POST', body: formOk }),
     );
