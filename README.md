@@ -1,6 +1,24 @@
-# image-upload-kit
+# @mo-elsherbiny/image-upload-kit
 
 Production-grade, zero-lock-in image upload and processing framework with **Sharp AVIF/WebP optimization**, **smart size-guarding**, **WebP LQIP & BlurHash placeholders**, **4-edge dominant color extraction**, **pluggable storage adapters**, **4 styling tiers**, and the **`<AnimatedImage />` blur-up display component** for React & Next.js.
+
+[![Live Interactive Demo](https://img.shields.io/badge/Live%20Demo-upload--kit.buildwithsherbo.com-0284c7?style=for-the-badge)](https://upload-kit.buildwithsherbo.com)
+[![npm version](https://img.shields.io/npm/v/@mo-elsherbiny/image-upload-kit?color=38bdf8&style=for-the-badge)](https://www.npmjs.com/package/@mo-elsherbiny/image-upload-kit)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](./LICENSE)
+[![Studio Repo](https://img.shields.io/badge/Studio%20Code-image--upload--kit--studio-1e293b?style=for-the-badge&logo=github)](https://github.com/MoElsherbiny/image-upload-kit-studio)
+
+---
+
+## Interactive Studio & Live Demo
+
+Experience the full pipeline live in your browser:
+
+👉 **[upload-kit.buildwithsherbo.com](https://upload-kit.buildwithsherbo.com)**
+
+- **Watch Code Stream Live**: Synchronized Shiki IDE writing `<AnimatedImage />`, upload route, and UI code while the live preview mutates at 60 FPS.
+- **4-Layer Placeholder Lab**: Side-by-side comparison of **4-Edge Ambient Color** (0 B runtime), **Client BlurHash** (~28 chars), **WebP LQIP Data URL** (<1 KB), and the final **Sharp AVIF/WebP** asset.
+- **Sharp Size-Guard Sandbox**: Drop any image to inspect real-time byte savings, dimensions, and color extraction.
+- **Studio Source Code**: Open source at [`MoElsherbiny/image-upload-kit-studio`](https://github.com/MoElsherbiny/image-upload-kit-studio).
 
 ---
 
@@ -18,15 +36,15 @@ Production-grade, zero-lock-in image upload and processing framework with **Shar
 
 ```bash
 # npm
-npm install image-upload-kit
+npm install @mo-elsherbiny/image-upload-kit
 # pnpm
-pnpm add image-upload-kit
+pnpm add @mo-elsherbiny/image-upload-kit
 # yarn
-yarn add image-upload-kit
+yarn add @mo-elsherbiny/image-upload-kit
 # bun
-bun add image-upload-kit
+bun add @mo-elsherbiny/image-upload-kit
 
-# Optional peer dependencies (only if using image-upload-kit/react or /headless):
+# Optional peer dependencies (only if using React or Headless UI):
 npm install react react-dom
 ```
 
@@ -38,14 +56,14 @@ npm install react react-dom
 
 | Subpath | Environment | Key Exports |
 | --- | --- | --- |
-| `image-upload-kit` | Universal | `STANDARD_PRESETS`, `defineUploadPresets`, types, color utils, validators, `createMemoryStorageAdapter`, `decodeBlurHashToDataURL`, `getBlurData` |
-| `image-upload-kit/server` | Node.js | `createImageUploader`, `createUploadHttpHandler`, `optimizeImage`, `generateBlurPlaceholder` |
-| `image-upload-kit/storage` | Node / Edge | `createStorageAdapter`, `createS3StorageAdapter`, `createSupabaseStorageAdapter`, `createLocalFsStorageAdapter` |
-| `image-upload-kit/blur` | Universal | `BlurService`, `createBlurService`, `decodeBlurHashToDataURL`, `LRUCache` |
-| `image-upload-kit/react` | React Client | `<ImageUploadProvider>`, `<SingleImageUpload>`, `<MultiImageUpload>`, `<AnimatedImage>`, `<BlurImage>` |
-| `image-upload-kit/headless` | React Client | `<HeadlessSingleUpload>`, `<HeadlessMultiUpload>`, `useSingleUpload`, `useMultiUpload`, `useDropzone` |
-| `image-upload-kit/cli` | Node CLI | CLI binaries (`image-upload-kit` / `blur-cli`) for build-time manifest generation |
-| `image-upload-kit/styles.css` | CSS | Complete stylesheet powered by `--iuk-*` design tokens (supports dark mode & RTL) |
+| `@mo-elsherbiny/image-upload-kit` | Universal | `STANDARD_PRESETS`, `defineUploadPresets`, types, color utils, validators, `createMemoryStorageAdapter`, `decodeBlurHashToDataURL`, `getBlurData` |
+| `@mo-elsherbiny/image-upload-kit/server` | Node.js | `createImageUploader`, `createUploadHttpHandler`, `optimizeImage`, `generateBlurPlaceholder` |
+| `@mo-elsherbiny/image-upload-kit/storage` | Node / Edge | `createStorageAdapter`, `createS3StorageAdapter`, `createSupabaseStorageAdapter`, `createLocalFsStorageAdapter` |
+| `@mo-elsherbiny/image-upload-kit/blur` | Universal | `BlurService`, `createBlurService`, `decodeBlurHashToDataURL`, `LRUCache` |
+| `@mo-elsherbiny/image-upload-kit/react` | React Client | `<ImageUploadProvider>`, `<SingleImageUpload>`, `<MultiImageUpload>`, `<AnimatedImage>`, `<BlurImage>` |
+| `@mo-elsherbiny/image-upload-kit/headless` | React Client | `<HeadlessSingleUpload>`, `<HeadlessMultiUpload>`, `useSingleUpload`, `useMultiUpload`, `useDropzone` |
+| `@mo-elsherbiny/image-upload-kit/cli` | Node CLI | CLI binaries (`image-upload-kit` / `blur-cli`) for build-time manifest generation |
+| `@mo-elsherbiny/image-upload-kit/styles.css` | CSS | Complete stylesheet powered by `--iuk-*` design tokens (supports dark mode & RTL) |
 
 ---
 
@@ -64,7 +82,7 @@ Built-in visual role presets balance dimension constraints, compression quality,
 | `original` | `4096x4096` | 25 MB | Q95 | JPEG, PNG, WebP, AVIF, SVG | Preserves maximum master fidelity |
 
 ```ts
-import { defineUploadPresets } from 'image-upload-kit';
+import { defineUploadPresets } from '@mo-elsherbiny/image-upload-kit';
 
 export const presets = defineUploadPresets({
   'product-gallery': {
@@ -81,12 +99,12 @@ export const presets = defineUploadPresets({
 
 ## Subpath Usage Guides
 
-### 1. Server Uploader & Route Handler (`image-upload-kit/server` & `/storage`)
+### 1. Server Uploader & Route Handler (`/server` & `/storage`)
 
 ```ts
 // app/api/upload/route.ts (Next.js App Router, Remix, Hono, SvelteKit)
-import { createImageUploader, createUploadHttpHandler } from 'image-upload-kit/server';
-import { createS3StorageAdapter } from 'image-upload-kit/storage';
+import { createImageUploader, createUploadHttpHandler } from '@mo-elsherbiny/image-upload-kit/server';
+import { createS3StorageAdapter } from '@mo-elsherbiny/image-upload-kit/storage';
 
 const storage = createS3StorageAdapter({
   publicBaseUrl: 'https://cdn.example.com',
@@ -99,13 +117,13 @@ export const uploader = createImageUploader({ storage, defaultBucket: 'media' })
 export const { POST, DELETE } = createUploadHttpHandler({ uploader });
 ```
 
-### 2. Client Provider & Upload UI (`image-upload-kit/react` & `/styles.css`)
+### 2. Client Provider & Upload UI (`/react` & `/styles.css`)
 
 ```tsx
 import { useState } from 'react';
-import { ImageUploadProvider, SingleImageUpload, MultiImageUpload } from 'image-upload-kit/react';
-import type { UploadedImageData } from 'image-upload-kit';
-import 'image-upload-kit/styles.css';
+import { ImageUploadProvider, SingleImageUpload, MultiImageUpload } from '@mo-elsherbiny/image-upload-kit/react';
+import type { UploadedImageData } from '@mo-elsherbiny/image-upload-kit';
+import '@mo-elsherbiny/image-upload-kit/styles.css';
 
 export function MediaForm() {
   const [avatar, setAvatar] = useState<UploadedImageData | null>(null);
@@ -120,13 +138,13 @@ export function MediaForm() {
 }
 ```
 
-### 3. Build-Time Blur Manifests & Runtime Lookup (`image-upload-kit/cli` & `/blur`)
+### 3. Build-Time Blur Manifests & Runtime Lookup (`/cli` & `/blur`)
 
 ```bash
 npx image-upload-kit generate --dir ./public/images --out ./src/blur-manifest.json
 ```
 ```ts
-import { createBlurService } from 'image-upload-kit/blur';
+import { createBlurService } from '@mo-elsherbiny/image-upload-kit/blur';
 import manifest from './blur-manifest.json';
 
 const blurService = createBlurService({ manifest });
@@ -172,9 +190,9 @@ Customize UI components cleanly at any level of abstraction:
 />
 ```
 
-### Tier 4: Headless Hooks & Primitives (`image-upload-kit/headless`)
+### Tier 4: Headless Hooks & Primitives (`/headless`)
 ```tsx
-import { HeadlessSingleUpload, useDropzone } from 'image-upload-kit/headless';
+import { HeadlessSingleUpload, useDropzone } from '@mo-elsherbiny/image-upload-kit/headless';
 
 <HeadlessSingleUpload preset="avatar" value={avatar} onChange={setAvatar}>
   {(ctrl) => (
@@ -193,10 +211,10 @@ import { HeadlessSingleUpload, useDropzone } from 'image-upload-kit/headless';
 `<AnimatedImage />` provides an instant blur-up placeholder crossfade to full resolution without layout shift:
 
 ```tsx
-import { AnimatedImage } from 'image-upload-kit/react';
-import 'image-upload-kit/styles.css';
+import { AnimatedImage } from '@mo-elsherbiny/image-upload-kit/react';
+import '@mo-elsherbiny/image-upload-kit/styles.css';
 
-// 1. Direct shorthand with UploadedImageData returned from SingleImageUpload / MultiImageUpload:
+// 1. Direct shorthand with UploadedImageData:
 <AnimatedImage image={img} showShimmer />
 
 // 2. Explicit props in standard React:
@@ -218,26 +236,6 @@ import Image from 'next/image';
 </div>
 ```
 
-### Props Summary
-- **Source & Alt**: Pass `image={uploadedImageData}` directly, or explicit `src` and `alt` (native `<img>` attributes pass through).
-- **Placeholder Hierarchy**: `blurDataUrl` (LQIP) > `blurHash` (canvas decode) > `blurColor` (gradient SVG fallback; neutral/invalid colors ignored).
-- **Layout & Sizing**: `fill` (absolute fill), `objectFit` (`'cover'` default \| `contain` \| `fill` \| `none` \| `scale-down`), `objectPosition`.
-- **Transitions**: `showShimmer` (`false`), `animationDuration` (`700ms` staggered crossfade), respects `prefers-reduced-motion`.
-- **Custom Renderers**: `as` (`ElementType`, e.g. `next/image`), `imageComponentProps` (forwarded only to `as`), `unstyled`.
-- **Styling**: `wrapperClassName`, `wrapperStyle`, `wrapperProps`, `placeholderClassName`.
-- **Events**: `onLoad(img)` (fires after decode), `onError(event)`.
-
-### Data Attributes & CSS Tokens
-- **Slots**: `data-slot="animated-image"`, `"animated-image-placeholder"`, `"animated-image-shimmer"`.
-- **State**: `data-state="loading|loaded|error"`, `aria-busy="true"` while loading.
-- **Design Tokens**: `--iuk-animated-image-bg`, `--iuk-animated-image-blur`, `--iuk-animated-image-shimmer`, `--iuk-animated-image-duration`.
-
-### Related Exports
-- `useImageReveal`: Headless state machine hook (`isLoaded`, `showPlaceholder`, `hasError`, `imgRef`, `handleLoad`, `handleError`).
-- Utilities: `createFallbackBlurSvg`, `resolveMeaningfulColor`, `resolvePlaceholderUrl`.
-
-See [Extended AnimatedImage Guide (`docs/ANIMATED_IMAGE.md`)](./docs/ANIMATED_IMAGE.md) for complete details.
-
 ---
 
 ## Documentation
@@ -247,12 +245,14 @@ See [Extended AnimatedImage Guide (`docs/ANIMATED_IMAGE.md`)](./docs/ANIMATED_IM
 - [AnimatedImage & Blur-Up Guide (`docs/ANIMATED_IMAGE.md`)](./docs/ANIMATED_IMAGE.md) — Progressive reveal component architecture.
 - [Architecture & Internals (`docs/ARCHITECTURE.md`)](./docs/ARCHITECTURE.md) — Sharp size-guarding and 4-edge color math.
 - [Framework & Storage Recipes (`docs/FRAMEWORK_RECIPES.md`)](./docs/FRAMEWORK_RECIPES.md) — Next.js, Hono, Remix, S3, Supabase recipes.
+- [Interactive Studio Code](https://github.com/MoElsherbiny/image-upload-kit-studio) — Source for the live demo playground.
 - [Contributing Guide (`CONTRIBUTING.md`)](./CONTRIBUTING.md) & [Changelog (`CHANGELOG.md`)](./CHANGELOG.md).
 
 ## License & Author
 
-**Author**: Mo Elsherbiny
+**Author & Identity**: [buildwithsherbo](https://www.buildwithsherbo.com/) — Mohamed Elsherbiny
 - **Website**: [buildwithsherbo.com](https://www.buildwithsherbo.com/)
+- **Live Demo**: [upload-kit.buildwithsherbo.com](https://upload-kit.buildwithsherbo.com)
 - **GitHub**: [@MoElsherbiny](https://github.com/MoElsherbiny)
 - **Email**: [mo@buildwithsherbo.com](mailto:mo@buildwithsherbo.com)
 

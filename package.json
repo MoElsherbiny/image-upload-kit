@@ -1,12 +1,12 @@
 {
   "name": "@mo-elsherbiny/image-upload-kit",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "publishConfig": {
     "access": "public"
   },
   "description": "Full-featured image upload, Sharp AVIF/WebP optimization, LQIP & BlurHash generation, dominant edge-color extraction, pluggable StorageAdapter, and customizable/headless React UI components.",
-  "author": "Mo Elsherbiny <mo@buildwithsherbo.com> (https://www.buildwithsherbo.com/)",
-  "homepage": "https://www.buildwithsherbo.com/",
+  "author": "Mohamed Elsherbiny <mo@buildwithsherbo.com> (https://www.buildwithsherbo.com/)",
+  "homepage": "https://upload-kit.buildwithsherbo.com",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/MoElsherbiny/image-upload-kit.git"
