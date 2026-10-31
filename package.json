@@ -1,0 +1,130 @@
+{
+  "name": "image-upload-kit",
+  "version": "1.1.0",
+  "description": "Full-featured image upload, Sharp AVIF/WebP optimization, LQIP & BlurHash generation, dominant edge-color extraction, pluggable StorageAdapter, and customizable/headless React UI components.",
+  "author": "Mo Elsherbiny <mo@buildwithsherbo.com> (https://www.buildwithsherbo.com/)",
+  "homepage": "https://www.buildwithsherbo.com/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MoElsherbiny/image-upload-kit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MoElsherbiny/image-upload-kit/issues"
+  },
+  "keywords": [
+    "image-upload",
+    "headless-upload",
+    "blurhash",
+    "lqip",
+    "sharp",
+    "avif",
+    "webp",
+    "image-optimization",
+    "react-upload",
+    "dominant-color",
+    "storage-adapter"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "image-upload-kit": "./dist/cli.js",
+    "blur-cli": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js",
+      "require": "./dist/server.cjs"
+    },
+    "./storage": {
+      "types": "./dist/storage.d.ts",
+      "import": "./dist/storage.js",
+      "require": "./dist/storage.cjs"
+    },
+    "./blur": {
+      "types": "./dist/blur.d.ts",
+      "import": "./dist/blur.js",
+      "require": "./dist/blur.cjs"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
+    },
+    "./headless": {
+      "types": "./dist/headless.d.ts",
+      "import": "./dist/headless.js",
+      "require": "./dist/headless.cjs"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js",
+      "require": "./dist/cli.cjs"
+    },
+    "./styles.css": "./dist/styles.css",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "blurhash": "^2.0.5",
+    "commander": "^14.0.0",
+    "lqip-modern": "^2.2.1",
+    "lucide-react": "^0.577.0",
+    "sharp": "^0.34.5"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.26.0",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "eslint": "^9.26.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "prettier": "^3.5.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.32.0",
+    "vitest": "^3.2.0"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  }
+}

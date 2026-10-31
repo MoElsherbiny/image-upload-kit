@@ -1,0 +1,197 @@
+/* image-upload-kit — Layer 2: UI Primitives */
+
+.iuk-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--iuk-text);
+}
+
+.iuk-required { color: var(--iuk-danger); font-weight: 700; }
+.iuk-helper-text { margin: 2px 0 0; font-size: 0.8125rem; line-height: 1.45; color: var(--iuk-text-muted); }
+.iuk-helper-text--error { color: var(--iuk-danger); font-weight: 500; }
+
+/* Buttons */
+.iuk-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: var(--iuk-radius-sm);
+  border: 1px solid transparent;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.iuk-btn:focus-visible,
+.iuk-icon-btn:focus-visible,
+.iuk-save-button:focus-visible,
+.iuk-link-btn:focus-visible {
+  outline: 2px solid var(--iuk-primary);
+  outline-offset: 2px;
+}
+
+.iuk-btn:disabled { opacity: 0.55; cursor: not-allowed; pointer-events: none; }
+
+.iuk-btn code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--iuk-surface);
+  border: 1px solid var(--iuk-border);
+  font-size: 0.75rem;
+  color: var(--iuk-text-muted);
+}
+
+.iuk-btn--primary { background: var(--iuk-primary); color: #ffffff; border-color: var(--iuk-primary); box-shadow: var(--iuk-shadow-sm); }
+.iuk-btn--primary:hover:not(:disabled) { background: var(--iuk-primary-hover); border-color: var(--iuk-primary-hover); }
+
+.iuk-btn--secondary { background: var(--iuk-bg); color: var(--iuk-text); border-color: var(--iuk-border); box-shadow: var(--iuk-shadow-sm); }
+.iuk-btn--secondary:hover:not(:disabled) { background: var(--iuk-surface-hover); border-color: var(--iuk-border-strong); }
+
+.iuk-btn--danger { background: var(--iuk-danger-soft); color: var(--iuk-danger); border-color: color-mix(in srgb, var(--iuk-danger) 28%, transparent); }
+.iuk-btn--danger:hover:not(:disabled) { background: var(--iuk-danger); color: #ffffff; border-color: var(--iuk-danger); }
+
+.iuk-btn--active { background: var(--iuk-primary-soft); color: var(--iuk-primary); border-color: var(--iuk-primary); }
+.iuk-btn--sm { padding: 5px 10px; font-size: 0.75rem; gap: 5px; }
+
+.iuk-link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.iuk-link-btn:hover { opacity: 0.8; }
+
+/* Icon Buttons */
+.iuk-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: var(--iuk-radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--iuk-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.iuk-icon-btn:hover { background: var(--iuk-surface-hover); color: var(--iuk-text); }
+
+.iuk-icon-btn--floating {
+  width: 34px;
+  height: 34px;
+  border-radius: 9999px;
+  background: var(--iuk-bg);
+  color: var(--iuk-text);
+  border-color: var(--iuk-border);
+  box-shadow: var(--iuk-shadow-sm);
+}
+
+/* Save Button */
+.iuk-save-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: var(--iuk-radius-sm);
+  border: 1px solid var(--iuk-primary);
+  background: var(--iuk-primary);
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25;
+  cursor: pointer;
+  box-shadow: var(--iuk-shadow-sm);
+  transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.iuk-save-button:hover:not(:disabled) { background: var(--iuk-primary-hover); border-color: var(--iuk-primary-hover); }
+.iuk-save-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.iuk-save-button__icon { display: inline-flex; align-items: center; flex-shrink: 0; }
+
+/* Badges */
+.iuk-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid var(--iuk-border);
+  background: var(--iuk-surface);
+  color: var(--iuk-text-muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.iuk-badge--accent { background: var(--iuk-primary-soft); color: var(--iuk-primary); border-color: color-mix(in srgb, var(--iuk-primary) 28%, transparent); }
+.iuk-badge--warning { background: var(--iuk-warning-soft); color: var(--iuk-warning); border-color: color-mix(in srgb, var(--iuk-warning) 30%, transparent); }
+
+/* Alerts */
+.iuk-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--iuk-radius-sm);
+  border: 1px solid var(--iuk-border);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.iuk-alert__row { display: inline-flex; align-items: center; gap: 8px; flex: 1; }
+.iuk-alert--info { background: var(--iuk-info-soft); color: var(--iuk-info); border-color: color-mix(in srgb, var(--iuk-info) 28%, transparent); }
+.iuk-alert--success { background: var(--iuk-success-soft); color: var(--iuk-success); border-color: color-mix(in srgb, var(--iuk-success) 28%, transparent); }
+.iuk-alert--warning { background: var(--iuk-warning-soft); color: var(--iuk-warning); border-color: color-mix(in srgb, var(--iuk-warning) 30%, transparent); }
+.iuk-alert--error { background: var(--iuk-danger-soft); color: var(--iuk-danger); border-color: color-mix(in srgb, var(--iuk-danger) 28%, transparent); }
+
+/* Commit Bar & Progress Bar */
+.iuk-commit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 12px;
+  margin-top: 4px;
+  border-top: 1px solid var(--iuk-border);
+}
+
+.iuk-progress-bar {
+  width: 100%;
+  height: 5px;
+  border-radius: 9999px;
+  background: rgba(148, 163, 184, 0.32);
+  overflow: hidden;
+}
+
+.iuk-progress-bar__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--iuk-primary);
+  transition: width 0.2s ease-out;
+}

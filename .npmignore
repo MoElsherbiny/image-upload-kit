@@ -1,0 +1,11 @@
+node_modules/
+tests/
+scripts/
+docs/
+.github/
+.vscode/
+.idea/
+*.log
+*.tsbuildinfo
+coverage/
+.turbo/
