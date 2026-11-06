@@ -79,18 +79,18 @@ export function AnimatedImage({
     onLoad,
   });
 
-  const placeholderUrl = useMemo(
-    () =>
-      colorPlaceholder === 'gradient'
-        ? resolvePlaceholderUrl({ blurDataUrl, blurHash, blurColor, neutralColors })
-        : resolveIntrinsicPlaceholderUrl({ blurDataUrl, blurHash }),
-    [blurDataUrl, blurHash, blurColor, colorPlaceholder, neutralColors],
-  );
-
   const state = hasError ? 'error' : isLoaded ? 'loaded' : 'loading';
   const resolvedObjectFit =
     (style?.objectFit as AnimatedImageObjectFit | undefined) ?? objectFit;
   const isContain = resolvedObjectFit === 'contain';
+
+  const placeholderUrl = useMemo(
+    () =>
+      colorPlaceholder === 'gradient' || isContain
+        ? resolvePlaceholderUrl({ blurDataUrl, blurHash, blurColor, neutralColors })
+        : resolveIntrinsicPlaceholderUrl({ blurDataUrl, blurHash }),
+    [blurDataUrl, blurHash, blurColor, colorPlaceholder, isContain, neutralColors],
+  );
   const cls = (name: string) => (unstyled ? undefined : name);
   const duration = Math.max(0, animationDuration);
   const placeholderFadeDuration = Math.round(duration * (5 / 6));
