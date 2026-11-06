@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Post-build integrity checks for the published `dist/` output.
  *

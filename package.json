@@ -140,7 +140,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check:dist": "node scripts/check-dist.mjs",
-    "prepublishOnly": "npm run typecheck && npm run lint && npm run test && npm run build && npm run check:dist"
+    "prepublishOnly": "npm run typecheck && npm run lint && npm run build && npm run test && npm run check:dist"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -183,7 +183,7 @@
     "@types/react-dom": "^19.1.0",
     "eslint": "^9.26.0",
     "eslint-plugin-react-hooks": "^5.2.0",
-    "jsdom": "^31.0.0",
+    "jsdom": "26.1.0",
     "lqip-modern": "^2.2.1",
     "prettier": "^3.5.3",
     "react": "^19.1.0",

@@ -40,11 +40,11 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Run unit tests
-        run: npm test
-
       - name: Build package
         run: npm run build
+
+      - name: Run unit tests
+        run: npm test
 
       - name: Verify dist bundle
         run: npm run check:dist
