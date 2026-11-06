@@ -1,6 +1,6 @@
 {
   "name": "img-upload-kit",
-  "version": "1.1.1",
+  "version": "2.0.0",
   "publishConfig": {
     "access": "public"
   },
@@ -48,41 +48,77 @@
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./server": {
-      "types": "./dist/server.d.ts",
-      "import": "./dist/server.js",
-      "require": "./dist/server.cjs"
+      "import": {
+        "types": "./dist/server.d.ts",
+        "default": "./dist/server.js"
+      },
+      "require": {
+        "types": "./dist/server.d.cts",
+        "default": "./dist/server.cjs"
+      }
     },
     "./storage": {
-      "types": "./dist/storage.d.ts",
-      "import": "./dist/storage.js",
-      "require": "./dist/storage.cjs"
+      "import": {
+        "types": "./dist/storage.d.ts",
+        "default": "./dist/storage.js"
+      },
+      "require": {
+        "types": "./dist/storage.d.cts",
+        "default": "./dist/storage.cjs"
+      }
     },
     "./blur": {
-      "types": "./dist/blur.d.ts",
-      "import": "./dist/blur.js",
-      "require": "./dist/blur.cjs"
+      "import": {
+        "types": "./dist/blur.d.ts",
+        "default": "./dist/blur.js"
+      },
+      "require": {
+        "types": "./dist/blur.d.cts",
+        "default": "./dist/blur.cjs"
+      }
     },
     "./react": {
-      "types": "./dist/react.d.ts",
-      "import": "./dist/react.js",
-      "require": "./dist/react.cjs"
+      "import": {
+        "types": "./dist/react.d.ts",
+        "default": "./dist/react.js"
+      },
+      "require": {
+        "types": "./dist/react.d.cts",
+        "default": "./dist/react.cjs"
+      }
     },
     "./headless": {
-      "types": "./dist/headless.d.ts",
-      "import": "./dist/headless.js",
-      "require": "./dist/headless.cjs"
+      "import": {
+        "types": "./dist/headless.d.ts",
+        "default": "./dist/headless.js"
+      },
+      "require": {
+        "types": "./dist/headless.d.cts",
+        "default": "./dist/headless.cjs"
+      }
     },
     "./cli": {
-      "types": "./dist/cli.d.ts",
-      "import": "./dist/cli.js",
-      "require": "./dist/cli.cjs"
+      "import": {
+        "types": "./dist/cli.d.ts",
+        "default": "./dist/cli.js"
+      },
+      "require": {
+        "types": "./dist/cli.d.cts",
+        "default": "./dist/cli.cjs"
+      }
     },
     "./styles.css": "./dist/styles.css",
+    "./styles/*.css": "./dist/styles/*.css",
     "./package.json": "./package.json"
   },
   "scripts": {
@@ -92,7 +128,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prepublishOnly": "npm run typecheck && npm run test && npm run build"
+    "check:dist": "node scripts/check-dist.mjs",
+    "prepublishOnly": "npm run typecheck && npm run lint && npm run test && npm run build && npm run check:dist"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -102,33 +139,45 @@
   },
   "dependencies": {
     "blurhash": "^2.0.5",
-    "commander": "^14.0.0",
-    "lqip-modern": "^2.2.1",
-    "lucide-react": "^0.577.0",
-    "sharp": "^0.34.5"
+    "commander": "^14.0.0"
   },
   "peerDependencies": {
+    "lqip-modern": "^2.2.1",
     "react": ">=18.0.0",
-    "react-dom": ">=18.0.0"
+    "react-dom": ">=18.0.0",
+    "sharp": "^0.34.5"
   },
   "peerDependenciesMeta": {
+    "lqip-modern": {
+      "optional": true
+    },
     "react": {
       "optional": true
     },
     "react-dom": {
       "optional": true
+    },
+    "sharp": {
+      "optional": true
     }
   },
   "devDependencies": {
     "@eslint/js": "^9.26.0",
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "eslint": "^9.26.0",
     "eslint-plugin-react-hooks": "^5.2.0",
+    "jsdom": "^31.0.0",
+    "lqip-modern": "^2.2.1",
     "prettier": "^3.5.3",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "sharp": "^0.34.5",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.32.0",

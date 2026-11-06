@@ -1,11 +1,11 @@
 import {
-  CheckCircle2,
-  Loader2,
-  Palette,
-  Type as TypeIcon,
-  X,
-  XCircle,
-} from 'lucide-react';
+  CheckCircleIcon as CheckCircle2,
+  LoaderIcon as Loader2,
+  PaletteIcon as Palette,
+  TypeIcon,
+  XIcon as X,
+  XCircleIcon as XCircle,
+} from '../icons';
 import { type CSSProperties, useMemo, useState } from 'react';
 import type { BlurPlaceholderType } from '../../blur/types';
 import type { UploadLocale } from '../../types';

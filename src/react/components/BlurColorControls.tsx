@@ -1,4 +1,4 @@
-import { PenTool, Wand2 } from 'lucide-react';
+import { PenToolIcon as PenTool, WandIcon as Wand2 } from '../icons';
 import type { ChangeEvent } from 'react';
 import type { BlurModalTranslations } from '../i18n';
 

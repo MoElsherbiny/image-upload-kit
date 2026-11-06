@@ -1,4 +1,10 @@
-import { AlertTriangle, Download, ImagePlus, Save, Upload } from 'lucide-react';
+import {
+  AlertTriangleIcon as AlertTriangle,
+  DownloadIcon as Download,
+  ImagePlusIcon as ImagePlus,
+  SaveIcon as Save,
+  UploadIcon as Upload,
+} from '../icons';
 import type { CSSProperties } from 'react';
 import type { UploadTranslations } from '../i18n';
 import type {

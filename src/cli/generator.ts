@@ -1,11 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import sharp from 'sharp';
 import type { BlurManifestData, BlurManifestEntry } from '../blur/types';
 import {
   encodeBlurHashString,
   generateBlurPlaceholder,
 } from '../server/optimization';
+import { loadSharp } from '../server/optimization/loadSharp';
 import { AsyncSemaphore } from '../server/semaphore';
 import { scanImageDirectory, type ScannedImageFile } from './scanner';
 
@@ -75,6 +75,7 @@ async function resolveImageDimensions(
   buffer: Buffer,
   isSvg: boolean,
 ): Promise<{ width?: number; height?: number }> {
+  const sharp = await loadSharp();
   const metadata = await sharp(buffer).metadata();
   let { width, height } = metadata;
 

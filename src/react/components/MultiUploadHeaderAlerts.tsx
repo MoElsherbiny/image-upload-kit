@@ -1,6 +1,11 @@
 import {
-  AlertTriangle, CheckCircle2, Loader2, Save, Trash2, XCircle,
-} from 'lucide-react';
+  AlertTriangleIcon as AlertTriangle,
+  CheckCircleIcon as CheckCircle2,
+  LoaderIcon as Loader2,
+  SaveIcon as Save,
+  TrashIcon as Trash2,
+  XCircleIcon as XCircle,
+} from '../icons';
 import type { MultiUploadStats } from '../hooks/useMultiImageState';
 import type { UploadTranslations } from '../i18n';
 import type {

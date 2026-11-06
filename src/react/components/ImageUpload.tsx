@@ -1,4 +1,9 @@
-import { ChevronUp, Loader2, Minus, X } from 'lucide-react';
+import {
+  ChevronUpIcon as ChevronUp,
+  LoaderIcon as Loader2,
+  MinusIcon as Minus,
+  XIcon as X,
+} from '../icons';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { UploadPresetName } from '../../types';

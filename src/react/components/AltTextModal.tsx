@@ -1,4 +1,4 @@
-import { CheckCircle2, Type as TypeIcon, X } from 'lucide-react';
+import { CheckCircleIcon as CheckCircle2, TypeIcon, XIcon as X } from '../icons';
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { UploadLocale } from '../../types';

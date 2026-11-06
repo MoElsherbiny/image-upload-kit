@@ -1,4 +1,3 @@
-import sharp from 'sharp';
 import { rgbToHex } from '../../utils/color';
 import {
   type ColorSamplingMode,
@@ -6,11 +5,13 @@ import {
   EDGE_WHITE_FALLBACK,
   WHITE_DOMINANCE_RATIO,
 } from './types';
+import { loadSharp } from './loadSharp';
 
 export async function extractEnhancedColorFromBuffer(
   buffer: Buffer,
   mode: ColorSamplingMode = 'balanced',
 ): Promise<string> {
+  const sharp = await loadSharp();
   try {
     const metadata = await sharp(buffer).metadata();
     const maxSize = 400;

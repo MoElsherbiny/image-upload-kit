@@ -1,4 +1,8 @@
-import { ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import {
+  ChevronDownIcon as ChevronDown,
+  ChevronUpIcon as ChevronUp,
+  LoaderIcon as Loader2,
+} from '../icons';
 import { useState } from 'react';
 import type { UploadLocale } from '../../types';
 import { useImageUploadContext } from '../context';

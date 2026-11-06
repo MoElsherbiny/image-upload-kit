@@ -1,4 +1,4 @@
-import { Type as TypeIcon } from 'lucide-react';
+import { TypeIcon } from '../icons';
 import { useId } from 'react';
 import type { UploadLocale } from '../../types';
 import { useImageUploadContext } from '../context';

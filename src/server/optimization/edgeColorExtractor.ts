@@ -1,4 +1,3 @@
-import sharp from 'sharp';
 import { hexToRgb, rgbToHex } from '../../utils/color';
 import { extractEnhancedColorFromBuffer } from './colorHistogram';
 import {
@@ -8,10 +7,12 @@ import {
   type EdgeKey,
   WHITE_DOMINANCE_RATIO,
 } from './types';
+import { loadSharp } from './loadSharp';
 
 export async function extractEdgeColorsFromBuffer(
   buffer: Buffer,
 ): Promise<EdgeColorSet> {
+  const sharp = await loadSharp();
   try {
     const sample = await sharp(buffer)
       .resize(400, 400, {

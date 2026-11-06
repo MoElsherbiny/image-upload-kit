@@ -1,4 +1,3 @@
-import sharp from 'sharp';
 import { DEFAULT_IMAGE_DIMENSIONS } from '../../types';
 import {
   type OptimizedImageResult,
@@ -6,11 +5,13 @@ import {
   PRIMARY_AVIF_EFFORT,
   RETRY_AVIF_EFFORT,
 } from './types';
+import { loadSharp } from './loadSharp';
 
 export async function optimizeImage(
   buffer: Buffer,
   options: OptimizeImageOptions = {},
 ): Promise<OptimizedImageResult> {
+  const sharp = await loadSharp();
   const maxDimensions = options.maxDimensions || DEFAULT_IMAGE_DIMENSIONS;
   const { outputFormat, quality } = options;
 

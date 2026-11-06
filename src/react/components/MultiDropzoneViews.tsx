@@ -1,4 +1,8 @@
-import { FolderOpen, ImagePlus, Upload } from 'lucide-react';
+import {
+  FolderOpenIcon as FolderOpen,
+  ImagePlusIcon as ImagePlus,
+  UploadIcon as Upload,
+} from '../icons';
 import type { DragEvent } from 'react';
 import type { UploadTranslations } from '../i18n';
 import type {

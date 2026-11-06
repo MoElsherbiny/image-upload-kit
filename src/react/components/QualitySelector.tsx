@@ -1,4 +1,4 @@
-import { Check, Info, Zap } from 'lucide-react';
+import { CheckIcon as Check, InfoIcon as Info, ZapIcon as Zap } from '../icons';
 import type {
   QualityLevel,
   StandardPresetName,

@@ -1,6 +1,4 @@
 import { encode as encodeBlurHash } from 'blurhash';
-import lqip from 'lqip-modern';
-import sharp from 'sharp';
 import {
   blendEdgeColors,
   extractEdgeColorsFromBuffer,
@@ -13,12 +11,14 @@ import {
   type BlurHashResult,
   type GenerateBlurOptions,
 } from './types';
+import { loadLqip, loadSharp } from './loadSharp';
 
 export async function encodeBlurHashString(
   buffer: Buffer,
   componentX: number = 4,
   componentY: number = 3,
 ): Promise<string> {
+  const sharp = await loadSharp();
   const { data, info } = await sharp(buffer)
     .resize(32, 32, { fit: 'inside' })
     .ensureAlpha()
@@ -46,6 +46,8 @@ export async function generateBlurPlaceholder(
     options.fallbackWidth ?? BLUR_PLACEHOLDER_FALLBACK_WIDTH;
   const quality = options.quality ?? BLUR_PLACEHOLDER_QUALITY;
   const maxChars = options.maxDataUrlChars ?? BLUR_PLACEHOLDER_MAX_CHARS;
+  const sharp = await loadSharp();
+  const lqip = await loadLqip();
 
   try {
     let processBuffer = buffer;
@@ -102,6 +104,7 @@ async function generateFallbackBlur(
   buffer: Buffer,
   includeBlurHash?: boolean,
 ): Promise<BlurHashResult> {
+  const sharp = await loadSharp();
   const tinyBuffer = await sharp(buffer)
     .resize(64, 64, { fit: 'cover', kernel: 'lanczos3' })
     .blur(1.0)

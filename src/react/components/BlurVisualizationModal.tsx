@@ -1,4 +1,4 @@
-import { Eye, X } from 'lucide-react';
+import { EyeIcon as Eye, XIcon as X } from '../icons';
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';

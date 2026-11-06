@@ -1,4 +1,5 @@
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { defineConfig, type Options } from 'tsup';
 
 const CSS_LAYERS = [
@@ -10,13 +11,75 @@ const CSS_LAYERS = [
   'src/react/styles/animated-image.css',
 ];
 
+/** Entry outputs that are React client modules and must start with 'use client'. */
+const CLIENT_ENTRIES = new Set(['react', 'headless']);
+const USE_CLIENT = "'use client';";
+const REACT_IMPORT_RE =
+  /(?:from\s*|import\s*\(\s*|require\(\s*)["']react(?:\/jsx-runtime|-dom)?["']/;
+
+const PEER_EXTERNALS = [
+  'react',
+  'react-dom',
+  'react/jsx-runtime',
+  'sharp',
+  'lqip-modern',
+  'blurhash',
+  'commander',
+];
+
 async function bundleModularStyles(): Promise<void> {
-  await mkdir('dist', { recursive: true });
+  await mkdir('dist/styles', { recursive: true });
   const chunks = await Promise.all(
     CSS_LAYERS.map((file) => readFile(file, 'utf8')),
   );
   const banner = '/* image-upload-kit — bundled modular styles */\n';
   await writeFile('dist/styles.css', banner + chunks.join('\n\n'), 'utf8');
+  await Promise.all(
+    CSS_LAYERS.map((file) =>
+      copyFile(file, path.join('dist/styles', path.basename(file))),
+    ),
+  );
+}
+
+function isClientFile(entryName: string, code: string): boolean {
+  if (CLIENT_ENTRIES.has(entryName)) return true;
+  return entryName.startsWith('chunk-') && REACT_IMPORT_RE.test(code);
+}
+
+/**
+ * esbuild drops module-level directives while bundling, so 'use client' is
+ * (re)applied here as the very first statement of every client entry and of
+ * every shared chunk that imports React. Server-reachable files never import
+ * React, so they never receive the directive.
+ */
+async function applyUseClientDirectives(): Promise<void> {
+  const files = await readdir('dist');
+  await Promise.all(
+    files
+      .filter((file) => /\.c?js$/.test(file))
+      .map(async (file) => {
+        const entryName = file.replace(/\.c?js$/, '');
+        const fullPath = path.join('dist', file);
+        const code = await readFile(fullPath, 'utf8');
+        if (!isClientFile(entryName, code)) return;
+        if (/^["']use client["']/.test(code)) return;
+        await writeFile(fullPath, `${USE_CLIENT}\n${code}`);
+        await shiftSourceMapOneLine(`${fullPath}.map`);
+      }),
+  );
+}
+
+/** Keeps a sibling source map accurate after one line was prepended. */
+async function shiftSourceMapOneLine(mapPath: string): Promise<void> {
+  let raw: string;
+  try {
+    raw = await readFile(mapPath, 'utf8');
+  } catch {
+    return;
+  }
+  const map = JSON.parse(raw) as { mappings?: string };
+  map.mappings = `;${map.mappings ?? ''}`;
+  await writeFile(mapPath, JSON.stringify(map));
 }
 
 export default defineConfig(async (options): Promise<Options[]> => {
@@ -26,30 +89,14 @@ export default defineConfig(async (options): Promise<Options[]> => {
 
   return [
     {
+      // One build graph for every library entry so that stateful modules
+      // (ImageUploadContext, the blurService singleton, i18n) live in exactly
+      // one shared chunk per format instead of being duplicated per entry.
       entry: {
         index: 'src/index.ts',
         server: 'src/server/index.ts',
         storage: 'src/storage/index.ts',
         blur: 'src/blur/index.ts',
-      },
-      format: ['esm', 'cjs'],
-      dts: true,
-      clean: false,
-      sourcemap: true,
-      splitting: false,
-      treeshake: true,
-      external: [
-        'react',
-        'react-dom',
-        'sharp',
-        'lqip-modern',
-        'blurhash',
-        'commander',
-        'lucide-react',
-      ],
-    },
-    {
-      entry: {
         react: 'src/react/index.ts',
         headless: 'src/react/headless/index.ts',
       },
@@ -57,13 +104,15 @@ export default defineConfig(async (options): Promise<Options[]> => {
       dts: true,
       clean: false,
       sourcemap: true,
-      splitting: false,
-      treeshake: true,
-      banner: {
-        js: "'use client';",
-      },
-      external: ['react', 'react-dom', 'lucide-react'],
+      // `splitting: true` is required for CJS (tsup emits ESM chunks and
+      // converts them), and is the ESM default.
+      splitting: true,
+      // Rollup-based treeshaking strips 'use client'; esbuild already
+      // tree-shakes ESM output.
+      treeshake: false,
+      external: PEER_EXTERNALS,
       async onSuccess() {
+        await applyUseClientDirectives();
         await bundleModularStyles();
       },
     },
@@ -79,7 +128,7 @@ export default defineConfig(async (options): Promise<Options[]> => {
       banner: {
         js: '#!/usr/bin/env node',
       },
-      external: ['sharp', 'lqip-modern', 'blurhash', 'commander'],
+      external: PEER_EXTERNALS,
     },
   ];
 });
