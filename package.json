@@ -42,9 +42,9 @@
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "img-upload-kit": "dist/cli.js",
-    "image-upload-kit": "dist/cli.js",
-    "blur-cli": "dist/cli.js"
+    "img-upload-kit": "dist/bin.js",
+    "image-upload-kit": "dist/bin.js",
+    "blur-cli": "dist/bin.js"
   },
   "exports": {
     ".": {
@@ -65,6 +65,16 @@
       "require": {
         "types": "./dist/server.d.cts",
         "default": "./dist/server.cjs"
+      }
+    },
+    "./server/handler": {
+      "import": {
+        "types": "./dist/server-handler.d.ts",
+        "default": "./dist/server-handler.js"
+      },
+      "require": {
+        "types": "./dist/server-handler.d.cts",
+        "default": "./dist/server-handler.cjs"
       }
     },
     "./storage": {

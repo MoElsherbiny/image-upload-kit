@@ -11,6 +11,14 @@ export interface BlurPlaceholderStyle {
   transform?: string;
 }
 
+function formatCssUrl(rawUrl: string): string {
+  const escaped = rawUrl
+    .replace(/\\/g, '\\\\')
+    .replace(/"/g, '\\"')
+    .replace(/[\r\n]/g, '');
+  return `url("${escaped}")`;
+}
+
 export function getBlurData(
   image: BlurImageSource | null | undefined,
 ): BlurData {
@@ -64,7 +72,7 @@ export function getBackgroundPropsWithBlur(
 
   return {
     backgroundColor: blurData.blurColor,
-    backgroundImage: `url(${image.url})`,
+    backgroundImage: formatCssUrl(image.url),
     backgroundSize: 'cover',
     backgroundPosition: 'center',
     backgroundRepeat: 'no-repeat',
@@ -84,7 +92,7 @@ export function getBlurPlaceholderStyle(
 
   return {
     backgroundColor: blurData.blurColor,
-    backgroundImage: `url(${blurData.blurDataUrl})`,
+    backgroundImage: formatCssUrl(blurData.blurDataUrl),
     backgroundSize: 'cover',
     backgroundPosition: 'center',
     filter: 'blur(20px)',
@@ -104,34 +112,44 @@ export function getBulkBlurData(
   return images.map(getBlurData);
 }
 
+/**
+ * Builds a responsive `srcset` descriptor for the full-resolution image URL.
+ * Never includes the low-resolution LQIP placeholder in `srcset` so browsers
+ * cannot accidentally select the blurred placeholder as the final image.
+ */
 export function createSrcSetWithBlur(
   image: BlurImageSource | null | undefined,
 ): string {
   if (!image?.url) return '';
-
-  const blurData = getBlurData(image);
-  if (!blurData.blurDataUrl) {
-    return image.url;
+  if (image.width && image.width > 0) {
+    return `${image.url} ${image.width}w`;
   }
-
-  return `${blurData.blurDataUrl} 40w, ${image.url} ${image.width || 1920}w`;
+  return image.url;
 }
 
+/**
+ * Preloads the target image URL in `document.head` via `<link rel="preload" as="image">`.
+ * Does not set `imagesrcset` to the LQIP data URL and deduplicates existing preload links.
+ */
 export function preloadImageWithBlur(
   image: BlurImageSource | null | undefined,
 ): void {
-  if (!image?.url || typeof document === 'undefined') return;
+  if (!image?.url || typeof document === 'undefined' || !document.head) return;
+
+  const existingLinks = document.head.querySelectorAll(
+    'link[rel="preload"][as="image"]',
+  );
+  for (let i = 0; i < existingLinks.length; i++) {
+    const el = existingLinks[i] as HTMLLinkElement;
+    if (el.getAttribute('href') === image.url || el.href === image.url) {
+      return;
+    }
+  }
 
   const link = document.createElement('link');
   link.rel = 'preload';
   link.as = 'image';
   link.href = image.url;
-
-  const blurData = getBlurData(image);
-  if (blurData.blurDataUrl) {
-    link.setAttribute('imagesrcset', blurData.blurDataUrl);
-  }
-
   document.head.appendChild(link);
 }
 

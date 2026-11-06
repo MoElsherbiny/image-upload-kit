@@ -1,8 +1,12 @@
-import type {
-  StorageAdapter,
-  StorageFileEntry,
-  StorageUploadParams,
-  StorageUploadResult,
+import {
+  type StorageAdapter,
+  type StorageFileEntry,
+  type StorageListOptions,
+  type StoragePaginatedListResult,
+  type StorageUploadParams,
+  type StorageUploadResult,
+  toPaginatedListResult,
+  validateStorageMetadata,
 } from './types';
 
 export interface S3PutObjectInput {
@@ -12,9 +16,15 @@ export interface S3PutObjectInput {
   ContentType: string;
   CacheControl?: string;
   Metadata?: Record<string, string>;
+  IfNoneMatch?: string;
 }
 
 export interface S3DeleteObjectInput {
+  Bucket: string;
+  Key: string;
+}
+
+export interface S3HeadObjectInput {
   Bucket: string;
   Key: string;
 }
@@ -23,6 +33,7 @@ export interface S3ListObjectsInput {
   Bucket: string;
   Prefix?: string;
   MaxKeys?: number;
+  ContinuationToken?: string;
 }
 
 export interface S3ListedObject {
@@ -33,12 +44,15 @@ export interface S3ListedObject {
 
 export interface S3ListObjectsOutput {
   Contents?: S3ListedObject[];
+  NextContinuationToken?: string;
+  IsTruncated?: boolean;
 }
 
 /** Structural S3 / Cloudflare R2 / MinIO transport with zero runtime SDK dependency. */
 export interface S3TransportLike {
   putObject(input: S3PutObjectInput): Promise<unknown>;
   deleteObject(input: S3DeleteObjectInput): Promise<unknown>;
+  headObject?(input: S3HeadObjectInput): Promise<unknown>;
   listObjects?(input: S3ListObjectsInput): Promise<S3ListObjectsOutput>;
   listObjectsV2?(input: S3ListObjectsInput): Promise<S3ListObjectsOutput>;
 }
@@ -76,6 +90,19 @@ function resolveTransport(options: S3StorageAdapterOptions): S3TransportLike {
   throw new Error('S3StorageAdapter requires putObject/deleteObject or client/transport');
 }
 
+function isS3PreconditionError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const e = err as {
+    code?: unknown;
+    name?: unknown;
+    statusCode?: unknown;
+    $metadata?: { httpStatusCode?: number };
+  };
+  const status = e.$metadata?.httpStatusCode ?? Number(e.statusCode);
+  const code = String(e.code ?? e.name ?? '').toLowerCase();
+  return status === 412 || code === 'preconditionfailed' || code === 'eexist';
+}
+
 /** Zero-dependency S3 / Cloudflare R2 / MinIO `StorageAdapter`. */
 export function createS3StorageAdapter(options: S3StorageAdapterOptions): StorageAdapter {
   const transport = resolveTransport(options);
@@ -91,29 +118,46 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
   return {
     async upload(params: StorageUploadParams): Promise<StorageUploadResult> {
       const key = normalizeS3Key(params.path);
+      validateStorageMetadata(params.metadata);
+
+      const isImmutable =
+        params.upsert === false && params.contentType.includes('image/avif');
       const cacheControl =
         params.cacheControl ??
         options.cacheControl ??
-        (params.contentType.includes('image/avif')
+        (isImmutable
           ? 'public, max-age=31536000, immutable'
           : 'public, max-age=2592000, must-revalidate');
 
       const metadata =
         params.metadata || params.contentHash
           ? {
-              ...(params.contentHash ? { contentHash: params.contentHash } : {}),
               ...params.metadata,
+              ...(params.contentHash ? { contentHash: params.contentHash } : {}),
             }
           : undefined;
 
-      await transport.putObject({
-        Bucket: params.bucket,
-        Key: key,
-        Body: params.data,
-        ContentType: params.contentType,
-        ...(cacheControl ? { CacheControl: cacheControl } : {}),
-        ...(metadata ? { Metadata: metadata } : {}),
-      });
+      try {
+        await transport.putObject({
+          Bucket: params.bucket,
+          Key: key,
+          Body: params.data,
+          ContentType: params.contentType,
+          ...(cacheControl ? { CacheControl: cacheControl } : {}),
+          ...(metadata ? { Metadata: metadata } : {}),
+          ...(params.upsert === false ? { IfNoneMatch: '*' } : {}),
+        });
+      } catch (err) {
+        if (isS3PreconditionError(err)) {
+          const existsErr = new Error(
+            `Object already exists at ${params.bucket}/${key}`,
+          ) as Error & { code?: string; statusCode?: number };
+          existsErr.code = 'EEXIST';
+          existsErr.statusCode = 412;
+          throw existsErr;
+        }
+        throw err;
+      }
 
       return {
         bucket: params.bucket,
@@ -126,15 +170,37 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
       await transport.deleteObject({ Bucket: bucket, Key: normalizeS3Key(path) });
     },
 
+    async exists(bucket: string, path: string): Promise<boolean> {
+      const key = normalizeS3Key(path);
+      if (transport.headObject) {
+        try {
+          await transport.headObject({ Bucket: bucket, Key: key });
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      const lastSlash = key.lastIndexOf('/');
+      const folder = lastSlash > 0 ? key.slice(0, lastSlash) : undefined;
+      const targetName = lastSlash > 0 ? key.slice(lastSlash + 1) : key;
+      const listed = await this.list!(bucket, folder);
+      return listed.some((item) => item.name === targetName);
+    },
+
     getPublicUrl,
 
-    async list(bucket: string, folder?: string): Promise<StorageFileEntry[]> {
+    async list(
+      bucket: string,
+      folder?: string,
+      listOptions?: StorageListOptions,
+    ): Promise<StoragePaginatedListResult> {
       const cleanFolder = folder ? normalizeS3Key(folder).replace(/\/+$/, '') : '';
       const prefix = cleanFolder ? `${cleanFolder}/` : undefined;
       const input: S3ListObjectsInput = {
         Bucket: bucket,
         ...(prefix ? { Prefix: prefix } : {}),
-        MaxKeys: 1000,
+        MaxKeys: listOptions?.limit ?? 1000,
+        ...(listOptions?.cursor ? { ContinuationToken: listOptions.cursor } : {}),
       };
 
       const output = transport.listObjects
@@ -143,7 +209,7 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
           ? await transport.listObjectsV2(input)
           : undefined;
 
-      return (output?.Contents ?? [])
+      const entries: StorageFileEntry[] = (output?.Contents ?? [])
         .filter((item): item is S3ListedObject & { Key: string } => Boolean(item.Key))
         .map((item) => {
           const name =
@@ -162,6 +228,8 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
           };
         })
         .filter((entry) => entry.name.length > 0);
+
+      return toPaginatedListResult(entries, output?.NextContinuationToken);
     },
 
     parseUrl(url: string): { bucket?: string; path: string } | null {

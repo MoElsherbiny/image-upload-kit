@@ -103,6 +103,14 @@ export class BlurService {
     data = this.blurData[withSlash] || this.blurData[withoutSlash];
     if (data) return data;
 
+    const firstSlashIdx = withoutSlash.indexOf('/');
+    if (firstSlashIdx > 0 && firstSlashIdx < withoutSlash.length - 1) {
+      const withoutBucket = withoutSlash.slice(firstSlashIdx + 1);
+      data =
+        this.blurData['/' + withoutBucket] || this.blurData[withoutBucket];
+      if (data) return data;
+    }
+
     if (pathInfo.isExternal && pathInfo.originalPath !== imageSrc) {
       data = this.blurData[pathInfo.originalPath];
       if (data) return data;
@@ -127,7 +135,7 @@ export class BlurService {
 
     this.metrics.totalRequests++;
 
-    const cacheKey = `${imageSrc}-${size}`;
+    const cacheKey = `${imageSrc}-${size}-${type}`;
     if (this.cache.has(cacheKey)) {
       this.metrics.cacheHits++;
       return this.cache.get(cacheKey)!.dataUrl;

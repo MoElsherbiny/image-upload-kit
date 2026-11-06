@@ -1,6 +1,7 @@
 import { DEFAULT_IMAGE_DIMENSIONS } from '../../types';
 import { UploadValidationError } from '../handler/responses';
 import { sanitizeSvg } from '../security/sanitizeSvg';
+import { loadSharp } from './loadSharp';
 import {
   DEFAULT_LIMIT_INPUT_PIXELS,
   type OptimizedImageResult,
@@ -8,7 +9,43 @@ import {
   PRIMARY_AVIF_EFFORT,
   RETRY_AVIF_EFFORT,
 } from './types';
-import { loadSharp } from './loadSharp';
+
+const PASSTHROUGH_FORMATS = new Set(['jpeg', 'png', 'webp', 'avif']);
+
+function extractSvgDimensions(
+  svgText: string,
+  metaWidth?: number,
+  metaHeight?: number,
+): { width: number; height: number } {
+  let width = metaWidth;
+  let height = metaHeight;
+
+  if (!width || !height) {
+    const svgTagMatch = svgText.match(/<svg\b[^>]*>/i);
+    if (svgTagMatch) {
+      const tag = svgTagMatch[0];
+      const wMatch = tag.match(/\bwidth\s*=\s*["']\s*([\d.]+)(?:px)?\s*["']/i);
+      const hMatch = tag.match(/\bheight\s*=\s*["']\s*([\d.]+)(?:px)?\s*["']/i);
+      if (!width && wMatch) width = Math.round(parseFloat(wMatch[1]));
+      if (!height && hMatch) height = Math.round(parseFloat(hMatch[1]));
+    }
+  }
+
+  if (!width || !height) {
+    const viewBoxMatch = svgText.match(
+      /viewBox\s*=\s*["']\s*([\d.-]+)[\s,]+([\d.-]+)[\s,]+([\d.-]+)[\s,]+([\d.-]+)\s*["']/i,
+    );
+    if (viewBoxMatch) {
+      if (!width) width = Math.round(parseFloat(viewBoxMatch[3]));
+      if (!height) height = Math.round(parseFloat(viewBoxMatch[4]));
+    }
+  }
+
+  return {
+    width: width && width > 0 ? width : 600,
+    height: height && height > 0 ? height : 600,
+  };
+}
 
 export async function optimizeImage(
   buffer: Buffer,
@@ -19,6 +56,11 @@ export async function optimizeImage(
   const { outputFormat, quality } = options;
   const limitInputPixels =
     options.limitInputPixels ?? DEFAULT_LIMIT_INPUT_PIXELS;
+  const primaryEffort = options.effort ?? PRIMARY_AVIF_EFFORT;
+  const retryEffort =
+    options.effort !== undefined
+      ? Math.max(1, options.effort - 1)
+      : RETRY_AVIF_EFFORT;
 
   let pipeline = sharp(buffer, {
     failOn: 'error',
@@ -43,26 +85,16 @@ export async function optimizeImage(
 
   if (originalFormat === 'svg') {
     const sanitizedBuffer = sanitizeSvg(buffer);
-    let width = metadata.width;
-    let height = metadata.height;
-
-    if (!width || !height) {
-      const svgText = sanitizedBuffer.toString('utf8');
-      const viewBoxMatch = svgText.match(
-        /viewBox\s*=\s*["']\s*([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s*["']/i,
-      );
-      if (viewBoxMatch) {
-        width = Math.round(parseFloat(viewBoxMatch[3]));
-        height = Math.round(parseFloat(viewBoxMatch[4]));
-      }
-    }
+    const svgText = sanitizedBuffer.toString('utf8');
+    const dims = extractSvgDimensions(svgText, metadata.width, metadata.height);
 
     return {
       buffer: sanitizedBuffer,
-      width: width || maxDimensions.width || 600,
-      height: height || maxDimensions.height || 600,
+      width: dims.width,
+      height: dims.height,
       format: 'svg',
       size: sanitizedBuffer.length,
+      ...(quality !== undefined ? { quality } : {}),
     };
   }
 
@@ -101,6 +133,7 @@ export async function optimizeImage(
       height: outputBuffer.info.height || maxDimensions.height,
       format: outputFormat,
       size: outputBuffer.info.size,
+      quality: baseQuality,
     };
   }
 
@@ -108,24 +141,23 @@ export async function optimizeImage(
     .clone()
     .avif({
       quality: baseQuality,
-      effort: PRIMARY_AVIF_EFFORT,
+      effort: primaryEffort,
       chromaSubsampling: '4:2:0',
       bitdepth: 8,
     })
     .toBuffer({ resolveWithObject: true });
 
-  // Size-guard against bloating previously low-Q JPEGs when re-encoded at high-Q AVIF
   const avifSize = avifBuffer.info.size;
   const originalSize = buffer.length;
 
   if (avifSize <= originalSize || outputFormat === 'avif') {
-    const finalMetadata = await sharp(avifBuffer.data).metadata();
     return {
       buffer: avifBuffer.data,
-      width: finalMetadata.width ?? maxDimensions.width,
-      height: finalMetadata.height ?? maxDimensions.height,
+      width: avifBuffer.info.width || maxDimensions.width,
+      height: avifBuffer.info.height || maxDimensions.height,
       format: 'avif',
       size: avifSize,
+      quality: baseQuality,
     };
   }
 
@@ -138,38 +170,66 @@ export async function optimizeImage(
     .clone()
     .avif({
       quality: scaledQuality,
-      effort: RETRY_AVIF_EFFORT,
+      effort: retryEffort,
       chromaSubsampling: '4:2:0',
       bitdepth: 8,
     })
     .toBuffer({ resolveWithObject: true });
 
   if (avifRetry.info.size <= originalSize) {
-    const retryMeta = await sharp(avifRetry.data).metadata();
     return {
       buffer: avifRetry.data,
-      width: retryMeta.width ?? maxDimensions.width,
-      height: retryMeta.height ?? maxDimensions.height,
+      width: avifRetry.info.width || maxDimensions.width,
+      height: avifRetry.info.height || maxDimensions.height,
       format: 'avif',
       size: avifRetry.info.size,
+      quality: scaledQuality,
     };
   }
 
-  const wasDimensionCapped =
-    (metadata.width ?? 0) > maxDimensions.width ||
-    (metadata.height ?? 0) > maxDimensions.height;
+  const isRotated90 =
+    typeof metadata.orientation === 'number' &&
+    metadata.orientation >= 5 &&
+    metadata.orientation <= 8;
+  const orientedWidth = isRotated90 ? metadata.height : metadata.width;
+  const orientedHeight = isRotated90 ? metadata.width : metadata.height;
 
-  if (!wasDimensionCapped) {
-    const PASSTHROUGH_FORMATS = new Set(['jpeg', 'png', 'webp', 'avif']);
-    const srcFmt = PASSTHROUGH_FORMATS.has(originalFormat ?? '')
-      ? (originalFormat as 'jpeg' | 'png' | 'webp' | 'avif')
-      : 'jpeg';
+  const wasDimensionCapped =
+    (orientedWidth ?? 0) > maxDimensions.width ||
+    (orientedHeight ?? 0) > maxDimensions.height;
+
+  if (!wasDimensionCapped && PASSTHROUGH_FORMATS.has(originalFormat ?? '')) {
+    const srcFmt = originalFormat as 'jpeg' | 'png' | 'webp' | 'avif';
+    let passthrough = pipeline.clone();
+    if (srcFmt === 'jpeg') {
+      passthrough = passthrough.jpeg({ quality: baseQuality, mozjpeg: true });
+    } else if (srcFmt === 'png') {
+      passthrough = passthrough.png({ compressionLevel: 9 });
+    } else if (srcFmt === 'webp') {
+      passthrough = passthrough.webp({ quality: baseQuality, effort: 4 });
+    } else {
+      passthrough = passthrough.avif({
+        quality: baseQuality,
+        effort: retryEffort,
+      });
+    }
+
+    let passthroughOut = await passthrough.toBuffer({ resolveWithObject: true });
+    if (srcFmt === 'jpeg' && passthroughOut.info.size > originalSize) {
+      passthroughOut = await pipeline
+        .clone()
+        .jpeg({ quality: 10 })
+        .toBuffer({ resolveWithObject: true });
+    }
+
     return {
-      buffer,
-      width: metadata.width ?? maxDimensions.width,
-      height: metadata.height ?? maxDimensions.height,
+      buffer: passthroughOut.data,
+      width: passthroughOut.info.width || orientedWidth || maxDimensions.width,
+      height:
+        passthroughOut.info.height || orientedHeight || maxDimensions.height,
       format: srcFmt,
-      size: originalSize,
+      size: passthroughOut.info.size,
+      quality: baseQuality,
     };
   }
 
@@ -180,15 +240,29 @@ export async function optimizeImage(
 
   const useWebP = webpBuffer.info.size <= avifRetry.info.size;
   const winner = useWebP
-    ? { buf: webpBuffer.data, fmt: 'webp' as const, sz: webpBuffer.info.size }
-    : { buf: avifRetry.data, fmt: 'avif' as const, sz: avifRetry.info.size };
+    ? {
+        buf: webpBuffer.data,
+        fmt: 'webp' as const,
+        sz: webpBuffer.info.size,
+        w: webpBuffer.info.width,
+        h: webpBuffer.info.height,
+        q: baseQuality,
+      }
+    : {
+        buf: avifRetry.data,
+        fmt: 'avif' as const,
+        sz: avifRetry.info.size,
+        w: avifRetry.info.width,
+        h: avifRetry.info.height,
+        q: scaledQuality,
+      };
 
-  const winnerMeta = await sharp(winner.buf).metadata();
   return {
     buffer: winner.buf,
-    width: winnerMeta.width ?? maxDimensions.width,
-    height: winnerMeta.height ?? maxDimensions.height,
+    width: winner.w || maxDimensions.width,
+    height: winner.h || maxDimensions.height,
     format: winner.fmt,
     size: winner.sz,
+    quality: winner.q,
   };
 }

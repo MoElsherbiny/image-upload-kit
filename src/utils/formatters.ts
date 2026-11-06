@@ -65,27 +65,10 @@ const creativeMessagesAr = [
   'اللمسات الأخيرة قيد التنفيذ ✨',
 ];
 
-let lastMessageIndex = -1;
-
 export function getStatusMessage(
   progress: number,
   locale: UploadLocale = 'en',
 ): string {
-  const list = locale === 'ar' ? creativeMessagesAr : creativeMessages;
-  const clampedProgress = Math.max(0, Math.min(99, progress));
-  const messageIndex = Math.floor((clampedProgress / 100) * list.length);
-
-  const useRandom = Math.random() > 0.7;
-  let selectedIndex = useRandom
-    ? Math.floor(Math.random() * list.length)
-    : messageIndex;
-
-  if (selectedIndex === lastMessageIndex && list.length > 1) {
-    selectedIndex = (selectedIndex + 1) % list.length;
-  }
-
-  lastMessageIndex = selectedIndex;
-
   if (progress >= 95) {
     return locale === 'ar' ? '🎉 اقتربنا جداً...' : '🎉 Almost there...';
   }
@@ -95,7 +78,14 @@ export function getStatusMessage(
       : '✨ Polishing the final details...';
   }
 
-  return list[selectedIndex];
+  const list = locale === 'ar' ? creativeMessagesAr : creativeMessages;
+  const clampedProgress = Math.max(0, Math.min(99, progress));
+  const messageIndex = Math.min(
+    list.length - 1,
+    Math.floor((clampedProgress / 100) * list.length),
+  );
+
+  return list[messageIndex];
 }
 
 export function createSuccessMessage(
@@ -142,22 +132,28 @@ export function createSuccessMessage(
     : `✓ Upload complete! (${original} → ${optimized})`;
 }
 
+const FILE_TYPE_ERROR_REGEX =
+  /\b(?:file\s+type|mime\s+type|invalid\s+type|unsupported|format|mime)\b/i;
+
 export function getFriendlyErrorMessage(
   error: string,
   locale: UploadLocale = 'en',
 ): string {
   const lower = error.toLowerCase();
-  if (lower.includes('size') || lower.includes('large') || lower.includes('exceeds')) {
+  if (
+    lower.includes('size') ||
+    lower.includes('large') ||
+    lower.includes('exceeds')
+  ) {
     return locale === 'ar'
       ? 'الملف كبير جداً. يرجى اختيار صورة أصغر.'
       : 'File is too large. Please choose a smaller image.';
   }
-  if (lower.includes('type') || lower.includes('format')) {
-    return locale === 'ar'
-      ? 'نوع الملف غير صالح. يرجى رفع صورة صالحة (JPEG, PNG, WebP, AVIF, SVG).'
-      : 'Invalid file type. Please upload a valid image (JPEG, PNG, WebP, AVIF, SVG).';
-  }
-  if (lower.includes('network') || lower.includes('fetch')) {
+  if (
+    lower.includes('network') ||
+    lower.includes('fetch') ||
+    lower.includes('connection')
+  ) {
     return locale === 'ar'
       ? 'حدث خطأ في الشبكة. يرجى التحقق من الاتصال والمحاولة مرة أخرى.'
       : 'Network error. Please check your connection and try again.';
@@ -166,6 +162,11 @@ export function getFriendlyErrorMessage(
     return locale === 'ar'
       ? 'انتهت مهلة الرفع. يرجى المحاولة مرة أخرى.'
       : 'Upload timed out. Please try again.';
+  }
+  if (FILE_TYPE_ERROR_REGEX.test(error)) {
+    return locale === 'ar'
+      ? 'نوع الملف غير صالح. يرجى رفع صورة صالحة (JPEG, PNG, WebP, AVIF).'
+      : 'Invalid file type. Please upload a valid image (JPEG, PNG, WebP, AVIF).';
   }
   if (error) return error;
   return locale === 'ar'

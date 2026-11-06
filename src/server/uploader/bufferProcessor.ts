@@ -1,10 +1,28 @@
-import crypto from 'node:crypto';
 import { generateBlurPlaceholder, optimizeImage } from '../optimization';
 import { withTimeout } from '../semaphore';
 import type {
   ProcessedImageBufferResult,
   ProcessImageBufferOptions,
 } from './types';
+
+async function computeSha256Hex(buffer: Uint8Array): Promise<string> {
+  const bytes = new Uint8Array(buffer.byteLength);
+  bytes.set(buffer);
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  if (signal.reason instanceof Error) throw signal.reason;
+  const err = new Error(
+    typeof signal.reason === 'string' ? signal.reason : 'Operation aborted',
+  );
+  err.name = 'AbortError';
+  throw err;
+}
 
 export async function processImageBuffer(
   originalBuffer: Buffer,
@@ -13,10 +31,11 @@ export async function processImageBuffer(
   const optTimeout = options.optimizationTimeoutMs ?? 60000;
   const blurTimeout = options.blurTimeoutMs ?? 30000;
 
-  const contentHash = crypto
-    .createHash('sha256')
-    .update(originalBuffer)
-    .digest('hex');
+  throwIfAborted(options.signal);
+
+  const contentHash = await computeSha256Hex(originalBuffer);
+
+  throwIfAborted(options.signal);
 
   const optimized = await withTimeout(
     optimizeImage(originalBuffer, {
@@ -39,6 +58,8 @@ export async function processImageBuffer(
       `Image dimensions missing: width=${optimized.width}, height=${optimized.height}`,
     );
   }
+
+  throwIfAborted(options.signal);
 
   const blurData = await withTimeout(
     generateBlurPlaceholder(optimized.buffer, {

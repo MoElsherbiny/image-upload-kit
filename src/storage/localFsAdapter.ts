@@ -1,10 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type {
-  StorageAdapter,
-  StorageFileEntry,
-  StorageUploadParams,
-  StorageUploadResult,
+import {
+  type StorageAdapter,
+  type StorageFileEntry,
+  type StorageListOptions,
+  type StoragePaginatedListResult,
+  type StorageUploadParams,
+  type StorageUploadResult,
+  toPaginatedListResult,
 } from './types';
 
 export interface LocalFsStorageOptions {
@@ -48,8 +51,13 @@ function assertContainedInRoot(resolvedRoot: string, targetPath: string): void {
 }
 
 export interface LocalFsStorageAdapter extends StorageAdapter {
+  exists(bucket: string, relativePath: string): Promise<boolean>;
   getPublicUrl(bucket: string, relativePath: string): string;
-  list(bucket: string, folder?: string): Promise<StorageFileEntry[]>;
+  list(
+    bucket: string,
+    folder?: string,
+    options?: StorageListOptions,
+  ): Promise<StoragePaginatedListResult>;
   deleteByUrl(url: string): Promise<boolean>;
   parseUrl(url: string): { bucket?: string; path: string } | null;
 }
@@ -180,6 +188,16 @@ export function createLocalFsStorageAdapter(
       }
     },
 
+    async exists(bucket: string, relativePath: string): Promise<boolean> {
+      try {
+        const { diskPath } = resolveDiskTarget(bucket, relativePath);
+        const stat = await fs.stat(diskPath);
+        return stat.isFile();
+      } catch {
+        return false;
+      }
+    },
+
     getPublicUrl,
     parseUrl,
 
@@ -188,9 +206,10 @@ export function createLocalFsStorageAdapter(
       if (!parsed) return false;
 
       try {
-        const subSegments = includeBucket && parsed.bucket
-          ? [parsed.bucket, ...parsed.path.split('/')]
-          : parsed.path.split('/');
+        const subSegments =
+          includeBucket && parsed.bucket
+            ? [parsed.bucket, ...parsed.path.split('/')]
+            : parsed.path.split('/');
         const diskPath = path.resolve(resolvedRoot, ...subSegments);
         assertContainedInRoot(resolvedRoot, diskPath);
         await fs.unlink(diskPath);
@@ -200,7 +219,11 @@ export function createLocalFsStorageAdapter(
       }
     },
 
-    async list(bucket: string, folder?: string): Promise<StorageFileEntry[]> {
+    async list(
+      bucket: string,
+      folder?: string,
+      listOptions?: StorageListOptions,
+    ): Promise<StoragePaginatedListResult> {
       const cleanBucket = sanitizeRelativePath(bucket);
       const cleanFolder = folder ? sanitizeRelativePath(folder) : '';
       const targetDir = path.resolve(
@@ -227,10 +250,21 @@ export function createLocalFsStorageAdapter(
           });
         }
 
-        return results;
+        const offset = listOptions?.cursor ? Number(listOptions.cursor) || 0 : 0;
+        const limit = listOptions?.limit ?? results.length;
+        const sliced =
+          listOptions?.limit !== undefined || offset > 0
+            ? results.slice(offset, offset + limit)
+            : results;
+        const nextCursor =
+          listOptions?.limit !== undefined && offset + sliced.length < results.length
+            ? String(offset + sliced.length)
+            : undefined;
+
+        return toPaginatedListResult(sliced, nextCursor);
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-          return [];
+          return toPaginatedListResult([]);
         }
         throw err;
       }

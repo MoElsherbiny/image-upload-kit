@@ -52,7 +52,8 @@ export function normalizeImagePath(
       for (const pattern of patterns) {
         const match = cleanUrlNoQuery.match(pattern);
         if (match) {
-          const pathPart = match[match.length - 1];
+          const groups = match.slice(1).filter(Boolean);
+          const pathPart = groups.join('/');
           normalizedPath = '/' + pathPart.replace(/^\/+/, '');
           break;
         }

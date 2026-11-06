@@ -12,11 +12,13 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const CLIENT_ENTRIES = ['react', 'headless'];
-const SERVER_SAFE_ENTRIES = ['index', 'server', 'storage', 'blur'];
+const SERVER_SAFE_ENTRIES = ['index', 'server', 'server-handler', 'storage', 'blur'];
 const REACT_IMPORT_RE =
   /(?:from\s*|import\s*\(\s*|require\(\s*)["']react(?:\/jsx-runtime|-dom)?["']/;
 const SHARP_IMPORT_RE =
   /(?:from\s*|import\s*\(\s*|require\(\s*)["'](?:sharp|lqip-modern)["']/;
+const FS_IMPORT_RE =
+  /(?:from\s*|import\s*\(\s*|require\(\s*)["'](?:node:)?fs(?:\/promises)?["']/;
 const LOCAL_IMPORT_RE =
   /(?:from\s*|import\s*\(\s*|require\(\s*|^import\s*)["'](\.\/[^"']+)["']/gm;
 const CONTEXT_DEF_RE = /ImageUploadContext\s*=\s*(?:\(0,\s*)?[\w$.]*createContext/g;
@@ -113,6 +115,16 @@ export function runDistChecks(rootDir = process.cwd()) {
     const rootGraph = collectGraph(distDir, `index.${ext}`);
     const sharpFiles = rootGraph.filter((file) => SHARP_IMPORT_RE.test(read(distDir, file)));
     check(sharpFiles.length === 0, `dist/index.${ext} graph does not import sharp/lqip-modern ${sharpFiles.join(', ')}`.trim());
+
+    const handlerGraph = collectGraph(distDir, `server-handler.${ext}`);
+    const handlerHeavyFiles = handlerGraph.filter((file) => {
+      const code = read(distDir, file);
+      return SHARP_IMPORT_RE.test(code) || FS_IMPORT_RE.test(code);
+    });
+    check(
+      handlerHeavyFiles.length === 0,
+      `dist/server-handler.${ext} graph does not import sharp/lqip-modern/fs ${handlerHeavyFiles.join(', ')}`.trim(),
+    );
   }
 
   // 5. Every package.json export target exists.

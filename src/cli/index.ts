@@ -27,28 +27,3 @@ export async function runCli(argv?: string[]): Promise<void> {
     argv[0].startsWith('-');
   await program.parseAsync(argv, isUserArgs ? { from: 'user' } : undefined);
 }
-
-function isDirectCliExecution(entryArg?: string): boolean {
-  if (!entryArg) return false;
-  const normalized = entryArg.replace(/\\/g, '/');
-  return (
-    normalized === 'cli.js' ||
-    normalized === 'cli.cjs' ||
-    normalized.endsWith('/cli.js') ||
-    normalized.endsWith('/cli.cjs') ||
-    normalized.endsWith('/cli/index.ts') ||
-    normalized.endsWith('/bin/img-upload-kit') ||
-    normalized.endsWith('/.bin/img-upload-kit') ||
-    normalized.endsWith('/bin/image-upload-kit') ||
-    normalized.endsWith('/.bin/image-upload-kit') ||
-    normalized.endsWith('/bin/blur-cli') ||
-    normalized.endsWith('/.bin/blur-cli')
-  );
-}
-
-if (typeof process !== 'undefined' && isDirectCliExecution(process.argv?.[1])) {
-  void runCli().catch((err: unknown) => {
-    console.error(err instanceof Error ? err.message : String(err));
-    process.exitCode = 1;
-  });
-}

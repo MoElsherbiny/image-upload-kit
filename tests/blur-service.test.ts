@@ -8,6 +8,7 @@ import {
   getImagePropsWithBlur,
   LRUCache,
   normalizeImagePath,
+  preloadImageWithBlur,
 } from '../src/blur';
 
 describe('LRUCache', () => {
@@ -45,7 +46,7 @@ describe('normalizeImagePath', () => {
     const supabase = normalizeImagePath(
       'https://demo.supabase.co/storage/v1/object/public/media/items/banner.avif?width=800',
     );
-    expect(supabase.normalizedPath).toBe('/items/banner.avif');
+    expect(supabase.normalizedPath).toBe('/media/items/banner.avif');
     expect(supabase.isExternal).toBe(true);
     expect(supabase.extension).toBe('avif');
 
@@ -94,18 +95,21 @@ describe('BlurService', () => {
       'data:image/webp;base64,MEDIUM_BANNER',
     );
 
-    // Request 4 (missing fallback)
+    // Request 4 (missing fallback with type sensitivity)
     expect(service.getBlurDataURL('/missing.avif', { type: 'hero' })).toBe(
       DEFAULT_PLACEHOLDERS.hero,
+    );
+    expect(service.getBlurDataURL('/missing.avif', { type: 'card' })).toBe(
+      DEFAULT_PLACEHOLDERS.card,
     );
 
     const meta = service.getMetadata();
     expect(meta.version).toBe('2.1');
     expect(meta.totalImages).toBe(1);
-    expect(meta.metrics.totalRequests).toBe(4);
+    expect(meta.metrics.totalRequests).toBe(5);
     expect(meta.metrics.cacheHits).toBe(1);
-    expect(meta.metrics.cacheMisses).toBe(3);
-    expect(meta.metrics.cacheHitRate).toBe('25.00%');
+    expect(meta.metrics.cacheMisses).toBe(4);
+    expect(meta.metrics.cacheHitRate).toBe('20.00%');
 
     // Runtime entry registration & medium->small fallback
     service.registerEntry('/catalog/new-shoe.webp', {
@@ -162,15 +166,51 @@ describe('blurDataUtils', () => {
     });
     expect(getBlurPlaceholderStyle(source)).toMatchObject({
       backgroundColor: '#0F172A',
-      backgroundImage: 'url(data:image/webp;base64,LQIP)',
+      backgroundImage: 'url("data:image/webp;base64,LQIP")',
       filter: 'blur(20px)',
       transform: 'scale(1.1)',
     });
 
     expect(createSrcSetWithBlur(null)).toBe('');
-    expect(createSrcSetWithBlur({ url: '/plain.avif', width: 1000 })).toBe('/plain.avif');
-    expect(createSrcSetWithBlur(source)).toBe(
-      'data:image/webp;base64,LQIP 40w, /gallery/item.avif 1200w',
-    );
+    expect(createSrcSetWithBlur({ url: '/plain.avif', width: 1000 })).toBe('/plain.avif 1000w');
+    expect(createSrcSetWithBlur(source)).toBe('/gallery/item.avif 1200w');
+    expect(createSrcSetWithBlur(source)).not.toContain('data:image/');
+
+    // preloadImageWithBlur drops imagesrcset and deduplicates <link> elements
+    const appended: Array<{ rel: string; as: string; href: string; attrs: Record<string, string> }> = [];
+    const origDoc = globalThis.document;
+    try {
+      (globalThis as unknown as { document: unknown }).document = {
+        createElement: () => {
+          const el = {
+            rel: '',
+            as: '',
+            href: '',
+            attrs: {} as Record<string, string>,
+            setAttribute(k: string, v: string) {
+              this.attrs[k] = v;
+            },
+            getAttribute(k: string) {
+              return k === 'href' ? this.href : this.attrs[k];
+            },
+          };
+          return el;
+        },
+        head: {
+          querySelectorAll: () => appended,
+          appendChild: (el: (typeof appended)[number]) => {
+            appended.push(el);
+          },
+        },
+      };
+
+      preloadImageWithBlur(source);
+      preloadImageWithBlur(source);
+      expect(appended).toHaveLength(1);
+      expect(appended[0].href).toBe('/gallery/item.avif');
+      expect(appended[0].attrs.imagesrcset).toBeUndefined();
+    } finally {
+      (globalThis as unknown as { document: unknown }).document = origDoc;
+    }
   });
 });

@@ -56,18 +56,16 @@ function canReuseCachedEntry(
 ): entry is BlurManifestEntry {
   if (!entry || typeof entry !== 'object') return false;
   if (!entry.hash || !entry.color || !entry.variants?.small) return false;
-  if (entry.metadata) {
-    if (entry.metadata.size && entry.metadata.size !== String(file.size)) {
-      return false;
-    }
-    if (
-      entry.metadata.mtimeMs &&
-      entry.metadata.mtimeMs !== String(Math.round(file.mtimeMs))
-    ) {
-      return false;
-    }
-    if (includeMedium && !entry.variants.medium) return false;
+  if (!entry.metadata || !entry.metadata.size || !entry.metadata.mtimeMs) {
+    return false;
   }
+  if (entry.metadata.size !== String(file.size)) {
+    return false;
+  }
+  if (entry.metadata.mtimeMs !== String(Math.round(file.mtimeMs))) {
+    return false;
+  }
+  if (includeMedium && !entry.variants.medium) return false;
   return true;
 }
 
@@ -80,9 +78,10 @@ async function resolveImageDimensions(
   let { width, height } = metadata;
 
   if ((!width || !height) && isSvg) {
-    const match = buffer
-      .toString('utf8')
-      .match(/viewBox\s*=\s*["']\s*([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s*["']/i);
+    const svgText = buffer.toString('utf8');
+    const match = svgText.match(
+      /viewBox\s*=\s*["']\s*([\d.-]+)[\s,]+([\d.-]+)[\s,]+([\d.-]+)[\s,]+([\d.-]+)\s*["']/i,
+    );
     if (match) {
       width = Math.round(Number.parseFloat(match[3]));
       height = Math.round(Number.parseFloat(match[4]));
@@ -120,8 +119,8 @@ export async function generateBlurManifest(
   await Promise.all(
     files.map((file) =>
       semaphore.run(async () => {
+        const prior = force ? undefined : existingHashes[file.relativeKey];
         try {
-          const prior = force ? undefined : existingHashes[file.relativeKey];
           if (canReuseCachedEntry(prior, file, includeMedium)) {
             generatedEntries.set(file.relativeKey, prior);
             cached += 1;
@@ -164,8 +163,16 @@ export async function generateBlurManifest(
             },
           });
           processed += 1;
-        } catch {
+        } catch (err) {
           failed += 1;
+          const existing = existingHashes[file.relativeKey];
+          if (existing) {
+            generatedEntries.set(file.relativeKey, existing);
+          }
+          const reason = err instanceof Error ? err.message : String(err);
+          console.warn(
+            `Warning: Failed to generate blur manifest entry for "${file.relativeKey}": ${reason}`,
+          );
         } finally {
           done += 1;
           options.onProgress?.(done, total, file.relativeKey);

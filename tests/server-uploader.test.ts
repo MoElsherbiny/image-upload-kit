@@ -4,6 +4,7 @@ import {
   AsyncSemaphore,
   createImageUploader,
   createUploadHttpHandler,
+  SemaphoreQueueFullError,
   withTimeout,
 } from '../src/server';
 import { createMemoryStorageAdapter } from '../src/storage';
@@ -37,7 +38,7 @@ describe('AsyncSemaphore and withTimeout', () => {
     expect(results).toEqual([10, 20, 30, 40, 50]);
   });
 
-  it('resolves fast tasks and rejects tasks exceeding timeoutMs', async () => {
+  it('resolves fast tasks, rejects tasks exceeding timeoutMs, keeps semaphore slot until underlying task settles, and enforces maxQueue', async () => {
     await expect(withTimeout(Promise.resolve('ok'), 100, 'QuickJob')).resolves.toBe('ok');
 
     const slow = new Promise<string>((resolve) => {
@@ -46,6 +47,38 @@ describe('AsyncSemaphore and withTimeout', () => {
     await expect(withTimeout(slow, 15, 'SlowJob')).rejects.toThrow(
       'SlowJob timed out after 15ms',
     );
+
+    // Timeout keeps the semaphore slot acquired until underlying work finishes
+    const sem = new AsyncSemaphore(1, { maxQueue: 1 });
+    let resolveUnderlying!: () => void;
+    const underlying = new Promise<string>((resolve) => {
+      resolveUnderlying = () => resolve('done');
+    });
+
+    await expect(
+      sem.run(() => withTimeout(underlying, 15, 'SharpTask')),
+    ).rejects.toThrow('SharpTask timed out after 15ms');
+
+    // Slot must STILL be held while `underlying` is unsettled
+    expect(sem.active).toBe(1);
+
+    let secondTaskStarted = false;
+    const secondPromise = sem.run(async () => {
+      secondTaskStarted = true;
+      return 'second';
+    });
+
+    // Third task while 1 is active and 1 is queued must reject with 503 SemaphoreQueueFullError
+    await expect(sem.run(async () => 'third')).rejects.toBeInstanceOf(
+      SemaphoreQueueFullError,
+    );
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(secondTaskStarted).toBe(false);
+
+    resolveUnderlying();
+    expect(await secondPromise).toBe('second');
+    expect(sem.active).toBe(0);
   });
 });
 
@@ -136,6 +169,29 @@ describe('createImageUploader', () => {
 
     expect(attempts).toBe(2);
     expect(result.storagePath).toBe('retried-unique.svg');
+  });
+
+  it('rolls back stored object when awaited onUploadRecord throws', async () => {
+    const storage = createMemoryStorageAdapter();
+    const uploader = createImageUploader({
+      storage,
+      defaultBucket: 'assets',
+      allowSvg: true,
+      awaitRecordHook: true,
+      onUploadRecord: async () => {
+        throw new Error('DB insert failed');
+      },
+    });
+
+    await expect(
+      uploader.uploadImage({
+        buffer: SAMPLE_SVG,
+        name: 'rollback.svg',
+        type: 'image/svg+xml',
+      }),
+    ).rejects.toThrow('DB insert failed');
+
+    expect(storage.size).toBe(0);
   });
 });
 

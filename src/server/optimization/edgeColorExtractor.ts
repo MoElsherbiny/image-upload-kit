@@ -49,7 +49,7 @@ export async function extractEdgeColorsFromBuffer(
   }
 }
 
-function computeEdgeColorSet(
+export function computeEdgeColorSet(
   data: Buffer,
   width: number,
   height: number,

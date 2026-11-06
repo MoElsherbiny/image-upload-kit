@@ -87,6 +87,11 @@ export default defineConfig(async (options): Promise<Options[]> => {
     await rm('dist', { recursive: true, force: true });
   }
 
+  const pkg = JSON.parse(await readFile('package.json', 'utf8')) as {
+    version?: string;
+  };
+  const pkgVersion = pkg.version || '2.0.0';
+
   return [
     {
       // One build graph for every library entry so that stateful modules
@@ -95,6 +100,7 @@ export default defineConfig(async (options): Promise<Options[]> => {
       entry: {
         index: 'src/index.ts',
         server: 'src/server/index.ts',
+        'server-handler': 'src/server/handler/index.ts',
         storage: 'src/storage/index.ts',
         blur: 'src/blur/index.ts',
         react: 'src/react/index.ts',
@@ -104,13 +110,12 @@ export default defineConfig(async (options): Promise<Options[]> => {
       dts: true,
       clean: false,
       sourcemap: true,
-      // `splitting: true` is required for CJS (tsup emits ESM chunks and
-      // converts them), and is the ESM default.
       splitting: true,
-      // Rollup-based treeshaking strips 'use client'; esbuild already
-      // tree-shakes ESM output.
       treeshake: false,
       external: PEER_EXTERNALS,
+      define: {
+        __PKG_VERSION__: JSON.stringify(pkgVersion),
+      },
       async onSuccess() {
         await applyUseClientDirectives();
         await bundleModularStyles();
@@ -125,10 +130,27 @@ export default defineConfig(async (options): Promise<Options[]> => {
       clean: false,
       sourcemap: true,
       splitting: false,
+      external: PEER_EXTERNALS,
+      define: {
+        __PKG_VERSION__: JSON.stringify(pkgVersion),
+      },
+    },
+    {
+      entry: {
+        bin: 'src/cli/bin.ts',
+      },
+      format: ['esm'],
+      dts: false,
+      clean: false,
+      sourcemap: true,
+      splitting: false,
       banner: {
         js: '#!/usr/bin/env node',
       },
       external: PEER_EXTERNALS,
+      define: {
+        __PKG_VERSION__: JSON.stringify(pkgVersion),
+      },
     },
   ];
 });

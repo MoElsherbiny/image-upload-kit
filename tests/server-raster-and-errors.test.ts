@@ -17,6 +17,7 @@ import {
   createLocalFsStorageAdapter,
   createMemoryStorageAdapter,
 } from '../src/storage';
+import { exifOrientation6, gifImage } from './helpers/imageFixtures';
 
 async function makeImg(
   fmt: 'jpeg' | 'png' | 'webp' | 'avif',
@@ -92,14 +93,30 @@ describe('Size-Guard Fallback & Quality Control', () => {
 });
 
 describe('EXIF, Transparency, Blur & Collision Hardening', () => {
-  it('auto-rotates images with EXIF orientation metadata', async () => {
-    const testBuffer = await sharp({
-      create: { width: 40, height: 20, channels: 3, background: { r: 255, g: 0, b: 0 } },
-    }).jpeg().withMetadata({ orientation: 6 }).toBuffer();
+  it('auto-rotates images with EXIF orientation metadata (including size-guard passthrough) and never labels GIF as jpeg', async () => {
+    const testBuffer = await exifOrientation6();
 
     const optimized = await optimizeImage(testBuffer, { outputFormat: 'jpeg' });
     expect(optimized.width).toBe(20);
     expect(optimized.height).toBe(40);
+
+    // Even when AVIF exceeds tiny oriented JPEG size (passthrough branch), pixels are rotated & EXIF stripped
+    const tinyRotated = await sharp({
+      create: { width: 40, height: 20, channels: 3, background: { r: 120, g: 80, b: 60 } },
+    })
+      .jpeg({ quality: 10 })
+      .withMetadata({ orientation: 6 })
+      .toBuffer();
+    const passthrough = await optimizeImage(tinyRotated, { maxDimensions: { width: 500, height: 500 } });
+    expect(passthrough.width).toBe(20);
+    expect(passthrough.height).toBe(40);
+    const passthroughMeta = await sharp(passthrough.buffer).metadata();
+    expect(passthroughMeta.orientation).toBeUndefined();
+
+    const gifBuf = await gifImage();
+    const gifOptimized = await optimizeImage(gifBuf, { maxDimensions: { width: 500, height: 500 } });
+    expect(gifOptimized.format).not.toBe('jpeg');
+    expect(['avif', 'webp']).toContain(gifOptimized.format);
   });
 
   it('ignores transparent pixels and extracts dominant color from visible content', async () => {

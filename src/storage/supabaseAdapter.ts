@@ -1,8 +1,11 @@
-import type {
-  StorageAdapter,
-  StorageFileEntry,
-  StorageUploadParams,
-  StorageUploadResult,
+import {
+  type StorageAdapter,
+  type StorageListOptions,
+  type StoragePaginatedListResult,
+  type StorageUploadParams,
+  type StorageUploadResult,
+  toPaginatedListResult,
+  validateStorageMetadata,
 } from './types';
 import {
   DEFAULT_PUBLIC_STORAGE_PREFIX,
@@ -38,6 +41,7 @@ export interface SupabaseBucketClientLike {
     path?: string,
     options?: {
       limit?: number;
+      offset?: number;
       sortBy?: { column: string; order: string };
     },
   ): Promise<{
@@ -73,9 +77,13 @@ export function createSupabaseStorageAdapter(
 
   return {
     async upload(params: StorageUploadParams): Promise<StorageUploadResult> {
+      validateStorageMetadata(params.metadata);
+
+      const isImmutable =
+        params.upsert === false && params.contentType.includes('image/avif');
       const cacheControl =
         params.cacheControl ||
-        (params.contentType.includes('image/avif')
+        (isImmutable
           ? 'public, max-age=31536000, immutable'
           : 'public, max-age=2592000, must-revalidate');
 
@@ -86,9 +94,9 @@ export function createSupabaseStorageAdapter(
           upsert: params.upsert === undefined ? true : params.upsert,
           cacheControl,
           metadata: {
+            ...params.metadata,
             uploadedAt: new Date().toISOString(),
             contentHash: params.contentHash || 'unknown',
-            ...params.metadata,
           },
         });
 
@@ -116,6 +124,15 @@ export function createSupabaseStorageAdapter(
       }
     },
 
+    async exists(bucket: string, path: string): Promise<boolean> {
+      const cleanPath = path.replace(/^\/+/, '');
+      const lastSlash = cleanPath.lastIndexOf('/');
+      const folder = lastSlash > 0 ? cleanPath.slice(0, lastSlash) : undefined;
+      const targetName = lastSlash > 0 ? cleanPath.slice(lastSlash + 1) : cleanPath;
+      const entries = await this.list!(bucket, folder);
+      return entries.some((entry) => entry.name === targetName);
+    },
+
     getPublicUrl(bucket: string, path: string): string {
       const {
         data: { publicUrl },
@@ -123,14 +140,22 @@ export function createSupabaseStorageAdapter(
       return publicUrl;
     },
 
-    async list(bucket: string, folder?: string): Promise<StorageFileEntry[]> {
+    async list(
+      bucket: string,
+      folder?: string,
+      listOptions?: StorageListOptions,
+    ): Promise<StoragePaginatedListResult> {
       const bucketClient = client.storage.from(bucket);
       if (!bucketClient.list) {
-        return [];
+        return toPaginatedListResult([]);
       }
 
+      const limit = listOptions?.limit ?? 1000;
+      const offset = listOptions?.cursor ? Number(listOptions.cursor) || 0 : 0;
+
       const { data, error } = await bucketClient.list(folder, {
-        limit: 1000,
+        limit,
+        ...(offset > 0 ? { offset } : {}),
         sortBy: { column: 'created_at', order: 'desc' },
       });
 
@@ -138,13 +163,20 @@ export function createSupabaseStorageAdapter(
         throw new Error(`Failed to list Supabase bucket files: ${error.message}`);
       }
 
-      return (data || [])
+      const entries = (data || [])
         .filter((f) => f.id !== null)
         .map((f) => ({
           name: f.name,
           id: f.id ?? undefined,
           createdAt: f.created_at ?? undefined,
         }));
+
+      const nextCursor =
+        listOptions?.limit !== undefined && entries.length >= limit
+          ? String(offset + entries.length)
+          : undefined;
+
+      return toPaginatedListResult(entries, nextCursor);
     },
 
     parseUrl(url: string): { bucket?: string; path: string } | null {

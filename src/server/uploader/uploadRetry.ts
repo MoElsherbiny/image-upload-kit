@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import type {
   StorageAdapter,
@@ -171,12 +171,12 @@ export interface MirrorBufferLocallyOptions {
 
 /**
  * Mirrors an uploaded image buffer to a local directory when `mirrorDir` is configured.
- * Safely swallows read-only filesystem errors on serverless runtimes and resolves
- * `publicUrlBase` when local mirroring succeeds.
+ * Uses non-blocking `fs/promises` I/O, safely swallows read-only filesystem errors on
+ * serverless runtimes, and resolves `publicUrlBase` when local mirroring succeeds.
  */
-export function mirrorBufferLocally(
+export async function mirrorBufferLocally(
   options: MirrorBufferLocallyOptions,
-): string {
+): Promise<string> {
   const {
     buffer,
     filename,
@@ -192,12 +192,15 @@ export function mirrorBufferLocally(
   const relativeTarget = (storagePath || filename).replace(/^\/+/, '');
 
   try {
-    const destPath = path.join(mirrorDir, relativeTarget);
-    const destDir = path.dirname(destPath);
-    if (!fs.existsSync(destDir)) {
-      fs.mkdirSync(destDir, { recursive: true });
+    const resolvedBase = path.resolve(mirrorDir);
+    const destPath = path.resolve(resolvedBase, relativeTarget);
+    const rel = path.relative(resolvedBase, destPath);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) {
+      return fallbackUrl;
     }
-    fs.writeFileSync(destPath, buffer);
+    const destDir = path.dirname(destPath);
+    await fs.mkdir(destDir, { recursive: true });
+    await fs.writeFile(destPath, buffer);
     if (publicUrlBase) {
       return `${publicUrlBase.replace(/\/+$/, '')}/${relativeTarget}`;
     }
@@ -206,4 +209,30 @@ export function mirrorBufferLocally(
   }
 
   return fallbackUrl;
+}
+
+/**
+ * Deletes any locally mirrored copy of `storagePath` across configured `mirrorDirs`.
+ */
+export async function deleteMirroredFiles(
+  mirrorDirs: string[],
+  storagePath: string,
+): Promise<void> {
+  if (!mirrorDirs.length || !storagePath) return;
+  const relativeTarget = storagePath.replace(/^\/+/, '');
+  if (!relativeTarget) return;
+
+  await Promise.all(
+    mirrorDirs.map(async (dir) => {
+      try {
+        const resolvedBase = path.resolve(dir);
+        const destPath = path.resolve(resolvedBase, relativeTarget);
+        const rel = path.relative(resolvedBase, destPath);
+        if (rel.startsWith('..') || path.isAbsolute(rel)) return;
+        await fs.unlink(destPath);
+      } catch {
+        // Ignore ENOENT or read-only fs errors
+      }
+    }),
+  );
 }

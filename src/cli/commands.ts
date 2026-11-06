@@ -11,6 +11,13 @@ import {
   validateBlurHashFile,
 } from './validation';
 
+declare const __PKG_VERSION__: string | undefined;
+
+const CLI_VERSION =
+  typeof __PKG_VERSION__ === 'string' && __PKG_VERSION__.length > 0
+    ? __PKG_VERSION__
+    : '2.0.0';
+
 const DEFAULT_IMAGES_DIR = 'public/images';
 const DEFAULT_MANIFEST_FILE = 'src/blur-hashes.json';
 
@@ -37,7 +44,7 @@ export function createCliProgram(): Command {
   program
     .name('img-upload-kit')
     .description('LQIP, BlurHash, and dominant color manifest CLI tooling')
-    .version('1.1.1');
+    .version(CLI_VERSION);
 
   program
     .command('generate')
@@ -87,7 +94,7 @@ export function createCliProgram(): Command {
     .description('Check whether disk images and manifest entries are in sync')
     .option('-d, --dir <dir>', 'Source images directory', DEFAULT_IMAGES_DIR)
     .option('-f, --file <file>', 'Manifest JSON path', DEFAULT_MANIFEST_FILE)
-    .option('--fix', 'Generate missing blur manifest entries automatically', false)
+    .option('--fix', 'Generate missing and remove orphaned blur manifest entries automatically', false)
     .action(async (opts: { dir: string; file: string; fix?: boolean }) => {
       const sync = await autoSyncCheck(opts.dir, opts.file);
       if (sync.inSync) {
@@ -97,12 +104,21 @@ export function createCliProgram(): Command {
       console.log(
         `Out of sync: ${sync.missingKeys.length} missing, ${sync.orphanedKeys.length} orphaned.`,
       );
-      if (opts.fix && sync.missingKeys.length > 0) {
-        const result = await generateBlurManifest(opts.dir, opts.file);
-        console.log(
-          `Synced manifest (processed: ${result.processed}, cached: ${result.cached}).`,
-        );
-        return;
+      if (opts.fix) {
+        if (sync.missingKeys.length > 0) {
+          const result = await generateBlurManifest(opts.dir, opts.file);
+          console.log(
+            `Synced manifest (processed: ${result.processed}, cached: ${result.cached}, removed orphans: ${sync.orphanedKeys.length}).`,
+          );
+          return;
+        }
+        if (sync.orphanedKeys.length > 0) {
+          const cleaned = await cleanupOrphanedHashes(opts.dir, opts.file);
+          console.log(
+            `Synced manifest (removed ${cleaned.removedCount} orphaned entries).`,
+          );
+          return;
+        }
       }
       if (!opts.fix) process.exitCode = 1;
     });

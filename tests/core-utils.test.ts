@@ -81,6 +81,9 @@ describe('formatters and localized status messages', () => {
     expect(getFriendlyErrorMessage('File size exceeds limit', 'ar')).toContain('الملف كبير جداً');
     expect(getFriendlyErrorMessage('Invalid format', 'en')).toContain('Invalid file type');
     expect(getFriendlyErrorMessage('Network fetch failed', 'en')).toContain('Network error');
+    expect(getFriendlyErrorMessage('TypeError: Failed to fetch', 'en')).toBe(
+      'Network error. Please check your connection and try again.',
+    );
     expect(getFriendlyErrorMessage('Operation timed out', 'ar')).toContain('انتهت مهلة الرفع');
     expect(getFriendlyErrorMessage('Custom backend message', 'en')).toBe('Custom backend message');
     expect(getFriendlyErrorMessage('', 'en')).toBe('Upload failed. Please try again.');

@@ -1,8 +1,10 @@
 import { encode as encodeBlurHash } from 'blurhash';
 import {
   blendEdgeColors,
+  computeEdgeColorSet,
   extractEdgeColorsFromBuffer,
 } from './edgeColorExtractor';
+import { loadSharp } from './loadSharp';
 import {
   BLUR_PLACEHOLDER_FALLBACK_WIDTH,
   BLUR_PLACEHOLDER_MAX_CHARS,
@@ -11,7 +13,24 @@ import {
   type BlurHashResult,
   type GenerateBlurOptions,
 } from './types';
-import { loadLqip, loadSharp } from './loadSharp';
+
+function encodeRawBlurHash(
+  data: Buffer,
+  width: number,
+  height: number,
+  componentX: number = 4,
+  componentY: number = 3,
+): string {
+  const clampedX = Math.max(1, Math.min(Math.round(componentX), width, 9));
+  const clampedY = Math.max(1, Math.min(Math.round(componentY), height, 9));
+  return encodeBlurHash(
+    new Uint8ClampedArray(data),
+    width,
+    height,
+    clampedX,
+    clampedY,
+  );
+}
 
 export async function encodeBlurHashString(
   buffer: Buffer,
@@ -25,15 +44,12 @@ export async function encodeBlurHashString(
     .raw()
     .toBuffer({ resolveWithObject: true });
 
-  const clampedX = Math.max(1, Math.min(Math.round(componentX), info.width, 9));
-  const clampedY = Math.max(1, Math.min(Math.round(componentY), info.height, 9));
-
-  return encodeBlurHash(
-    new Uint8ClampedArray(data),
+  return encodeRawBlurHash(
+    data,
     info.width,
     info.height,
-    clampedX,
-    clampedY,
+    componentX,
+    componentY,
   );
 }
 
@@ -47,7 +63,6 @@ export async function generateBlurPlaceholder(
   const quality = options.quality ?? BLUR_PLACEHOLDER_QUALITY;
   const maxChars = options.maxDataUrlChars ?? BLUR_PLACEHOLDER_MAX_CHARS;
   const sharp = await loadSharp();
-  const lqip = await loadLqip();
 
   try {
     let processBuffer = buffer;
@@ -57,32 +72,61 @@ export async function generateBlurPlaceholder(
         .toString('utf8')
         .replace(/<svg\b/gi, '<svg')
         .replace(/<\/svg\s*>/gi, '</svg>');
-      processBuffer = await sharp(Buffer.from(normalizedSvg, 'utf8'))
-        .resize(targetWidth, targetWidth, { fit: 'inside' })
-        .png()
+      processBuffer = Buffer.from(normalizedSvg, 'utf8');
+    }
+
+    const baseSize = Math.max(targetWidth, 128);
+    const rawSample = await sharp(processBuffer)
+      .rotate()
+      .resize(baseSize, baseSize, { fit: 'inside', withoutEnlargement: true })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    const rawInput = {
+      raw: {
+        width: rawSample.info.width,
+        height: rawSample.info.height,
+        channels: 4 as const,
+      },
+    };
+
+    const buildPlaceholderDataUrl = async (width: number): Promise<string> => {
+      const webpBuffer = await sharp(rawSample.data, rawInput)
+        .resize(width, width, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality, effort: 6, smartSubsample: true })
         .toBuffer();
+      return `data:image/webp;base64,${webpBuffer.toString('base64')}`;
+    };
+
+    let dataURL = await buildPlaceholderDataUrl(targetWidth);
+    if (dataURL.length > maxChars) {
+      dataURL = await buildPlaceholderDataUrl(fallbackWidth);
     }
 
-    const buildPlaceholder = (width: number, q: number) =>
-      lqip(processBuffer, {
-        outputFormat: 'webp',
-        resize: width,
-        outputOptions: { quality: q, effort: 6, smartSubsample: true },
-      });
-
-    let result = await buildPlaceholder(targetWidth, quality);
-    if (result.metadata.dataURIBase64.length > maxChars) {
-      result = await buildPlaceholder(fallbackWidth, quality);
-    }
-
-    const dataURL = result.metadata.dataURIBase64;
-    const edgeColors = await extractEdgeColorsFromBuffer(processBuffer);
+    const edgeColors = computeEdgeColorSet(
+      rawSample.data,
+      rawSample.info.width,
+      rawSample.info.height,
+    );
     const color = blendEdgeColors(edgeColors);
 
     let blurHash: string | undefined;
     if (options.includeBlurHash) {
       try {
-        blurHash = await encodeBlurHashString(processBuffer);
+        const hashSample =
+          rawSample.info.width <= 32 && rawSample.info.height <= 32
+            ? rawSample
+            : await sharp(rawSample.data, rawInput)
+                .resize(32, 32, { fit: 'inside' })
+                .ensureAlpha()
+                .raw()
+                .toBuffer({ resolveWithObject: true });
+        blurHash = encodeRawBlurHash(
+          hashSample.data,
+          hashSample.info.width,
+          hashSample.info.height,
+        );
       } catch {
         blurHash = undefined;
       }

@@ -1,8 +1,11 @@
-import type {
-  StorageAdapter,
-  StorageFileEntry,
-  StorageUploadParams,
-  StorageUploadResult,
+import {
+  type StorageAdapter,
+  type StorageFileEntry,
+  type StorageListOptions,
+  type StoragePaginatedListResult,
+  type StorageUploadParams,
+  type StorageUploadResult,
+  toPaginatedListResult,
 } from './types';
 
 export interface StoredMemoryObject {
@@ -15,8 +18,13 @@ export interface StoredMemoryObject {
 }
 
 export interface MemoryStorageAdapter extends StorageAdapter {
+  exists(bucket: string, path: string): Promise<boolean>;
   getPublicUrl(bucket: string, path: string): string;
-  list(bucket: string, folder?: string): Promise<StorageFileEntry[]>;
+  list(
+    bucket: string,
+    folder?: string,
+    options?: StorageListOptions,
+  ): Promise<StoragePaginatedListResult>;
   deleteByUrl(url: string): Promise<boolean>;
   getObject(bucket: string, path: string): StoredMemoryObject | undefined;
   clear(): void;
@@ -50,7 +58,11 @@ export function createMemoryStorageAdapter(
       const key = toKey(params.bucket, cleanPath);
 
       if (params.upsert === false && store.has(key)) {
-        throw new Error(`Object already exists at ${params.bucket}/${cleanPath}`);
+        const existsErr = new Error(
+          `Object already exists at ${params.bucket}/${cleanPath}`,
+        ) as Error & { code?: string };
+        existsErr.code = 'EEXIST';
+        throw existsErr;
       }
 
       store.set(key, {
@@ -74,9 +86,17 @@ export function createMemoryStorageAdapter(
       store.delete(key);
     },
 
+    async exists(bucket: string, path: string): Promise<boolean> {
+      return store.has(toKey(bucket, path));
+    },
+
     getPublicUrl,
 
-    async list(bucket: string, folder?: string): Promise<StorageFileEntry[]> {
+    async list(
+      bucket: string,
+      folder?: string,
+      listOptions?: StorageListOptions,
+    ): Promise<StoragePaginatedListResult> {
       const cleanFolder = folder ? folder.replace(/^\/+|\/+$/g, '') : '';
       const entries: StorageFileEntry[] = [];
 
@@ -94,7 +114,18 @@ export function createMemoryStorageAdapter(
         });
       }
 
-      return entries;
+      const offset = listOptions?.cursor ? Number(listOptions.cursor) || 0 : 0;
+      const limit = listOptions?.limit ?? entries.length;
+      const sliced =
+        listOptions?.limit !== undefined || offset > 0
+          ? entries.slice(offset, offset + limit)
+          : entries;
+      const nextCursor =
+        listOptions?.limit !== undefined && offset + sliced.length < entries.length
+          ? String(offset + sliced.length)
+          : undefined;
+
+      return toPaginatedListResult(sliced, nextCursor);
     },
 
     async deleteByUrl(url: string): Promise<boolean> {
