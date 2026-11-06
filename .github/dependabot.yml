@@ -4,9 +4,34 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "build(deps-dev)"
+    groups:
+      dev-minor-patch:
+        dependency-type: "development"
+        update-types: ["minor", "patch"]
+    ignore:
+      # TypeScript 6 deprecates `baseUrl`, which tsup's DTS (rollup-plugin-dts) still injects.
+      # Re-evaluate once the build migrates off tsup's DTS pipeline.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      # Vitest 5 drops Node 20, which is still inside `engines` (>=20).
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      # jsdom is pinned to the last major that supports the Node 20 CI matrix.
+      - dependency-name: "jsdom"
+        update-types: ["version-update:semver-major"]
+      # @types/node must track the lowest supported Node major (engines >=20).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(deps)"
+    groups:
+      github-actions:
+        patterns: ["*"]

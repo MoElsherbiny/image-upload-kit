@@ -228,7 +228,9 @@ describe('React Native & Expo Subpath (img-upload-kit/react-native)', () => {
     );
 
     const wrappers = container.querySelectorAll<HTMLElement>('[data-slot="animated-image"]');
-    expect(wrappers[0]?.style.aspectRatio).toBe(String(9 / 16));
+    // jsdom >= 27 serializes a numeric aspect-ratio as "<n> / 1"; compare the ratio, not the string.
+    const [num = '', den = '1'] = (wrappers[0]?.style.aspectRatio ?? '').split('/').map((p) => p.trim());
+    expect(Number(num) / Number(den)).toBeCloseTo(9 / 16, 6);
 
     const mainContain = wrappers[0]!.querySelector<HTMLImageElement>('[data-slot="animated-image-main"]')!;
     fireEvent.load(mainContain);
