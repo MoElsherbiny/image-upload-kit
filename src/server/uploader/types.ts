@@ -1,6 +1,8 @@
 import type { StorageAdapter, UploadRecordHook } from '../../storage/types';
 import type {
+  CropStrategy,
   ExplicitOutputFormat,
+  ImageAspectRatio,
   ImageDimensions,
   ImageOutputFormat,
   ImageUploadOptions,
@@ -19,6 +21,8 @@ export interface ProcessedImageBufferResult {
 
 export interface ProcessImageBufferOptions {
   maxDimensions?: ImageDimensions;
+  aspectRatio?: Exclude<ImageAspectRatio, 'auto'>;
+  crop?: CropStrategy;
   outputFormat?: ExplicitOutputFormat;
   quality?: number;
   includeBlurHash?: boolean;

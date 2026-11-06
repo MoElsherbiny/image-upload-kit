@@ -1,12 +1,4 @@
-import {
-  CheckCircleIcon as CheckCircle2,
-  LoaderIcon as Loader2,
-  PaletteIcon as Palette,
-  TypeIcon,
-  XIcon as X,
-  XCircleIcon as XCircle,
-} from '../icons';
-import { type CSSProperties, useMemo, useState } from 'react';
+import { type CSSProperties, type KeyboardEvent, useMemo, useState } from 'react';
 import type { BlurPlaceholderType } from '../../blur/types';
 import type { UploadLocale } from '../../types';
 import { useImageUploadContext } from '../context';
@@ -21,6 +13,7 @@ import { appendCacheBuster } from '../utils/sessionMetaCache';
 import { cx, resolveSlotClass, resolveUploadDataState } from '../utils/slotStyles';
 import { BlurImage } from './BlurImage';
 import { BlurVisualizationModal } from './BlurVisualizationModal';
+import { PreviewTileActions } from './PreviewTileActions';
 
 export interface PreviewTileProps {
   preview: ImagePreview;
@@ -33,6 +26,12 @@ export interface PreviewTileProps {
   onToggleSelect?: (id: string) => void;
   onEditAltText?: (id: string) => void;
   showCheckbox?: boolean;
+  index?: number;
+  totalCount?: number;
+  reorderable?: boolean;
+  showCoverBadge?: boolean;
+  onMove?: (fromIndex: number, toIndex: number) => void;
+  onSetCover?: (index: number) => void;
   onAdjustColor?: (id: string) => void;
   onChangeColor?: (id: string, color: string) => void;
   onChangeAltText?: (id: string, altText: string) => void;
@@ -46,11 +45,32 @@ export interface PreviewTileProps {
 }
 
 export function PreviewTile({
-  preview, onRemove, onCancel, onRetry, disabled = false, blurType = 'card', isSelected = false,
-  onToggleSelect, onEditAltText, showCheckbox = true, onAdjustColor,
-  onChangeColor, onChangeAltText, appendCacheBuster: appendBuster = false,
-  locale: propLocale, translations, renderImage,
-  unstyled: propUnstyled, className, style,
+  preview,
+  onRemove,
+  onCancel,
+  onRetry,
+  disabled = false,
+  blurType = 'card',
+  isSelected = false,
+  onToggleSelect,
+  onEditAltText,
+  showCheckbox = true,
+  index = 0,
+  totalCount = 1,
+  reorderable = false,
+  showCoverBadge = false,
+  onMove,
+  onSetCover,
+  onAdjustColor,
+  onChangeColor,
+  onChangeAltText,
+  appendCacheBuster: appendBuster = false,
+  locale: propLocale,
+  translations,
+  renderImage,
+  unstyled: propUnstyled,
+  className,
+  style,
 }: PreviewTileProps) {
   const ctx = useImageUploadContext();
   const isUnstyled = propUnstyled ?? ctx.unstyled;
@@ -81,7 +101,10 @@ export function PreviewTile({
   const isUploading = Boolean(preview.isUploading);
   const hasError = Boolean(preview.error);
   const visualState = resolveUploadDataState({
-    disabled, hasError, isUploading, hasContent: true,
+    disabled,
+    hasError,
+    isUploading,
+    hasContent: true,
   });
   const isSuccess = Boolean(
     !isUploading && !hasError && preview.originalSize && preview.optimizedSize,
@@ -93,6 +116,25 @@ export function PreviewTile({
         )
       : 0;
 
+  const handleTileKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (
+      reorderable &&
+      !disabled &&
+      !isUploading &&
+      !hasError &&
+      totalCount > 1 &&
+      event.altKey
+    ) {
+      if (event.key === 'ArrowLeft' && index > 0) {
+        event.preventDefault();
+        onMove?.(index, index - 1);
+      } else if (event.key === 'ArrowRight' && index < totalCount - 1) {
+        event.preventDefault();
+        onMove?.(index, index + 1);
+      }
+    }
+  };
+
   return (
     <div
       data-slot="tile"
@@ -100,6 +142,8 @@ export function PreviewTile({
       data-selected={isSelected || undefined}
       data-uploading={isUploading || undefined}
       data-error={hasError || undefined}
+      data-cover={(showCoverBadge && index === 0 && !hasError) || undefined}
+      tabIndex={reorderable && !disabled ? 0 : undefined}
       className={resolveSlotClass(
         cx('iuk-tile', isSelected && 'iuk-tile--selected', hasError && 'iuk-tile--error'),
         isUnstyled,
@@ -107,6 +151,7 @@ export function PreviewTile({
       )}
       style={style}
       onClick={() => onToggleSelect && !disabled && onToggleSelect(preview.id)}
+      onKeyDown={handleTileKeyDown}
     >
       <div data-slot="tile-media" className={cls('iuk-tile__media')}>
         <BlurImage
@@ -120,155 +165,34 @@ export function PreviewTile({
           renderImage={renderImage}
         />
 
-        {showCheckbox && !disabled && !isUploading && onToggleSelect && (
-          <div
-            data-slot="tile-checkbox"
-            className={cls('iuk-tile__checkbox')}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <input
-              type="checkbox"
-              checked={isSelected}
-              onChange={() => onToggleSelect(preview.id)}
-              aria-label={ui.selectImageAria}
-            />
-          </div>
-        )}
-
-        {!disabled && onEditAltText && (
-          <button
-            type="button"
-            data-slot="tile-alt-btn"
-            className={cls(
-              cx(
-                'iuk-tile__action iuk-tile__action--alt',
-                Boolean(preview.altText) && 'iuk-tile__action--has-alt',
-              ),
-            )}
-            onClick={(e) => {
-              e.stopPropagation();
-              onEditAltText(preview.id);
-            }}
-            aria-label={preview.altText ? ui.editAltTextAria : ui.addAltTextAria}
-            title={
-              preview.altText
-                ? ui.editPrefix.replace('{title}', preview.altText)
-                : ui.addDescriptionForA11y
-            }
-          >
-            {preview.altText ? <CheckCircle2 size={14} /> : <TypeIcon size={14} />}
-          </button>
-        )}
-
-        {!disabled && !isUploading && (
-          <button
-            type="button"
-            data-slot="tile-blur-btn"
-            className={cls('iuk-tile__action iuk-tile__action--blur')}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (onAdjustColor) onAdjustColor(preview.id);
-              else setShowBlurModal(true);
-            }}
-            aria-label={ui.adjustBlurColorAria}
-            title={ui.adjustBlurColorTitle}
-          >
-            <Palette size={14} />
-          </button>
-        )}
-
-        {!disabled && !isUploading && (
-          <button
-            type="button"
-            data-slot="tile-remove-btn"
-            className={cls('iuk-tile__action iuk-tile__action--remove')}
-            onClick={(e) => {
-              e.stopPropagation();
-              onRemove(preview.id);
-            }}
-            aria-label={ui.removeImageAria}
-          >
-            <X size={15} />
-          </button>
-        )}
-
-        {isUploading && (
-          <div data-slot="tile-overlay" className={cls('iuk-tile__overlay')}>
-            <Loader2 size={24} className={cls('iuk-spin')} />
-            <p className={cls('iuk-tile__status')}>
-              {preview.uploadMessage || `${ui.uploading}...`}
-            </p>
-            {preview.progress !== undefined && preview.progress > 0 && (
-              <div
-                role="progressbar"
-                aria-valuenow={Math.round(preview.progress)}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label={ui.uploading}
-                className={cls('iuk-progress-bar')}
-              >
-                <div
-                  className={cls('iuk-progress-bar__fill')}
-                  style={{ width: `${preview.progress}%` }}
-                />
-              </div>
-            )}
-            {!disabled && (
-              <button
-                type="button"
-                data-slot="tile-cancel"
-                className={cls('iuk-btn iuk-btn--secondary iuk-btn--sm iuk-tile__cancel-btn')}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  (onCancel ?? onRemove)(preview.id);
-                }}
-                aria-label={ui.cancelUpload}
-              >
-                <X size={13} />
-                <span>{ui.cancelUpload}</span>
-              </button>
-            )}
-          </div>
-        )}
-
-        {isSuccess && (
-          <div data-slot="tile-badge" className={cls('iuk-tile__badge iuk-tile__badge--success')}>
-            <CheckCircle2 size={13} />
-            {reductionPercent > 0 && <span>-{reductionPercent}%</span>}
-          </div>
-        )}
-
-        {!disabled && !isUploading && !hasError && actualBlurColor && (
-          <div data-slot="tile-color-badge" className={cls('iuk-tile__badge iuk-tile__badge--color')}>
-            <span className={cls('iuk-tile__color-dot')} style={{ backgroundColor: actualBlurColor }} />
-            <code>{actualBlurColor.toUpperCase()}</code>
-          </div>
-        )}
-
-        {hasError && (
-          <div
-            data-slot="tile-error"
-            role="alert"
-            className={cls('iuk-tile__overlay iuk-tile__overlay--error')}
-          >
-            <XCircle size={22} />
-            <p>{preview.error}</p>
-            {!disabled && onRetry && (
-              <button
-                type="button"
-                data-slot="tile-retry"
-                className={cls('iuk-btn iuk-btn--secondary iuk-btn--sm iuk-tile__retry-btn')}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRetry(preview.id);
-                }}
-                aria-label={ui.retryUpload}
-              >
-                <span>{ui.retryUpload}</span>
-              </button>
-            )}
-          </div>
-        )}
+        <PreviewTileActions
+          preview={preview}
+          ui={ui}
+          isUnstyled={isUnstyled}
+          disabled={disabled}
+          isUploading={isUploading}
+          hasError={hasError}
+          isSuccess={isSuccess}
+          reductionPercent={reductionPercent}
+          actualBlurColor={actualBlurColor}
+          showCheckbox={showCheckbox}
+          isSelected={isSelected}
+          index={index}
+          totalCount={totalCount}
+          reorderable={reorderable}
+          showCoverBadge={showCoverBadge}
+          onToggleSelect={onToggleSelect}
+          onEditAltText={onEditAltText}
+          onOpenBlurInspector={() => {
+            if (onAdjustColor) onAdjustColor(preview.id);
+            else setShowBlurModal(true);
+          }}
+          onRemove={onRemove}
+          onCancel={onCancel}
+          onRetry={onRetry}
+          onMove={onMove}
+          onSetCover={onSetCover}
+        />
       </div>
 
       <BlurVisualizationModal

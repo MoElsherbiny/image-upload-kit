@@ -1,10 +1,10 @@
 {
   "name": "img-upload-kit",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "publishConfig": {
     "access": "public"
   },
-  "description": "Full-featured image upload, Sharp AVIF/WebP optimization, LQIP & BlurHash generation, dominant edge-color extraction, pluggable StorageAdapter, and customizable/headless React UI components.",
+  "description": "Multi-platform image upload, Sharp AVIF/WebP optimization, smart aspect-ratio cropping, LQIP & BlurHash generation, dominant edge-color extraction, pluggable StorageAdapter, and React, Angular, React Native & Headless UI components.",
   "author": "Mohamed Elsherbiny <mo@buildwithsherbo.com> (https://www.buildwithsherbo.com/)",
   "homepage": "https://upload-kit.buildwithsherbo.com",
   "repository": {
@@ -17,13 +17,16 @@
   "keywords": [
     "image-upload",
     "headless-upload",
+    "react-upload",
+    "angular-upload",
+    "react-native-upload",
+    "expo-image-picker",
     "blurhash",
     "lqip",
     "sharp",
     "avif",
     "webp",
     "image-optimization",
-    "react-upload",
     "dominant-color",
     "storage-adapter"
   ],
@@ -34,6 +37,7 @@
   ],
   "files": [
     "dist",
+    "docs",
     "README.md",
     "MIGRATION.md",
     "CHANGELOG.md",
@@ -56,6 +60,16 @@
       "require": {
         "types": "./dist/index.d.cts",
         "default": "./dist/index.cjs"
+      }
+    },
+    "./client": {
+      "import": {
+        "types": "./dist/client.d.ts",
+        "default": "./dist/client.js"
+      },
+      "require": {
+        "types": "./dist/client.d.cts",
+        "default": "./dist/client.cjs"
       }
     },
     "./server": {
@@ -118,6 +132,30 @@
         "default": "./dist/headless.cjs"
       }
     },
+    "./angular": {
+      "import": {
+        "types": "./dist/angular.d.ts",
+        "default": "./dist/angular.js"
+      },
+      "require": {
+        "types": "./dist/angular.d.cts",
+        "default": "./dist/angular.cjs"
+      }
+    },
+    "./react-native": {
+      "react-native": {
+        "types": "./dist/react-native.d.ts",
+        "default": "./dist/react-native.js"
+      },
+      "import": {
+        "types": "./dist/react-native.d.ts",
+        "default": "./dist/react-native.js"
+      },
+      "require": {
+        "types": "./dist/react-native.d.cts",
+        "default": "./dist/react-native.cjs"
+      }
+    },
     "./cli": {
       "import": {
         "types": "./dist/cli.d.ts",
@@ -153,12 +191,17 @@
     "commander": "^14.0.0"
   },
   "peerDependencies": {
+    "@angular/core": ">=17.0.0",
     "lqip-modern": "^2.2.1",
     "react": ">=18.0.0",
     "react-dom": ">=18.0.0",
+    "react-native": ">=0.72.0",
     "sharp": "^0.34.5"
   },
   "peerDependenciesMeta": {
+    "@angular/core": {
+      "optional": true
+    },
     "lqip-modern": {
       "optional": true
     },
@@ -166,6 +209,9 @@
       "optional": true
     },
     "react-dom": {
+      "optional": true
+    },
+    "react-native": {
       "optional": true
     },
     "sharp": {

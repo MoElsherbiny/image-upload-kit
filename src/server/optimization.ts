@@ -1,4 +1,5 @@
 export * from './optimization/types';
+export * from './optimization/resizePlan';
 export * from './optimization/imageOptimizer';
 export * from './optimization/blurGenerator';
 export * from './optimization/edgeColorExtractor';

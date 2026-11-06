@@ -24,7 +24,13 @@ export interface AllowClientOverrides {
   format?: boolean;
   /** Allow client `quality` field (1–100, clamped to the active preset's `quality` when set). */
   quality?: boolean;
+  /** Allow client `aspectRatio` and `crop` fields. */
+  aspectRatio?: boolean;
+  /** Allow client `crop` field (`'attention' | 'entropy' | 'center'`). */
+  crop?: boolean;
 }
+
+export type ClientOverridesConfig = AllowClientOverrides;
 
 export interface UploadErrorContext {
   action: 'upload' | 'delete';
@@ -54,7 +60,7 @@ export interface UploadHttpHandlerOptions<TPreset extends string = string> {
   /**
    * Opt-in switches for client-supplied FormData overrides. All default to `false` (ignored).
    */
-  allowClientOverrides?: AllowClientOverrides;
+  allowClientOverrides?: AllowClientOverrides | boolean;
   /**
    * Allow clients to override `bucket` via FormData or DELETE query params. Defaults to `false`.
    */

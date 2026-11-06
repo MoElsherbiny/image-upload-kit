@@ -103,5 +103,13 @@ export interface UploadTranslations {
   retryUpload: string;
   minImagesError: string;
   requiredFieldError: string;
+  moveEarlier: string;
+  moveLater: string;
+  setAsCover: string;
+  coverBadge: string;
+  reorderedAnnouncement: string;
+  coverSetAnnouncement: string;
+  transformingFile: string;
+  heicNotSupported: string;
   blurModal: BlurModalTranslations;
 }

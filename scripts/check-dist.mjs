@@ -11,16 +11,29 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const CLIENT_ENTRIES = ['react', 'headless'];
-const SERVER_SAFE_ENTRIES = ['index', 'server', 'server-handler', 'storage', 'blur'];
+const SERVER_SAFE_ENTRIES = [
+  'index',
+  'client',
+  'server',
+  'server-handler',
+  'storage',
+  'blur',
+  'angular',
+];
 const REACT_IMPORT_RE =
   /(?:from\s*|import\s*\(\s*|require\(\s*)["']react(?:\/jsx-runtime|-dom)?["']/;
+const REACT_DOM_IMPORT_RE =
+  /(?:from\s*|import\s*\(\s*|require\(\s*)["']react-dom["']/;
 const SHARP_IMPORT_RE =
   /(?:from\s*|import\s*\(\s*|require\(\s*)["'](?:sharp|lqip-modern)["']/;
 const FS_IMPORT_RE =
   /(?:from\s*|import\s*\(\s*|require\(\s*)["'](?:node:)?fs(?:\/promises)?["']/;
+const CANVAS_RE = /createElement\(\s*["']canvas["']\s*\)|decodeBlurHashToDataURL/;
 const LOCAL_IMPORT_RE =
   /(?:from\s*|import\s*\(\s*|require\(\s*|^import\s*)["'](\.\/[^"']+)["']/gm;
-const CONTEXT_DEF_RE = /ImageUploadContext\s*=\s*(?:\(0,\s*)?[\w$.]*createContext/g;
+const CONTEXT_DEF_RE = /\bImageUploadContext\s*=\s*(?:\(0,\s*)?[\w$.]*createContext/g;
+const NATIVE_CONTEXT_DEF_RE =
+  /\bNativeImageUploadContext\s*=\s*(?:\(0,\s*)?[\w$.]*createContext/g;
 
 function read(distDir, file) {
   return readFileSync(path.join(distDir, file), 'utf8');
@@ -87,12 +100,21 @@ export function runDistChecks(rootDir = process.cwd()) {
       }
     }
 
-    // 2. Exactly one ImageUploadContext definition per module format.
+    // 2. Exactly one ImageUploadContext and one NativeImageUploadContext definition per module format.
     const contextDefs = jsFiles.reduce(
       (count, file) => count + (read(distDir, file).match(CONTEXT_DEF_RE)?.length ?? 0),
       0,
     );
     check(contextDefs === 1, `exactly one ImageUploadContext createContext() in *.${ext} (found ${contextDefs})`);
+
+    const nativeContextDefs = jsFiles.reduce(
+      (count, file) => count + (read(distDir, file).match(NATIVE_CONTEXT_DEF_RE)?.length ?? 0),
+      0,
+    );
+    check(
+      nativeContextDefs === 1,
+      `exactly one NativeImageUploadContext createContext() in *.${ext} (found ${nativeContextDefs})`,
+    );
 
     // 3. Exactly one blurService singleton instantiation per module format.
     const blurSingletons = jsFiles.reduce(
@@ -101,8 +123,8 @@ export function runDistChecks(rootDir = process.cwd()) {
     );
     check(blurSingletons === 1, `exactly one blurService singleton in *.${ext} (found ${blurSingletons})`);
 
-    // 4. Server-safe entries never pull in React or 'use client'; the root
-    //    entry never pulls in sharp / lqip-modern (statically or lazily).
+    // 4. Server-safe & non-React entries never pull in React or 'use client';
+    //    root/client/angular/react-native never pull in sharp / lqip-modern.
     for (const entry of SERVER_SAFE_ENTRIES) {
       const graph = collectGraph(distDir, `${entry}.${ext}`);
       const reactFiles = graph.filter((file) => {
@@ -114,6 +136,26 @@ export function runDistChecks(rootDir = process.cwd()) {
     const rootGraph = collectGraph(distDir, `index.${ext}`);
     const sharpFiles = rootGraph.filter((file) => SHARP_IMPORT_RE.test(read(distDir, file)));
     check(sharpFiles.length === 0, `dist/index.${ext} graph does not import sharp/lqip-modern ${sharpFiles.join(', ')}`.trim());
+
+    const clientGraph = collectGraph(distDir, `client.${ext}`);
+    const clientHeavyFiles = clientGraph.filter((file) => {
+      const code = read(distDir, file);
+      return SHARP_IMPORT_RE.test(code) || FS_IMPORT_RE.test(code) || CANVAS_RE.test(code);
+    });
+    check(
+      clientHeavyFiles.length === 0,
+      `dist/client.${ext} graph is free of sharp/fs/canvas ${clientHeavyFiles.join(', ')}`.trim(),
+    );
+
+    const rnGraph = collectGraph(distDir, `react-native.${ext}`);
+    const rnDomFiles = rnGraph.filter((file) => {
+      const code = read(distDir, file);
+      return REACT_DOM_IMPORT_RE.test(code) || CANVAS_RE.test(code);
+    });
+    check(
+      rnDomFiles.length === 0,
+      `dist/react-native.${ext} graph is free of react-dom/canvas ${rnDomFiles.join(', ')}`.trim(),
+    );
 
     const handlerGraph = collectGraph(distDir, `server-handler.${ext}`);
     const handlerHeavyFiles = handlerGraph.filter((file) => {
@@ -128,7 +170,8 @@ export function runDistChecks(rootDir = process.cwd()) {
 
   // 5. Every package.json export target exists.
   const pkg = JSON.parse(readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
-  for (const target of collectExportTargets(pkg.exports)) {
+  const targets = [...new Set(collectExportTargets(pkg.exports))];
+  for (const target of targets) {
     if (target.includes('*')) {
       const dir = path.join(rootDir, path.dirname(target));
       const suffix = path.basename(target).replace('*', '');

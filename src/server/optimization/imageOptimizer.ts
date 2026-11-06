@@ -2,6 +2,7 @@ import { DEFAULT_IMAGE_DIMENSIONS } from '../../types';
 import { UploadValidationError } from '../handler/responses';
 import { sanitizeSvg } from '../security/sanitizeSvg';
 import { loadSharp } from './loadSharp';
+import { buildResizePlan, needsAspectCrop } from './resizePlan';
 import {
   DEFAULT_LIMIT_INPUT_PIXELS,
   type OptimizedImageResult,
@@ -53,30 +54,21 @@ export async function optimizeImage(
 ): Promise<OptimizedImageResult> {
   const sharp = await loadSharp();
   const maxDimensions = options.maxDimensions || DEFAULT_IMAGE_DIMENSIONS;
-  const { outputFormat, quality } = options;
-  const limitInputPixels =
-    options.limitInputPixels ?? DEFAULT_LIMIT_INPUT_PIXELS;
+  const { outputFormat, quality, aspectRatio, crop } = options;
+  const limitInputPixels = options.limitInputPixels ?? DEFAULT_LIMIT_INPUT_PIXELS;
   const primaryEffort = options.effort ?? PRIMARY_AVIF_EFFORT;
   const retryEffort =
-    options.effort !== undefined
-      ? Math.max(1, options.effort - 1)
-      : RETRY_AVIF_EFFORT;
+    options.effort !== undefined ? Math.max(1, options.effort - 1) : RETRY_AVIF_EFFORT;
 
-  let pipeline = sharp(buffer, {
-    failOn: 'error',
-    limitInputPixels,
-  }).rotate();
+  let pipeline = sharp(buffer, { failOn: 'error', limitInputPixels }).rotate();
 
   let metadata;
   try {
     metadata = await pipeline.metadata();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (
-      msg.toLowerCase().includes('pixel limit') ||
-      msg.toLowerCase().includes('exceeds') ||
-      msg.toLowerCase().includes('unsupported image format')
-    ) {
+    const lower = msg.toLowerCase();
+    if (lower.includes('pixel limit') || lower.includes('exceeds') || lower.includes('unsupported image format')) {
       throw new UploadValidationError(msg);
     }
     throw err;
@@ -85,9 +77,7 @@ export async function optimizeImage(
 
   if (originalFormat === 'svg') {
     const sanitizedBuffer = sanitizeSvg(buffer);
-    const svgText = sanitizedBuffer.toString('utf8');
-    const dims = extractSvgDimensions(svgText, metadata.width, metadata.height);
-
+    const dims = extractSvgDimensions(sanitizedBuffer.toString('utf8'), metadata.width, metadata.height);
     return {
       buffer: sanitizedBuffer,
       width: dims.width,
@@ -98,39 +88,48 @@ export async function optimizeImage(
     };
   }
 
-  const isPhoto =
-    originalFormat === 'jpeg' ||
-    Boolean(metadata.density && metadata.density > 150);
+  const isRotated90 =
+    typeof metadata.orientation === 'number' &&
+    metadata.orientation >= 5 &&
+    metadata.orientation <= 8;
+  const orientedWidth = isRotated90 ? metadata.height : metadata.width;
+  const orientedHeight = isRotated90 ? metadata.width : metadata.height;
 
-  let baseQuality = quality ?? (isPhoto ? 85 : 88);
-  baseQuality = Math.max(1, Math.min(100, baseQuality));
+  const isPhoto = originalFormat === 'jpeg' || Boolean(metadata.density && metadata.density > 150);
+  const baseQuality = Math.max(1, Math.min(100, quality ?? (isPhoto ? 85 : 88)));
 
-  pipeline = pipeline.resize(maxDimensions.width, maxDimensions.height, {
-    fit: 'inside',
-    withoutEnlargement: true,
-    kernel: 'lanczos3',
+  const resizePlan = buildResizePlan({
+    width: orientedWidth,
+    height: orientedHeight,
+    maxDimensions,
+    aspectRatio,
+    crop,
   });
 
-  if (
-    outputFormat === 'jpeg' ||
-    outputFormat === 'png' ||
-    outputFormat === 'webp'
-  ) {
+  pipeline =
+    resizePlan.fit === 'cover'
+      ? pipeline.resize(resizePlan.width, resizePlan.height, {
+          fit: 'cover',
+          position: resizePlan.position,
+          kernel: 'lanczos3',
+        })
+      : pipeline.resize(resizePlan.width, resizePlan.height, {
+          fit: 'inside',
+          withoutEnlargement: true,
+          kernel: 'lanczos3',
+        });
+
+  if (outputFormat === 'jpeg' || outputFormat === 'png' || outputFormat === 'webp') {
     let cloned = pipeline.clone();
-    if (outputFormat === 'jpeg') {
-      cloned = cloned.jpeg({ quality: baseQuality, mozjpeg: true });
-    } else if (outputFormat === 'png') {
-      cloned = cloned.png();
-    } else if (outputFormat === 'webp') {
-      cloned = cloned.webp({ quality: baseQuality, effort: 4 });
-    }
+    if (outputFormat === 'jpeg') cloned = cloned.jpeg({ quality: baseQuality, mozjpeg: true });
+    else if (outputFormat === 'png') cloned = cloned.png();
+    else cloned = cloned.webp({ quality: baseQuality, effort: 4 });
 
     const outputBuffer = await cloned.toBuffer({ resolveWithObject: true });
-
     return {
       buffer: outputBuffer.data,
-      width: outputBuffer.info.width || maxDimensions.width,
-      height: outputBuffer.info.height || maxDimensions.height,
+      width: outputBuffer.info.width || resizePlan.width,
+      height: outputBuffer.info.height || resizePlan.height,
       format: outputFormat,
       size: outputBuffer.info.size,
       quality: baseQuality,
@@ -139,12 +138,7 @@ export async function optimizeImage(
 
   const avifBuffer = await pipeline
     .clone()
-    .avif({
-      quality: baseQuality,
-      effort: primaryEffort,
-      chromaSubsampling: '4:2:0',
-      bitdepth: 8,
-    })
+    .avif({ quality: baseQuality, effort: primaryEffort, chromaSubsampling: '4:2:0', bitdepth: 8 })
     .toBuffer({ resolveWithObject: true });
 
   const avifSize = avifBuffer.info.size;
@@ -153,80 +147,55 @@ export async function optimizeImage(
   if (avifSize <= originalSize || outputFormat === 'avif') {
     return {
       buffer: avifBuffer.data,
-      width: avifBuffer.info.width || maxDimensions.width,
-      height: avifBuffer.info.height || maxDimensions.height,
+      width: avifBuffer.info.width || resizePlan.width,
+      height: avifBuffer.info.height || resizePlan.height,
       format: 'avif',
       size: avifSize,
       quality: baseQuality,
     };
   }
 
-  const scaledQuality = Math.max(
-    40,
-    Math.round(baseQuality * Math.sqrt(originalSize / avifSize)),
-  );
+  const scaledQuality = Math.max(40, Math.round(baseQuality * Math.sqrt(originalSize / avifSize)));
 
   const avifRetry = await pipeline
     .clone()
-    .avif({
-      quality: scaledQuality,
-      effort: retryEffort,
-      chromaSubsampling: '4:2:0',
-      bitdepth: 8,
-    })
+    .avif({ quality: scaledQuality, effort: retryEffort, chromaSubsampling: '4:2:0', bitdepth: 8 })
     .toBuffer({ resolveWithObject: true });
 
   if (avifRetry.info.size <= originalSize) {
     return {
       buffer: avifRetry.data,
-      width: avifRetry.info.width || maxDimensions.width,
-      height: avifRetry.info.height || maxDimensions.height,
+      width: avifRetry.info.width || resizePlan.width,
+      height: avifRetry.info.height || resizePlan.height,
       format: 'avif',
       size: avifRetry.info.size,
       quality: scaledQuality,
     };
   }
 
-  const isRotated90 =
-    typeof metadata.orientation === 'number' &&
-    metadata.orientation >= 5 &&
-    metadata.orientation <= 8;
-  const orientedWidth = isRotated90 ? metadata.height : metadata.width;
-  const orientedHeight = isRotated90 ? metadata.width : metadata.height;
-
   const wasDimensionCapped =
-    (orientedWidth ?? 0) > maxDimensions.width ||
-    (orientedHeight ?? 0) > maxDimensions.height;
+    (orientedWidth ?? 0) > maxDimensions.width || (orientedHeight ?? 0) > maxDimensions.height;
+  const isCropRequired = needsAspectCrop(orientedWidth, orientedHeight, aspectRatio);
+  const isPassthroughCandidate =
+    !wasDimensionCapped && !isCropRequired && PASSTHROUGH_FORMATS.has(originalFormat ?? '');
 
-  if (!wasDimensionCapped && PASSTHROUGH_FORMATS.has(originalFormat ?? '')) {
+  if (isPassthroughCandidate) {
     const srcFmt = originalFormat as 'jpeg' | 'png' | 'webp' | 'avif';
     let passthrough = pipeline.clone();
-    if (srcFmt === 'jpeg') {
-      passthrough = passthrough.jpeg({ quality: baseQuality, mozjpeg: true });
-    } else if (srcFmt === 'png') {
-      passthrough = passthrough.png({ compressionLevel: 9 });
-    } else if (srcFmt === 'webp') {
-      passthrough = passthrough.webp({ quality: baseQuality, effort: 4 });
-    } else {
-      passthrough = passthrough.avif({
-        quality: baseQuality,
-        effort: retryEffort,
-      });
-    }
+    if (srcFmt === 'jpeg') passthrough = passthrough.jpeg({ quality: baseQuality, mozjpeg: true });
+    else if (srcFmt === 'png') passthrough = passthrough.png({ compressionLevel: 9 });
+    else if (srcFmt === 'webp') passthrough = passthrough.webp({ quality: baseQuality, effort: 4 });
+    else passthrough = passthrough.avif({ quality: baseQuality, effort: retryEffort });
 
     let passthroughOut = await passthrough.toBuffer({ resolveWithObject: true });
     if (srcFmt === 'jpeg' && passthroughOut.info.size > originalSize) {
-      passthroughOut = await pipeline
-        .clone()
-        .jpeg({ quality: 10 })
-        .toBuffer({ resolveWithObject: true });
+      passthroughOut = await pipeline.clone().jpeg({ quality: 10 }).toBuffer({ resolveWithObject: true });
     }
 
     return {
       buffer: passthroughOut.data,
-      width: passthroughOut.info.width || orientedWidth || maxDimensions.width,
-      height:
-        passthroughOut.info.height || orientedHeight || maxDimensions.height,
+      width: passthroughOut.info.width || orientedWidth || resizePlan.width,
+      height: passthroughOut.info.height || orientedHeight || resizePlan.height,
       format: srcFmt,
       size: passthroughOut.info.size,
       quality: baseQuality,
@@ -240,27 +209,13 @@ export async function optimizeImage(
 
   const useWebP = webpBuffer.info.size <= avifRetry.info.size;
   const winner = useWebP
-    ? {
-        buf: webpBuffer.data,
-        fmt: 'webp' as const,
-        sz: webpBuffer.info.size,
-        w: webpBuffer.info.width,
-        h: webpBuffer.info.height,
-        q: baseQuality,
-      }
-    : {
-        buf: avifRetry.data,
-        fmt: 'avif' as const,
-        sz: avifRetry.info.size,
-        w: avifRetry.info.width,
-        h: avifRetry.info.height,
-        q: scaledQuality,
-      };
+    ? { buf: webpBuffer.data, fmt: 'webp' as const, sz: webpBuffer.info.size, w: webpBuffer.info.width, h: webpBuffer.info.height, q: baseQuality }
+    : { buf: avifRetry.data, fmt: 'avif' as const, sz: avifRetry.info.size, w: avifRetry.info.width, h: avifRetry.info.height, q: scaledQuality };
 
   return {
     buffer: winner.buf,
-    width: winner.w || maxDimensions.width,
-    height: winner.h || maxDimensions.height,
+    width: winner.w || resizePlan.width,
+    height: winner.h || resizePlan.height,
     format: winner.fmt,
     size: winner.sz,
     quality: winner.q,

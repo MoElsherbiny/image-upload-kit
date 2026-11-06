@@ -1,7 +1,10 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { BlurPlaceholderType } from '../blur/types';
+import type { TransformAssetFn } from '../client/types';
 import type {
+  CropStrategy,
   ExplicitOutputFormat,
+  ImageAspectRatio,
   ImageDimensions,
   QualityLevel,
   UploadedImageData,
@@ -39,6 +42,8 @@ export interface ClientUploadRequestParams {
   outputFormat?: ExplicitOutputFormat;
   quality?: number;
   maxDimensions?: ImageDimensions;
+  aspectRatio?: Exclude<ImageAspectRatio, 'auto'>;
+  crop?: CropStrategy;
   metadata?: Record<string, string>;
   signal?: AbortSignal;
   onUploadProgress?: (percent: number) => void;
@@ -89,6 +94,12 @@ export interface BaseImageUploadProps<
   maxSizeMB?: number;
   /** Maximum bounding box dimensions sent to the server */
   maxDimensions?: ImageDimensions;
+  /** Target aspect ratio for client preview & server-side smart cropping */
+  aspectRatio?: ImageAspectRatio;
+  /** Smart crop focus strategy when `aspectRatio` is configured */
+  crop?: CropStrategy;
+  /** Pre-upload async file transformation hook (e.g. cropper modal, watermark, client resize) */
+  transformAsset?: TransformAssetFn<File>;
   /** Accepted MIME types string for `<input type="file" accept="..." />` */
   accept?: string;
   /** Disable interactions */
@@ -174,6 +185,12 @@ export interface MultiImageUploadProps<
   minImages?: number;
   allowFolder?: boolean;
   maxParallelUploads?: number;
+  /** Enable accessible gallery reordering controls & keyboard shortcuts */
+  reorderable?: boolean;
+  /** Show "Cover" badge on the first image (`index === 0`). Defaults to `Boolean(reorderable)`. */
+  showCoverBadge?: boolean;
+  /** Invoked whenever gallery order changes via `move` or `setCover` */
+  onReorder?: (images: UploadedImageData[]) => void;
   /** Invoked when a batch or retry upload begins */
   onUploadStart?: (files: File[]) => void;
   /** Invoked when a batch or retry upload finishes with the newly uploaded items */

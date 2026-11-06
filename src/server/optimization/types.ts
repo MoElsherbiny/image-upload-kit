@@ -1,5 +1,7 @@
 import type {
+  CropStrategy,
   ExplicitOutputFormat,
+  ImageAspectRatio,
   ImageDimensions,
   ImageOutputFormat,
 } from '../../types';
@@ -22,6 +24,10 @@ export interface BlurHashResult {
 export interface OptimizeImageOptions {
   /** Max bounding box dimensions (fit: 'inside', withoutEnlargement: true). Defaults to 1920x1080. */
   maxDimensions?: ImageDimensions;
+  /** Target aspect ratio for server-side smart cropping (Sharp `fit: 'cover'`) */
+  aspectRatio?: Exclude<ImageAspectRatio, 'auto'>;
+  /** Smart crop focus strategy when `aspectRatio` is configured. Defaults to `'attention'`. */
+  crop?: CropStrategy;
   /** Explicit output format; omit for smart size-guarded AVIF/WebP selection */
   outputFormat?: ExplicitOutputFormat;
   /** 1–100 compression quality. Defaults to smart photo/graphic heuristic (85–88). */
@@ -31,6 +37,8 @@ export interface OptimizeImageOptions {
   /** AVIF/WebP encoding effort (defaults to 6) */
   effort?: number;
 }
+
+export type OptimizationConfig = OptimizeImageOptions;
 
 export const DEFAULT_LIMIT_INPUT_PIXELS = 50_000_000;
 

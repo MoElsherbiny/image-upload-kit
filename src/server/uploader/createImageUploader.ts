@@ -153,6 +153,8 @@ export function createImageUploader<
         allowSvg, explicitAllowSvg,
       );
       const maxDimensions = uploadOptions.maxDimensions ?? presetConfig?.maxDimensions ?? defaultMaxDimensions;
+      const aspectRatio = uploadOptions.aspectRatio ?? presetConfig?.aspectRatio;
+      const crop = uploadOptions.crop ?? presetConfig?.crop;
       const outputFormat = uploadOptions.outputFormat ?? presetConfig?.outputFormat;
       const quality = uploadOptions.quality ?? presetConfig?.quality;
       const includeBlurHash = uploadOptions.includeBlurHash ?? presetConfig?.includeBlurHash ?? defaultIncludeBlurHash;
@@ -180,7 +182,7 @@ export function createImageUploader<
         const { optimized, blurData, contentHash, originalSize } = await semaphore.run(
           () =>
             processImageBuffer(originalBuffer, {
-              maxDimensions, outputFormat, quality, includeBlurHash,
+              maxDimensions, aspectRatio, crop, outputFormat, quality, includeBlurHash,
               optimizationTimeoutMs, blurTimeoutMs, limitInputPixels,
               effort: defaultEffort, allowSvg, signal: uploadOptions.signal,
             }),
@@ -214,6 +216,7 @@ export function createImageUploader<
                   generateImageVariants({
                     sourceBuffer: originalBuffer, format: mainFormat,
                     quality: optimized.quality ?? quality, effort: defaultEffort, limitInputPixels,
+                    aspectRatio, crop,
                     mainWidth: optimized.width, mainHeight: optimized.height, mainUrl: resolvedUrl,
                     baseStoragePath: uploadResult.path, baseFilename: storageTarget.filename,
                     bucket: storageTarget.bucket, storage, variantWidths,

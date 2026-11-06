@@ -145,12 +145,16 @@ export interface MultiEmptyRenderContext {
 export interface MultiTileRenderContext {
   item: ImagePreview;
   index: number;
+  isCover?: boolean;
   isSelected: boolean;
   disabled: boolean;
   toggleSelect: () => void;
   remove: () => void;
   cancel: () => void;
   retry: () => void;
+  moveEarlier?: () => void;
+  moveLater?: () => void;
+  setAsCover?: () => void;
   openAltTextModal: () => void;
   setAltText: (altText: string) => void;
   setBlurColor: (hex: string) => void;

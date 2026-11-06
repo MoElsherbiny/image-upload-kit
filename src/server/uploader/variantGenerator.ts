@@ -1,11 +1,13 @@
 import type { StorageAdapter, UploadRecordHook } from '../../storage/types';
 import type {
+  CropStrategy,
+  ImageAspectRatio,
   ImageOutputFormat,
   ImageUploadRecord,
   ImageVariant,
   UploadPresetConfig,
 } from '../../types';
-import { SVG_MIME_TYPE } from '../../types';
+import { resolveAspectRatio, SVG_MIME_TYPE } from '../../types';
 import {
   DEFAULT_LIMIT_INPUT_PIXELS,
   PRIMARY_AVIF_EFFORT,
@@ -19,6 +21,8 @@ export interface GenerateImageVariantsParams {
   quality?: number;
   effort?: number;
   limitInputPixels?: number;
+  aspectRatio?: Exclude<ImageAspectRatio, 'auto'>;
+  crop?: CropStrategy;
   mainWidth: number;
   mainHeight: number;
   mainUrl: string;
@@ -69,6 +73,8 @@ export async function generateImageVariants(
     quality,
     effort,
     limitInputPixels,
+    aspectRatio,
+    crop,
     mainWidth,
     mainHeight,
     mainUrl,
@@ -103,6 +109,7 @@ export async function generateImageVariants(
   const sharp = await loadSharp();
   const baseQuality = Math.max(1, Math.min(100, quality ?? 85));
   const avifEffort = effort ?? PRIMARY_AVIF_EFFORT;
+  const targetRatio = resolveAspectRatio(aspectRatio);
   const basePipeline = sharp(sourceBuffer, {
     failOn: 'error',
     limitInputPixels: limitInputPixels ?? DEFAULT_LIMIT_INPUT_PIXELS,
@@ -110,11 +117,24 @@ export async function generateImageVariants(
 
   const variants = await Promise.all(
     targetWidths.map(async (w): Promise<ImageVariant> => {
-      let branch = basePipeline.clone().resize({
-        width: w,
-        withoutEnlargement: true,
-        kernel: 'lanczos3',
-      });
+      let branch = basePipeline
+        .clone()
+        .resize(
+          targetRatio !== undefined
+            ? {
+                width: w,
+                height: Math.max(1, Math.round(w / targetRatio)),
+                fit: 'cover',
+                position: crop || 'attention',
+                withoutEnlargement: true,
+                kernel: 'lanczos3',
+              }
+            : {
+                width: w,
+                withoutEnlargement: true,
+                kernel: 'lanczos3',
+              },
+        );
 
       if (format === 'jpeg') {
         branch = branch.jpeg({ quality: baseQuality, mozjpeg: true });
@@ -158,7 +178,9 @@ export async function generateImageVariants(
         width: out.info.width || w,
         height:
           out.info.height ||
-          Math.max(1, Math.round((mainHeight / Math.max(1, mainWidth)) * w)),
+          (targetRatio !== undefined
+            ? Math.max(1, Math.round(w / targetRatio))
+            : Math.max(1, Math.round((mainHeight / Math.max(1, mainWidth)) * w))),
         url: resolvedUrl,
         size: out.info.size,
         storagePath: uploaded.path,

@@ -87,6 +87,15 @@ export const enTranslations: UploadTranslations = {
   retryUpload: 'Retry upload',
   minImagesError: 'Please upload at least {min} image{suffix}.',
   requiredFieldError: 'This field is required.',
+  moveEarlier: 'Move image earlier',
+  moveLater: 'Move image later',
+  setAsCover: 'Set as cover',
+  coverBadge: 'Cover',
+  reorderedAnnouncement: 'Moved image to position {pos} of {total}',
+  coverSetAnnouncement: 'Image set as cover (position 1 of {total})',
+  transformingFile: 'Preparing image…',
+  heicNotSupported:
+    'HEIC/HEIF photos must be converted to JPEG or PNG before uploading',
   blurModal: {
     title: 'Blur & Dominant Color Inspector',
     closeModal: 'Close inspector',

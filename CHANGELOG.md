@@ -5,6 +5,31 @@ All notable changes to `img-upload-kit` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-11-06
+
+### Added
+
+- **Shared Framework-Agnostic Client Engine (`img-upload-kit/client`)**:
+  - Extracted universal client upload primitives (`xhrUpload`, `createUploadAbortError`, `isUploadAbortError`, `createUploadTracker`, `runUploadQueue`, `moveItem`, `promoteToCover`, `runTransformAsset`, `normalizeUploadableAsset`, `isNativeUploadAsset`) shared across React, Angular, and React Native.
+- **First-Class Angular 17–19+ Subpath (`img-upload-kit/angular`)**:
+  - Added `provideImageUploadConfig`, `IMAGE_UPLOAD_CONFIG`, and `resolveImageUploadConfig` for dependency-injected configuration.
+  - Added reactive upload controllers `createSingleUpload` and `createMultiUpload` with signal-like `.state()` getters, `.subscribe(listener)`, per-tile cancel/retry, gallery reordering (`move`, `setCover`, `setPrimary`), and `.toControlValueAccessor()` for `@angular/forms` Reactive Forms.
+  - Added `createImageReveal`, `mountAnimatedImage`, and standalone helper classes (`AnimatedImageComponent`, `SingleImageUploadComponent`, `MultiImageUploadComponent`).
+- **First-Class React Native & Expo Subpath (`img-upload-kit/react-native`)**:
+  - Added `<NativeImageUploadProvider>`, `useNativeImageUploadConfig`, `useNativeSingleUpload`, `useNativeMultiUpload`, `<SingleImageUpload>`, `<MultiImageUpload>`, and `<AnimatedImage>`.
+  - Added `createExpoImagePickerAdapter` (`expo-image-picker`) and `createRnImagePickerAdapter` (`react-native-image-picker`) with automatic iOS `.heic`/`.heif` -> `.jpg` (`image/jpeg`) filename/MIME normalization.
+  - Added `defaultNativeTheme`, `lightNativeTheme`, and `darkNativeTheme` for React Native `StyleSheet` theming, plus `as={Image}` support for `expo-image` and `objectFit="contain"` ambient blur backdrops.
+- **Social & E-Commerce Presets + Smart Server Attention Cropping**:
+  - Added `square` (`1600x1600`, `1:1`, `crop: 'attention'`, `variantWidths: [400, 800, 1200]`), `portrait` (`1080x1350`, `4:5`, `crop: 'attention'`, `variantWidths: [480, 720]`), and `story` (`1080x1920`, `9:16`, `crop: 'attention'`, `variantWidths: [540, 720]`) to `STANDARD_PRESETS`.
+  - Added `ImageAspectRatio` (`'1:1' | '4:5' | '3:4' | '4:3' | '3:2' | '16:10' | '16:9' | '9:16' | 'auto' | number`), `CropStrategy` (`'attention' | 'entropy' | 'center'`), `resolveAspectRatio`, and `aspectRatioToCss`.
+  - Enhanced `optimizeImage`, `createImageUploader`, and `createUploadHttpHandler` (`allowClientOverrides.aspectRatio` & `crop`) with Sharp `fit: 'cover'` smart cropping.
+- **E-Commerce Gallery Reordering & Primary Cover Badge**:
+  - Added `reorderable`, `showCoverBadge`, `onReorder`, `move(fromIndex, toIndex)`, `setCover(index)`, and `setPrimary(index)` across `<MultiImageUpload>`, `<HeadlessMultiUpload>`, `useMultiUpload`, `createMultiUpload`, and `useNativeMultiUpload`.
+  - Added bilingual (`en` / `ar`) translations for `"Cover"`, `"Set as cover"`, `"Move earlier"`, and `"Move later"`.
+- **Pre-Upload Client `transformAsset` Hook & `<AnimatedImage aspectRatio>`**:
+  - Added `transformAsset` (`(asset, { signal, preset, index }) => Promise<asset>`) with `AbortSignal` propagation before network upload.
+  - Added `aspectRatio?: ImageAspectRatio` prop to `<AnimatedImage>` across React, Angular, and React Native.
+
 ## [2.0.0] - 2026-11-06
 
 See [`MIGRATION.md`](./MIGRATION.md) for step-by-step v1.x to v2.0.0 upgrade instructions and before/after examples.
@@ -50,40 +75,10 @@ See [`MIGRATION.md`](./MIGRATION.md) for step-by-step v1.x to v2.0.0 upgrade ins
 
 ### Added
 
-- **AnimatedImage Component (`img-upload-kit/react`)**:
-  - High-performance progressive blur-up display component with GPU-accelerated crossfade.
-  - Native `<img>` attribute pass-through and framework-agnostic `as` prop (e.g. `as={Image}` for Next.js with `imageComponentProps`).
-  - Hierarchical placeholder fallback cascade: `blurDataUrl` (LQIP) > `blurHash` (client canvas decode) > `blurColor` (gradient SVG).
-  - Shimmer highlight animation (`showShimmer`), staggered transition timing, and full `prefers-reduced-motion` compliance.
-  - Semantic slot targeting (`data-slot`, `data-state`, `aria-busy`) and unstyled mode support.
-- **Headless Reveal State Machine (`useImageReveal`)**:
-  - Headless hook managing progressive reveal states (`isLoaded`, `showPlaceholder`, `hasError`, `imgRef`, `handleLoad`, `handleError`).
-  - Guarantees pre-decode verification via `HTMLImageElement.decode()` before revealing sharp asset.
-  - Synchronous reset on `srcKey` changes and automatic detection of pre-cached images.
-- **Placeholder Utilities**:
-  - `createFallbackBlurSvg`: Generates lightweight inline SVG gradients derived from dominant color.
-  - `resolveMeaningfulColor`: Filters out generic neutral/black/white database defaults and validates color tokens.
-  - `resolvePlaceholderUrl`: Deterministically selects the best available placeholder asset.
-
-### Changed & Hardened
-
-- **Server Validation Error Mapping**: Updated `createUploadHttpHandler.POST` to map client validation errors directly to HTTP 400 Bad Request.
-- **Collision Retry Discrimination**: Fixed collision detection in `uploadRetry.ts` to strictly match `already exists` and `EEXIST` error codes.
-- **Sharp Mobile EXIF Auto-Rotation**: Added `.rotate()` during Sharp pipeline initialization in `imageOptimizer.ts`.
-- **Transparent PNG Color Extraction**: Hardened `colorHistogram.ts` to ignore pixels with `alpha < 8`.
-- **BlurHash & SVG Detection**: Enhanced SVG validation in `blurGenerator.ts` and clamped BlurHash components to valid ranges (1–9).
-- **Storage Parity & Upsert Semantics**: Implemented `deleteByUrl` in `createLocalFsStorageAdapter` and aligned default `upsert` semantics to `true`.
-- **React Pure State Updaters & Controlled Value Sync**: Refactored `useMultiImageState.ts` and `useSingleImageState.ts` for strict React 18/19 concurrent rendering purity.
-- **Batch Preemption Clearing in Multi-Upload**: Fixed retention window in `MultiImageUpload.tsx` when preempted by a new upload batch.
+- **AnimatedImage Component (`img-upload-kit/react`)**: Progressive blur-up display component with GPU-accelerated crossfade, `as` prop for `next/image`, `blurDataUrl` > `blurHash` > `blurColor` fallback cascade, `showShimmer`, and `useImageReveal` headless state machine.
 
 ## [1.0.0] - 2026-10-31
 
 ### Added
 
-- **Core Types & Utilities (`img-upload-kit`)**: Universal visual role presets (`thumbnail`, `avatar`, `card`, `cover`, `hero`, `logo`, `original`), `defineUploadPresets`, `UploadKitRegister`, bilingual (`en` / `ar`) validation, byte formatters, and RGB/HEX color utilities.
-- **Server Optimization & Upload Pipeline (`img-upload-kit/server`)**: `createImageUploader`, `createUploadHttpHandler`, `optimizeImage` with Sharp AVIF size-guarding, and `generateBlurPlaceholder` (WebP LQIP, BlurHash, 4-edge color histogram).
-- **Pluggable Storage Adapters (`img-upload-kit/storage`)**: `createSupabaseStorageAdapter`, `createS3StorageAdapter`, `createLocalFsStorageAdapter`, `createMemoryStorageAdapter`, and `onUploadRecord`.
-- **Blur Manifest Service (`img-upload-kit/blur`)**: `BlurService` and `createBlurService` with bounded `LRUCache`.
-- **Pure React UI & Styles (`img-upload-kit/react`, `img-upload-kit/styles.css`)**: `<ImageUploadProvider>`, `<ImageUpload>`, `<SingleImageUpload>`, `<MultiImageUpload>`, `<BlurImage>`, and `<QualitySelector>` with RTL & `--iuk-*` tokens.
-- **Headless Hooks & Primitives (`img-upload-kit/headless`)**: `HeadlessSingleUpload`, `HeadlessMultiUpload`, `useSingleUpload`, `useMultiUpload`, `useImageUpload`, `useDropzone`, `useFilePreview`.
-- **Blur Manifest CLI (`img-upload-kit/cli`)**: `img-upload-kit` / `blur-cli` binaries (`generate`, `validate`, `sync`, `cleanup`, `health`, `inspect`).
+- Initial release of `img-upload-kit` with core types, Sharp AVIF/WebP optimization, 4-edge color extraction, `StorageAdapter` (Supabase, S3/R2, LocalFS, Memory), `BlurService`, React UI & Headless primitives, and CLI manifest generator.

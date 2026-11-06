@@ -6,7 +6,7 @@ import type {
   ReactNode,
   SyntheticEvent,
 } from 'react';
-import type { ImageVariant } from '../../../types';
+import type { ImageAspectRatio, ImageVariant } from '../../../types';
 
 export type AnimatedImageObjectFit = 'cover' | 'contain' | 'fill' | 'none' | 'scale-down';
 
@@ -51,6 +51,8 @@ export interface AnimatedImageBaseProps
    * Defaults to `DEFAULT_NEUTRAL_COLORS`. Pass `[]` to allow all colors (including `#000000` / `#ffffff`).
    */
   neutralColors?: readonly string[];
+  /** Target CSS aspect ratio applied to the wrapper container (e.g. `'1:1'`, `'4:5'`, `'9:16'`, `1.91`). */
+  aspectRatio?: ImageAspectRatio;
   /** Absolutely fill the nearest positioned parent (like `next/image` `fill`). */
   fill?: boolean;
   /**

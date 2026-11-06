@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ExplicitOutputFormat, ImageDimensions, UploadedImageData, UploadLocale } from '../../types';
+import { isHeicAsset } from '../../client/asset';
+import { runTransformAsset } from '../../client/transform';
+import type { TransformAssetFn } from '../../client/types';
+import type {
+  CropStrategy,
+  ExplicitOutputFormat,
+  ImageAspectRatio,
+  ImageDimensions,
+  UploadedImageData,
+  UploadLocale,
+} from '../../types';
 import { createSuccessMessage, getStatusMessage } from '../../utils/formatters';
 import { useImageUploadContext } from '../context';
 import { normalizeUploadLocale, resolveTranslations } from '../i18n';
@@ -10,6 +20,7 @@ import { buildUploadFormData, isUploadAbortError, uploadViaXhr } from './xhrUplo
 export interface UploadCallOptions {
   uploadId?: string;
   signal?: AbortSignal;
+  index?: number;
 }
 
 export interface UseImageUploadOptions {
@@ -22,6 +33,9 @@ export interface UseImageUploadOptions {
   /** 1–100. When omitted, the server picks the preset or format default. */
   quality?: number;
   maxDimensions?: ImageDimensions;
+  aspectRatio?: ImageAspectRatio;
+  crop?: CropStrategy;
+  transformAsset?: TransformAssetFn<File>;
   customFilename?: string;
   endpoint?: string;
   uploader?: CustomUploaderFn;
@@ -35,6 +49,7 @@ export interface UseImageUploadOptions {
 
 export function useImageUpload({
   preset, folder, bucket, metadata, altText, outputFormat, quality, maxDimensions,
+  aspectRatio, crop, transformAsset,
   customFilename: defaultCustomFilename,
   endpoint: propEndpoint, uploader: propUploader, headers: propHeaders,
   withCredentials: propWithCredentials, locale: propLocale,
@@ -111,9 +126,10 @@ export function useImageUpload({
       callOptions?: UploadCallOptions,
     ): Promise<UploadedImageData | null> => {
       const tracker = trackerRef.current!;
+      const initialMsg = transformAsset ? ui.transformingFile : ui.preparingUpload;
       const entry = tracker.createEntry(
         file,
-        ui.preparingUpload,
+        initialMsg,
         callOptions?.uploadId,
         callOptions?.signal,
       );
@@ -122,8 +138,8 @@ export function useImageUpload({
       const originalSize = file.size;
       setIsUploading(true);
       setProgress(0);
-      setUploadMessage(ui.preparingUpload);
-      onProgress?.(0, ui.preparingUpload, file, uploadId);
+      setUploadMessage(initialMsg);
+      onProgress?.(0, initialMsg, file, uploadId);
 
       const updateEntryProgress = (nextPct: number, maxCap: number) => {
         if (!isMountedRef.current || controller.signal.aborted) return;
@@ -139,6 +155,16 @@ export function useImageUpload({
       const reportProgress = (nextPct: number) => updateEntryProgress(nextPct, 94);
 
       try {
+        const effectiveFile = await runTransformAsset(file, transformAsset, {
+          signal: controller.signal,
+          preset,
+          index: callOptions?.index ?? 0,
+        });
+
+        if (isHeicAsset(effectiveFile)) {
+          throw new Error(ui.heicNotSupported);
+        }
+
         entry.interval = setInterval(() => {
           if (!isMountedRef.current || controller.signal.aborted) {
             tracker.removeEntry(uploadId);
@@ -149,18 +175,20 @@ export function useImageUpload({
 
         const finalAlt = customAltText !== undefined ? customAltText || undefined : altText || undefined;
         const finalCustomFilename = overrideCustomFilename || defaultCustomFilename || undefined;
+        const resolvedAspect =
+          aspectRatio !== undefined && aspectRatio !== 'auto' ? aspectRatio : undefined;
         const requestFields = {
           preset, folder, bucket, altText: finalAlt, customFilename: finalCustomFilename,
-          outputFormat, quality, maxDimensions, metadata,
+          outputFormat, quality, maxDimensions, aspectRatio: resolvedAspect, crop, metadata,
         };
 
         const data = resolvedUploader
-          ? await resolvedUploader(file, {
+          ? await resolvedUploader(effectiveFile, {
               ...requestFields,
               signal: controller.signal,
               onUploadProgress: reportProgress,
             })
-          : await uploadViaXhr(resolvedEndpoint, buildUploadFormData(file, requestFields), {
+          : await uploadViaXhr(resolvedEndpoint, buildUploadFormData(effectiveFile, requestFields), {
               headers: resolvedHeaders,
               withCredentials: resolvedCredentials,
               signal: controller.signal,
@@ -207,8 +235,9 @@ export function useImageUpload({
     },
     [
       preset, folder, bucket, metadata, altText, outputFormat, quality, maxDimensions,
-      defaultCustomFilename, resolvedEndpoint, resolvedUploader, resolvedHeaders,
-      resolvedCredentials, uploadLocale, ui.preparingUpload, ui.uploadFailed,
+      aspectRatio, crop, transformAsset, defaultCustomFilename, resolvedEndpoint,
+      resolvedUploader, resolvedHeaders, resolvedCredentials, uploadLocale,
+      ui.transformingFile, ui.preparingUpload, ui.heicNotSupported, ui.uploadFailed,
       ui.networkError, ui.invalidUploadResponse, ui.uploadAborted,
       onSuccess, onError, onProgress, safeSetTimeout,
     ],

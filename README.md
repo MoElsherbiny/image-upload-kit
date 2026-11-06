@@ -1,6 +1,6 @@
 # img-upload-kit
 
-Production-grade, zero-lock-in image upload and processing framework with **Sharp AVIF/WebP optimization**, **smart size-guarding**, **responsive `srcSet` variants**, **WebP LQIP & BlurHash placeholders**, **4-edge dominant color extraction**, **pluggable storage adapters**, **4 styling tiers**, and the **`<AnimatedImage />` blur-up display component** for React & Next.js.
+Production-grade, zero-lock-in image upload and processing framework for **React, Next.js, Angular, and React Native / Expo** with **Sharp AVIF/WebP optimization**, **smart size-guarding**, **responsive `srcSet` variants**, **social & e-commerce aspect cropping (`1:1`, `4:5`, `9:16`)**, **WebP LQIP & BlurHash placeholders**, **4-edge dominant color extraction**, **pluggable storage adapters**, and the **`<AnimatedImage />` blur-up display component**.
 
 [![Live Interactive Demo](https://img.shields.io/badge/Live%20Demo-upload--kit.buildwithsherbo.com-0284c7?style=for-the-badge)](https://upload-kit.buildwithsherbo.com)
 [![npm version](https://img.shields.io/npm/v/img-upload-kit?color=38bdf8&style=for-the-badge)](https://www.npmjs.com/package/img-upload-kit)
@@ -11,78 +11,73 @@ Production-grade, zero-lock-in image upload and processing framework with **Shar
 
 ## Interactive Studio & Live Demo
 
-Experience the full pipeline live in your browser: 👉 **[upload-kit.buildwithsherbo.com](https://upload-kit.buildwithsherbo.com)**
+Experience the full multi-platform pipeline live in your browser: 👉 **[upload-kit.buildwithsherbo.com](https://upload-kit.buildwithsherbo.com)**
 
-- **Watch Code Stream Live**: Synchronized Shiki IDE writing `<AnimatedImage />`, upload route, and UI code while the live preview mutates at 60 FPS.
-- **4-Layer Placeholder Lab**: Side-by-side comparison of **4-Edge Ambient Color** (0 B runtime), **Client BlurHash** (~28 chars), **WebP LQIP Data URL** (<1 KB), and the final **Sharp AVIF/WebP** asset.
-- **Sharp Size-Guard Sandbox**: Drop or paste any image to inspect real-time byte savings, responsive `srcSet` variants, dimensions, and color extraction.
+- **Live Framework Switcher (`React` | `Angular` | `React Native`)**: Watch synchronized Shiki IDE code stream live across React, Angular 17–19+, and React Native / Expo while the 60 FPS preview updates in real time.
+- **Social Aspect Framing & E-Commerce Reordering**: Test `16:10`, `1:1` Square, `4:5` Portrait, and `9:16` Story aspect ratios alongside interactive product gallery reordering (`Cover` badge + `move` / `setCover`).
+- **4-Layer Placeholder Lab & Sharp Size-Guard Sandbox**: Compare **4-Edge Ambient Color** (0 B runtime), **Client BlurHash** (~28 chars), **WebP LQIP Data URL** (<1 KB), and final **Sharp AVIF/WebP** assets.
 - **Upgrading from v1.x?** Read the [**v2.0 Migration Guide (`MIGRATION.md`)**](./MIGRATION.md).
+
+---
+
+## Multi-Platform Matrix & Subpath Reference
+
+| Subpath | Target Platform | Key Exports | Guide |
+| --- | --- | --- | --- |
+| `img-upload-kit` | Universal | `STANDARD_PRESETS`, `defineUploadPresets`, `resolveAspectRatio`, validators, color utils, `decodeBlurHashToDataURL` | [Architecture](./docs/ARCHITECTURE.md) |
+| `img-upload-kit/client` | Web / Angular / RN | `xhrUpload`, `createUploadTracker`, `runUploadQueue`, `moveItem`, `promoteToCover`, `runTransformAsset` | [Architecture](./docs/ARCHITECTURE.md) |
+| `img-upload-kit/react` | React & Next.js | `<ImageUploadProvider>`, `<SingleImageUpload>`, `<MultiImageUpload>`, `<AnimatedImage>`, `<BlurImage>` | [Styling](./docs/CUSTOM_STYLING.md) |
+| `img-upload-kit/headless` | React Headless | `<HeadlessSingleUpload>`, `<HeadlessMultiUpload>`, `useSingleUpload`, `useMultiUpload`, `useDropzone` | [Styling](./docs/CUSTOM_STYLING.md) |
+| `img-upload-kit/angular` | Angular 17–19+ | `provideImageUploadConfig`, `createSingleUpload`, `createMultiUpload`, `createImageReveal`, `mountAnimatedImage` | [**Angular Guide**](./docs/angular.md) |
+| `img-upload-kit/react-native` | Expo & Bare RN | `<NativeImageUploadProvider>`, `useNativeSingleUpload`, `useNativeMultiUpload`, `<AnimatedImage>`, picker adapters | [**React Native Guide**](./docs/react-native.md) |
+| `img-upload-kit/server` | Node.js (`>=20`) | `createImageUploader`, `createUploadHttpHandler`, `optimizeImage`, `generateBlurPlaceholder`, `sniffImageFormat`, `sanitizeSvg` | [Server Recipes](./docs/FRAMEWORK_RECIPES.md) |
+| `img-upload-kit/server/handler` | Node / Edge | Edge-safe `createUploadHttpHandler` (zero Sharp or `node:fs` imports at module load) | [Server Recipes](./docs/FRAMEWORK_RECIPES.md) |
+| `img-upload-kit/storage` | Node / Edge | `createStorageAdapter`, `createS3StorageAdapter`, `createSupabaseStorageAdapter`, `createLocalFsStorageAdapter` | [Server Recipes](./docs/FRAMEWORK_RECIPES.md) |
+| `img-upload-kit/blur` | Universal | `BlurService`, `createBlurService`, `decodeBlurHashToDataURL`, `LRUCache` | [AnimatedImage](./docs/ANIMATED_IMAGE.md) |
+| `img-upload-kit/cli` | Node CLI | CLI binaries (`img-upload-kit` / `blur-cli`) for build-time manifest generation | [Architecture](./docs/ARCHITECTURE.md) |
+| `img-upload-kit/styles.css` | CSS (React/Angular) | Complete stylesheet (`--iuk-*` tokens, dark mode, RTL) + per-layer `img-upload-kit/styles/*.css` | [Styling](./docs/CUSTOM_STYLING.md) |
 
 ---
 
 ## Installation
 
 ```bash
-# Client / React UI only (zero native dependencies):
-npm install img-upload-kit react react-dom
+# Client UI (React, Angular, or React Native — zero native dependencies):
+npm install img-upload-kit
 
-# Server / Full-Stack (Next.js, Remix, Hono, SvelteKit, Node) or CLI:
+# Server / Full-Stack (Next.js, Remix, Hono, SvelteKit, Express, Node) or CLI:
 npm install img-upload-kit sharp lqip-modern
-
-# pnpm / yarn / bun:
-pnpm add img-upload-kit sharp lqip-modern
 ```
 
-> **Requirements**: Node.js `>= 20.0.0` on the server for `sharp` and Web Fetch `Request`/`FormData` APIs. React `>= 18.0.0` for UI components (`lucide-react` is no longer required — all icons are inlined).
-
 ---
 
-## Subpath Exports Reference
+## Universal Presets, Social Aspect Cropping & Variants (`variantWidths`)
 
-| Subpath | Environment | Key Exports |
-| --- | --- | --- |
-| `img-upload-kit` | Universal | `STANDARD_PRESETS`, `defineUploadPresets`, types, color utils, validators, `createMemoryStorageAdapter`, `decodeBlurHashToDataURL`, `getBlurData` |
-| `img-upload-kit/server` | Node.js | `createImageUploader`, `createUploadHttpHandler`, `optimizeImage`, `generateBlurPlaceholder`, `sniffImageFormat`, `sanitizeSvg` |
-| `img-upload-kit/server/handler` | Node / Edge | Edge-safe `createUploadHttpHandler` (zero Sharp or `node:fs` imports at module load) |
-| `img-upload-kit/storage` | Node / Edge | `createStorageAdapter`, `createS3StorageAdapter`, `createSupabaseStorageAdapter`, `createLocalFsStorageAdapter` |
-| `img-upload-kit/blur` | Universal | `BlurService`, `createBlurService`, `decodeBlurHashToDataURL`, `LRUCache` |
-| `img-upload-kit/react` | React Client | `<ImageUploadProvider>`, `<SingleImageUpload>`, `<MultiImageUpload>`, `<AnimatedImage>`, `<BlurImage>` |
-| `img-upload-kit/headless` | React Client | `<HeadlessSingleUpload>`, `<HeadlessMultiUpload>`, `useSingleUpload`, `useMultiUpload`, `useDropzone` |
-| `img-upload-kit/cli` | Node CLI | CLI binaries (`img-upload-kit` / `blur-cli`) for build-time manifest generation |
-| `img-upload-kit/styles.css` | CSS | Complete stylesheet (`--iuk-*` tokens, dark mode, RTL) + per-layer `img-upload-kit/styles/*.css` |
+Built-in visual role presets balance dimension constraints, smart aspect cropping (`crop: 'attention'`), compression quality, and responsive `variantWidths`. Only raster formats (`JPEG, PNG, WebP, AVIF`) are accepted by default via binary magic-byte sniffing; opt into sanitized SVG support with `allowSvg: true`.
 
----
-
-## Universal Presets & Responsive Variants (`variantWidths`)
-
-Built-in visual role presets balance dimension constraints, compression quality, and blur generation. By default, only raster formats (`JPEG, PNG, WebP, AVIF`) are accepted and verified via binary magic-byte sniffing; opt into sanitized SVG support per preset or uploader with `allowSvg: true`.
-
-| Preset | Max Dimensions | Max Size | Quality | Default Formats | Notes |
-| --- | --- | --- | --- | --- | --- |
-| `thumbnail` | `600x600` | 5 MB | Q78 | JPEG, PNG, WebP, AVIF | Compact grid thumbnails |
-| `avatar` | `512x512` | 5 MB | Q80 | JPEG, PNG, WebP, AVIF | Square user profiles |
-| `card` | `1200x900` | 8 MB | Q85 | JPEG, PNG, WebP, AVIF | Content & product cards |
-| `cover` | `1920x1080` | 10 MB | Q88 | JPEG, PNG, WebP, AVIF | Wide section banners |
-| `hero` | `2560x1440` | 15 MB | Q92 | JPEG, PNG, WebP, AVIF | Full-bleed hero headers |
-| `logo` | `800x800` | 5 MB | Q90 | JPEG, PNG, WebP, AVIF | Set `allowSvg: true` for sanitized vector SVGs |
-| `original` | `4096x4096` | 25 MB | Q95 | JPEG, PNG, WebP, AVIF | Master archival fidelity |
+| Preset | Max Dimensions | Aspect / Crop | Variants | Max Size | Quality | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| `thumbnail` | `600x600` | Fit inside | — | 5 MB | Q78 | Compact grid thumbnails |
+| `avatar` | `512x512` | Fit inside | — | 5 MB | Q80 | User profile pictures |
+| `card` | `1200x900` | Fit inside | — | 8 MB | Q85 | Content & article cards |
+| `cover` | `1920x1080` | Fit inside | — | 10 MB | Q88 | Wide section banners |
+| `hero` | `2560x1440` | Fit inside | — | 15 MB | Q92 | Full-bleed hero headers |
+| `logo` | `800x800` | Fit inside | — | 5 MB | Q90 | Set `allowSvg: true` for sanitized vector SVGs |
+| `original` | `4096x4096` | Fit inside | — | 25 MB | Q95 | Master archival fidelity |
+| `square` | `1600x1600` | `1:1` (`attention`) | `[400, 800, 1200]` | 12 MB | Q88 | E-commerce product galleries & square posts |
+| `portrait` | `1080x1350` | `4:5` (`attention`) | `[480, 720]` | 12 MB | Q86 | Instagram vertical feed posts & lookbooks |
+| `story` | `1080x1920` | `9:16` (`attention`) | `[540, 720]` | 15 MB | Q86 | Stories, Reels & full-screen mobile covers |
 
 ```ts
-import { defineUploadPresets } from 'img-upload-kit';
+import { defineUploadPresets, STANDARD_PRESETS } from 'img-upload-kit';
 
 export const presets = defineUploadPresets({
+  ...STANDARD_PRESETS,
   hero: {
+    ...STANDARD_PRESETS.hero,
     folder: 'banners/hero',
-    maxDimensions: { width: 2560, height: 1440 },
     variantWidths: [640, 1024, 1920], // Encodes <base>-640w.avif, etc. + populates data.srcSet
-    maxSizeMB: 15,
-    quality: 90,
     includeBlurHash: true,
-  },
-  logo: {
-    folder: 'brand/logos',
-    maxDimensions: { width: 800, height: 800 },
-    allowSvg: true, // Runs built-in allowlist SVG sanitizer before storage
   },
 });
 ```
@@ -112,76 +107,64 @@ export const { POST, DELETE } = createUploadHttpHandler({
   uploader,
   maxBodyBytes: 16 * 1024 * 1024,
   allowedOrigins: ['https://app.example.com'],
-  authorize: async ({ action, request, preset, bucket, path }) => {
+  authorize: async ({ action, request, bucket }) => {
     const user = await verifySession(request);
     if (!user) return false;
-    if (action === 'delete') return user.role === 'admin' && bucket === 'media';
-    return true;
+    return action === 'delete' ? user.role === 'admin' && bucket === 'media' : true;
   },
   allowClientOverrides: {
-    filename: true, // Sanitized, forced to output extension, never overwrites existing files
+    filename: true,
     folder: (folder) => (folder.startsWith('users/') ? folder : null),
-    dimensions: true, // Clamped to preset maxDimensions
+    dimensions: true,
+    aspectRatio: true,
+    crop: true,
     format: true,
     quality: true,
   },
-  onError: (error, ctx) => console.error(`[upload:${ctx.action}]`, error),
 });
 ```
 
 ---
 
-## React Upload UI: Paste, Camera Capture, Cancel/Retry & Forms
+## React Upload UI: Paste, Camera, Reordering, `transformAsset` & Forms
 
-`<SingleImageUpload>` and `<MultiImageUpload>` support **clipboard image paste** (`Ctrl+V` / `Cmd+V`), **mobile camera capture** (`capture="environment"`), **per-tile cancel & retry** (backed by per-upload `AbortController`), and **native HTML form / React Hook Form integration** (`name`, `formValue`, `ref`, `required`, `minImages`, `onBlur`):
+`<SingleImageUpload>` and `<MultiImageUpload>` support **clipboard paste** (`Ctrl+V`), **mobile camera capture** (`capture="environment"`), **e-commerce gallery reordering** (`reorderable`, `showCoverBadge`, `onReorder`, `move`, `setCover`), **pre-upload client transformations** (`transformAsset`), **per-tile cancel & retry**, and **native HTML / React Hook Form integration**:
 
 ```tsx
-import { useRef, useState } from 'react';
-import {
-  ImageUploadProvider,
-  SingleImageUpload,
-  MultiImageUpload,
-  type ImageUploadHandle,
-} from 'img-upload-kit/react';
+import { useState } from 'react';
+import { ImageUploadProvider, SingleImageUpload, MultiImageUpload } from 'img-upload-kit/react';
 import type { UploadedImageData } from 'img-upload-kit';
 import 'img-upload-kit/styles.css';
 
 export function ProductMediaForm() {
-  const uploadRef = useRef<ImageUploadHandle>(null);
   const [cover, setCover] = useState<UploadedImageData | null>(null);
   const [gallery, setGallery] = useState<UploadedImageData[]>([]);
 
   return (
     <ImageUploadProvider endpoint="/api/upload" locale="en">
-      <form onSubmit={(e) => { e.preventDefault(); /* FormData includes coverUrl & galleryJson */ }}>
-        <SingleImageUpload
-          ref={uploadRef}
-          preset="cover"
-          label="Cover Photo"
-          name="coverUrl"
-          formValue="url"
-          required
-          enablePaste
-          pasteTarget="document"
-          capture="environment"
-          value={cover}
-          onChange={setCover}
-        />
-        <MultiImageUpload
-          mode="multiple"
-          preset="card"
-          label="Product Gallery"
-          name="galleryJson"
-          formValue="json"
-          required
-          minImages={2}
-          maxImages={10}
-          value={gallery}
-          onChange={setGallery}
-          onUploadCancel={(id) => console.log('Cancelled tile:', id)}
-        />
-        <button type="submit">Save Product</button>
-      </form>
+      <SingleImageUpload
+        preset="portrait"
+        aspectRatio="4:5"
+        label="Social Feed Cover (4:5)"
+        name="coverUrl"
+        enablePaste
+        capture="environment"
+        value={cover}
+        onChange={setCover}
+        transformAsset={async (file) => file /* optional client cropper / watermark */}
+      />
+      <MultiImageUpload
+        mode="multiple"
+        preset="square"
+        label="Product Gallery (Drag or click to reorder Cover)"
+        name="galleryJson"
+        reorderable
+        showCoverBadge
+        maxImages={8}
+        value={gallery}
+        onChange={setGallery}
+        onReorder={(ordered) => console.log('New Cover photo:', ordered[0]?.url)}
+      />
     </ImageUploadProvider>
   );
 }
@@ -189,53 +172,40 @@ export function ProductMediaForm() {
 
 ---
 
-## AnimatedImage (Progressive Blur-Up & Settle Reveal)
+## AnimatedImage (Progressive Blur-Up, `aspectRatio` & Settle Reveal)
 
-`<AnimatedImage />` delivers a 60 FPS settle reveal (`opacity: 0 -> 1` + `scale(1.02 -> 1)` over `600ms ease-in-out`), pre-decodes via `img.decode()` before crossfading, auto-wires responsive `srcSet` from `image.variants`, and preserves the blurred backdrop on load error with automatic `fallbackSrc` retry:
+`<AnimatedImage />` delivers a 60 FPS settle reveal (`opacity: 0 -> 1` + `scale(1.02 -> 1)` over `600ms`), pre-decodes via `img.decode()`, auto-wires responsive `srcSet` from `image.variants`, supports social `aspectRatio` (`'1:1' | '4:5' | '9:16' | '16:10'`), and preserves the blurred backdrop on load error:
 
 ```tsx
 import { AnimatedImage } from 'img-upload-kit/react';
 import Image from 'next/image';
 import 'img-upload-kit/styles.css';
 
-// 1. Direct shorthand with UploadedImageData (auto-wires variants srcSet, LQIP, blurColor):
-<AnimatedImage image={img} showShimmer />
+// 1. Direct shorthand with social aspect ratio (auto-wires variants srcSet, LQIP, blurColor):
+<AnimatedImage image={img} aspectRatio="4:5" showShimmer />
 
 // 2. Next.js App Router (as={Image} + first-class priority & quality props):
-<div style={{ position: 'relative', aspectRatio: '16/9' }}>
-  <AnimatedImage
-    image={img}
-    as={Image}
-    fill
-    priority
-    quality={85}
-    sizes="(max-width: 768px) 100vw, 1200px"
-    fallbackSrc="/images/fallback-hero.webp"
-    renderError={({ retry }) => <button type="button" onClick={retry}>Reload</button>}
-  />
-</div>
+<AnimatedImage
+  image={img}
+  as={Image}
+  aspectRatio="16:9"
+  priority
+  quality={85}
+  sizes="(max-width: 768px) 100vw, 1200px"
+  fallbackSrc="/images/fallback-hero.webp"
+/>
 ```
 
 ---
 
-## The 4 Styling Tiers
+## Documentation & Guides
 
-1. **Tier 1 — CSS Variables (`--iuk-*`)**: Automatic dark mode and RTL (`dir="rtl"`) with customizable `--iuk-primary`, `--iuk-surface`, and `--iuk-radius-*` tokens.
-2. **Tier 2 — Unstyled + Slots (`unstyled` + `classNames`)**: Strip built-in styles and target slots (`dropzone`, `tile`, `browseButton`) with Tailwind `data-[state=dragging|uploading|error]:*` selectors.
-3. **Tier 3 — Partial Slot Renderers**: Override specific regions via `renderDropzone`, `renderPreview`, `renderTile`, `renderHeader`, or `renderEmptyDropzone`.
-4. **Tier 4 — Headless Primitives (`img-upload-kit/headless`)**: Full control via `<HeadlessSingleUpload>`, `<HeadlessMultiUpload>`, `useSingleUpload`, and `useMultiUpload` (including `cancel(id)`, `retry(id)`, `retryAll()`, and clipboard paste).
-
----
-
-## Documentation & Links
-
-- [v2.0 Migration Guide (`MIGRATION.md`)](./MIGRATION.md) & [Post-v2.0 Roadmap (`ROADMAP.md`)](./ROADMAP.md)
-- [AI Agent Contributor Guide (`AGENTS.md`)](./AGENTS.md)
-- [Custom Styling & Headless Guide (`docs/CUSTOM_STYLING.md`)](./docs/CUSTOM_STYLING.md)
-- [AnimatedImage & Blur-Up Guide (`docs/ANIMATED_IMAGE.md`)](./docs/ANIMATED_IMAGE.md)
-- [Architecture & Internals (`docs/ARCHITECTURE.md`)](./docs/ARCHITECTURE.md)
-- [Framework & Storage Recipes (`docs/FRAMEWORK_RECIPES.md`)](./docs/FRAMEWORK_RECIPES.md)
-- [Contributing Guide (`CONTRIBUTING.md`)](./CONTRIBUTING.md) & [Changelog (`CHANGELOG.md`)](./CHANGELOG.md)
+- [**Angular 17–19+ Guide (`docs/angular.md`)**](./docs/angular.md) — `provideImageUploadConfig`, `createSingleUpload`, `createMultiUpload`, `mountAnimatedImage`, Reactive Forms `toControlValueAccessor()`.
+- [**React Native & Expo Guide (`docs/react-native.md`)**](./docs/react-native.md) — `NativeImageUploadProvider`, Expo & RN image picker adapters, HEIC normalization, `<AnimatedImage>` with `expo-image`.
+- [**E-Commerce & Social Media Guide (`docs/ecommerce-social.md`)**](./docs/ecommerce-social.md) — `square` / `portrait` / `story` presets, `reorderable` + `Cover` badge, smart attention cropping, `transformAsset`.
+- [Custom Styling & 4 Headless Tiers (`docs/CUSTOM_STYLING.md`)](./docs/CUSTOM_STYLING.md) · [AnimatedImage Guide (`docs/ANIMATED_IMAGE.md`)](./docs/ANIMATED_IMAGE.md)
+- [Architecture & Internals (`docs/ARCHITECTURE.md`)](./docs/ARCHITECTURE.md) · [Framework & Storage Recipes (`docs/FRAMEWORK_RECIPES.md`)](./docs/FRAMEWORK_RECIPES.md)
+- [v2.0 Migration Guide (`MIGRATION.md`)](./MIGRATION.md) · [Roadmap (`ROADMAP.md`)](./ROADMAP.md) · [Changelog (`CHANGELOG.md`)](./CHANGELOG.md) · [AI Agent Guide (`AGENTS.md`)](./AGENTS.md)
 
 ## License & Author
 

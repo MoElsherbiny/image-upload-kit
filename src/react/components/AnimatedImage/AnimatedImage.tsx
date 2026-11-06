@@ -1,4 +1,5 @@
 import { type CSSProperties, type SyntheticEvent, useMemo } from 'react';
+import { aspectRatioToCss } from '../../../types/aspectRatio';
 import { cx } from '../../utils/slotStyles';
 import {
   DEFAULT_NEUTRAL_COLORS,
@@ -26,6 +27,7 @@ export function AnimatedImage({
   blurColor: blurColorProp,
   colorPlaceholder = 'flat',
   neutralColors = DEFAULT_NEUTRAL_COLORS,
+  aspectRatio,
   width: widthProp,
   height: heightProp,
   fill = false,
@@ -94,6 +96,7 @@ export function AnimatedImage({
   const cls = (name: string) => (unstyled ? undefined : name);
   const duration = Math.max(0, animationDuration);
   const placeholderFadeDuration = Math.round(duration * (5 / 6));
+  const resolvedCssAspectRatio = aspectRatio !== undefined ? aspectRatioToCss(aspectRatio) : undefined;
 
   const containerStyle: CSSProperties = {
     backgroundColor:
@@ -101,6 +104,7 @@ export function AnimatedImage({
       (unstyled
         ? undefined
         : 'var(--iuk-animated-image-bg, var(--background-card, rgba(38, 45, 56, 0.4)))'),
+    ...(resolvedCssAspectRatio ? { aspectRatio: resolvedCssAspectRatio } : {}),
     ...(unstyled
       ? undefined
       : {

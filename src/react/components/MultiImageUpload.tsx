@@ -30,6 +30,7 @@ function MultiImageUploadInner<TPreset extends string = UploadPresetName>(
     recommendedQuality, qualityNote, isOpen, maxImages = 999,
     accept = DEFAULT_ACCEPT, allowFolder = true, disabled = false,
     required = false, blurType = 'card', showQualitySelector = true,
+    reorderable = false, showCoverBadge = Boolean(reorderable),
     capture, enablePaste = true, pasteTarget = 'dropzone', name, onBlur,
     classNames: cCls, styles: cSty,
     renderHeader, renderEmptyDropzone, renderTile, renderAddMore,
@@ -126,6 +127,10 @@ function MultiImageUploadInner<TPreset extends string = UploadPresetName>(
         onPaste={onPaste}
         onBlur={onBlur ? (e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onBlur(); } : undefined}
       >
+        <div data-slot="live-region" role="status" aria-live="polite" aria-atomic="true" style={HIDDEN_INPUT_STYLE}>
+          {state.liveAnnouncement}
+        </div>
+
         {name && (
           <input type="hidden" name={name} value={state.serializedFormValue} required={required} data-slot="form-input" />
         )}
@@ -198,11 +203,14 @@ function MultiImageUploadInner<TPreset extends string = UploadPresetName>(
               renderTile ? (
                 <Fragment key={item.id}>
                   {renderTile({
-                    item, index, isSelected: selectedPreviews.has(item.id), disabled,
+                    item, index, isCover: index === 0, isSelected: selectedPreviews.has(item.id), disabled,
                     toggleSelect: () => state.toggleSelect(item.id),
                     remove: () => state.handleRemove(item.id),
                     cancel: () => state.handleCancelUpload(item.id),
                     retry: () => void state.handleRetryUpload(item.id),
+                    moveEarlier: () => state.move(index, index - 1),
+                    moveLater: () => state.move(index, index + 1),
+                    setAsCover: () => state.setCover(index),
                     openAltTextModal: () => state.setEditingAltTextId(item.id),
                     setAltText: (altText) => state.handleAltTextSave(item.id, altText),
                     setBlurColor: (hex) => state.handleColorChange(item.id, hex),
@@ -211,8 +219,10 @@ function MultiImageUploadInner<TPreset extends string = UploadPresetName>(
                 </Fragment>
               ) : (
                 <PreviewTile
-                  key={item.id} preview={item} onRemove={state.handleRemove}
-                  onCancel={state.handleCancelUpload}
+                  key={item.id} preview={item} index={index} totalCount={previews.length}
+                  reorderable={reorderable} showCoverBadge={showCoverBadge}
+                  onMove={state.move} onSetCover={state.setCover}
+                  onRemove={state.handleRemove} onCancel={state.handleCancelUpload}
                   onRetry={(id) => void state.handleRetryUpload(id)}
                   disabled={disabled} blurType={blurType} isSelected={selectedPreviews.has(item.id)}
                   onToggleSelect={state.toggleSelect} onEditAltText={(id) => state.setEditingAltTextId(id)}

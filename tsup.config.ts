@@ -11,16 +11,18 @@ const CSS_LAYERS = [
   'src/react/styles/animated-image.css',
 ];
 
-/** Entry outputs that are React client modules and must start with 'use client'. */
+/** Entry outputs that are React Web client modules and must start with 'use client'. */
 const CLIENT_ENTRIES = new Set(['react', 'headless']);
 const USE_CLIENT = "'use client';";
 const REACT_IMPORT_RE =
   /(?:from\s*|import\s*\(\s*|require\(\s*)["']react(?:\/jsx-runtime|-dom)?["']/;
 
-const PEER_EXTERNALS = [
+const PEER_EXTERNALS: (string | RegExp)[] = [
   'react',
   'react-dom',
   'react/jsx-runtime',
+  'react-native',
+  /^@angular\//,
   'sharp',
   'lqip-modern',
   'blurhash',
@@ -90,7 +92,7 @@ export default defineConfig(async (options): Promise<Options[]> => {
   const pkg = JSON.parse(await readFile('package.json', 'utf8')) as {
     version?: string;
   };
-  const pkgVersion = pkg.version || '2.0.0';
+  const pkgVersion = pkg.version || '2.1.0';
 
   return [
     {
@@ -99,12 +101,15 @@ export default defineConfig(async (options): Promise<Options[]> => {
       // one shared chunk per format instead of being duplicated per entry.
       entry: {
         index: 'src/index.ts',
+        client: 'src/client/index.ts',
         server: 'src/server/index.ts',
         'server-handler': 'src/server/handler/index.ts',
         storage: 'src/storage/index.ts',
         blur: 'src/blur/index.ts',
         react: 'src/react/index.ts',
         headless: 'src/react/headless/index.ts',
+        angular: 'src/angular/index.ts',
+        'react-native': 'src/react-native/index.ts',
       },
       format: ['esm', 'cjs'],
       dts: true,

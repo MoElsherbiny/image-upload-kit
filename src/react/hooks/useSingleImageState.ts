@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { isHeicAsset } from '../../client/asset';
 import type { QualityLevel, StandardPresetName, UploadedImageData, UploadPresetName } from '../../types';
 import { QUALITY_PRESETS, STANDARD_PRESETS } from '../../types';
 import { DEFAULT_BLUR_COLOR, normalizeColorInput } from '../../utils/color';
@@ -26,7 +27,8 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
     value, onChange, preset, folder, bucket, metadata, endpoint, uploader,
     headers, withCredentials, locale: propLocale, translations,
     initialAltText: propInitialAltText, maxSizeMB: propMaxSizeMB,
-    maxDimensions, requireAltText: propRequireAltText, required, isOpen, onClose,
+    maxDimensions, aspectRatio, crop, transformAsset,
+    requireAltText: propRequireAltText, required, isOpen, onClose,
     outputFormat, quality: initialQualityProp, customFilename, formValue,
   } = props;
 
@@ -77,8 +79,8 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
   const { createPreview, revokePreview } = useFilePreview({ errorLabel: ui.failedCreatePreview });
 
   const { uploadImage, abortAll, isUploading, progress, uploadMessage, reset } = useImageUpload({
-    preset, folder, bucket, metadata, outputFormat, maxDimensions, customFilename,
-    quality: QUALITY_PRESETS[qualityLevel].value,
+    preset, folder, bucket, metadata, outputFormat, maxDimensions, aspectRatio, crop,
+    transformAsset, customFilename, quality: QUALITY_PRESETS[qualityLevel].value,
     endpoint, uploader, headers, withCredentials, locale,
     onSuccess: (data, _file, uploadId) => {
       if (uploadId && activeUploadIdRef.current && uploadId !== activeUploadIdRef.current) return;
@@ -196,20 +198,20 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
     abortAll();
     setSelectedFile(file);
     resetColorAndErrorState();
-    const err = validateImageFile(file, maxSizeMB, locale);
-    if (err) {
-      setValidationError(err);
+    if (!transformAsset && isHeicAsset(file)) {
+      setValidationError(ui.heicNotSupported);
       return;
+    }
+    if (!isHeicAsset(file)) {
+      const err = validateImageFile(file, maxSizeMB, locale);
+      if (err) { setValidationError(err); return; }
     }
     uploadSeqRef.current += 1;
     const uploadId = `single-${uploadSeqRef.current}`;
     activeUploadIdRef.current = uploadId;
     try {
       const nextBlobUrl = await createPreview(file);
-      if (activeUploadIdRef.current !== uploadId) {
-        revokePreview(nextBlobUrl);
-        return;
-      }
+      if (activeUploadIdRef.current !== uploadId) { revokePreview(nextBlobUrl); return; }
       revokePreview(previewRef.current);
       setPreview(nextBlobUrl);
       setAltText('');
@@ -218,7 +220,7 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
       setValidationError(ui.failedCreatePreview);
       return;
     }
-    await uploadImage(file, '', customFilename, { uploadId });
+    await uploadImage(file, '', customFilename, { uploadId, index: 0 });
   };
 
   const handleCancelUpload = () => {
@@ -252,10 +254,7 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
   };
 
   const handleSaveImage = () => {
-    if (required && !preview) {
-      setValidationError(ui.requiredFieldError);
-      return;
-    }
+    if (required && !preview) { setValidationError(ui.requiredFieldError); return; }
     if (requireAltText && preview && !altText?.trim()) {
       setShowMissingAltWarning(true);
       setValidationError(ui.addAltBeforeSaving);

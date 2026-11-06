@@ -32,10 +32,11 @@ export function useMultiUpload<TPreset extends string = UploadPresetName>(
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   const {
-    locale, ui, maxSizeMB, previews, validationError, infoMessage,
+    locale, ui, maxSizeMB, previews, validationError, infoMessage, liveAnnouncement,
     selectedPreviews, setSelectedPreviews, uploadStats, qualityLevel,
     setQualityLevel, isUploading, hasFailedUploads, uploadingPreviews,
-    completedPreviews, handleFileSelect, handleRemove, handleCancelUpload,
+    completedPreviews, move, setCover, setPrimary,
+    handleFileSelect, handleRemove, handleCancelUpload,
     handleRemoveSelected, handleClearAll, toggleSelect, handleRetryUpload,
     handleRetryFailed, handleAltTextSave, handleColorChange, handleSaveImages,
   } = useMultiImageState(options);
@@ -156,7 +157,7 @@ export function useMultiUpload<TPreset extends string = UploadPresetName>(
     selectedIds: selectedPreviews,
     stats: uploadStats,
     isDragging, isUploading, hasFailedUploads,
-    error: displayError, infoMessage, qualityLevel,
+    error: displayError, infoMessage, liveAnnouncement, qualityLevel,
     maxSizeMB, maxImages, remainingCount, disabled, locale, ui,
     openFileDialog, openFolderDialog,
     selectFiles: handleFileSelect,
@@ -172,6 +173,9 @@ export function useMultiUpload<TPreset extends string = UploadPresetName>(
     selectAll: () => setSelectedPreviews(new Set(previews.map((p) => p.id))),
     clearSelection: () => setSelectedPreviews(new Set()),
     retryFailed: handleRetryFailed,
+    move,
+    setCover,
+    setPrimary,
     save: handleSaveImages,
     setQualityLevel,
     setAltText: handleAltTextSave,

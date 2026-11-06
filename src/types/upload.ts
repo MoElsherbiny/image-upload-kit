@@ -1,3 +1,4 @@
+import type { CropStrategy, ImageAspectRatio } from './aspectRatio';
 import type { UploadPresetName } from './presets';
 import type {
   ExplicitOutputFormat,
@@ -16,6 +17,10 @@ export interface ImageUploadOptions<
   folder?: string;
   /** Maximum bounding box dimensions (overrides preset maxDimensions) */
   maxDimensions?: ImageDimensions;
+  /** Target aspect ratio for server-side smart cropping (Sharp `fit: 'cover'`) */
+  aspectRatio?: Exclude<ImageAspectRatio, 'auto'>;
+  /** Smart crop focus strategy when `aspectRatio` is configured. Defaults to `'attention'`. */
+  crop?: CropStrategy;
   /** Maximum allowed input size in MB */
   maxSizeMB?: number;
   /** Allowed MIME types */

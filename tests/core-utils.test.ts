@@ -166,6 +166,9 @@ describe('STANDARD_PRESETS and defineUploadPresets', () => {
       'hero',
       'logo',
       'original',
+      'square',
+      'portrait',
+      'story',
     ]);
     expect(STANDARD_PRESETS.avatar.maxDimensions).toEqual({ width: 512, height: 512 });
 

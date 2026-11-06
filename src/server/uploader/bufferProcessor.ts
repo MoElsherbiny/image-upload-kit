@@ -40,6 +40,8 @@ export async function processImageBuffer(
   const optimized = await withTimeout(
     optimizeImage(originalBuffer, {
       maxDimensions: options.maxDimensions,
+      aspectRatio: options.aspectRatio,
+      crop: options.crop,
       outputFormat: options.outputFormat,
       quality: options.quality,
       limitInputPixels: options.limitInputPixels,

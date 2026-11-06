@@ -1,3 +1,4 @@
+import type { CropStrategy, ImageAspectRatio } from './aspectRatio';
 import type {
   ExplicitOutputFormat,
   ImageDimensions,
@@ -16,7 +17,10 @@ export type StandardPresetName =
   | 'cover'
   | 'hero'
   | 'logo'
-  | 'original';
+  | 'original'
+  | 'square'
+  | 'portrait'
+  | 'story';
 
 /**
  * Module augmentation hook for global preset autocomplete across a project:
@@ -44,6 +48,10 @@ export interface UploadPresetConfig {
   folder?: string;
   /** Maximum bounding box dimensions (aspect ratio preserved, never enlarged) */
   maxDimensions?: ImageDimensions;
+  /** Optional target aspect ratio for server-side smart cropping (Sharp `fit: 'cover'`) */
+  aspectRatio?: Exclude<ImageAspectRatio, 'auto'>;
+  /** Smart crop focus strategy when `aspectRatio` is configured. Defaults to `'attention'`. */
+  crop?: CropStrategy;
   /** Maximum allowed source file size in MB */
   maxSizeMB?: number;
   /** Allowed source MIME types */
@@ -163,6 +171,51 @@ export const STANDARD_PRESETS: Record<StandardPresetName, UploadPresetConfig> = 
     quality: 95,
     recommendedQualityLevel: 'maximum',
     allowedFormats: DEFAULT_ALLOWED_FORMATS,
+  },
+  square: {
+    folder: 'squares',
+    maxDimensions: { width: 1600, height: 1600 },
+    aspectRatio: '1:1',
+    crop: 'attention',
+    variantWidths: [400, 800, 1200],
+    maxSizeMB: 12,
+    quality: 88,
+    recommendedQualityLevel: 'high',
+    allowedFormats: RASTER_ALLOWED_FORMATS,
+    recommendationNote: {
+      en: '1:1 square crop ideal for product galleries and grid posts',
+      ar: 'قص مربع 1:1 مثالي لمعارض المنتجات والمنشورات الشبكية',
+    },
+  },
+  portrait: {
+    folder: 'portraits',
+    maxDimensions: { width: 1080, height: 1350 },
+    aspectRatio: '4:5',
+    crop: 'attention',
+    variantWidths: [480, 720],
+    maxSizeMB: 12,
+    quality: 86,
+    recommendedQualityLevel: 'high',
+    allowedFormats: RASTER_ALLOWED_FORMATS,
+    recommendationNote: {
+      en: '4:5 vertical portrait optimized for social feeds and lookbooks',
+      ar: 'نسبة 4:5 عمودية محسنة لخلاصات التواصل الاجتماعي',
+    },
+  },
+  story: {
+    folder: 'stories',
+    maxDimensions: { width: 1080, height: 1920 },
+    aspectRatio: '9:16',
+    crop: 'attention',
+    variantWidths: [540, 720],
+    maxSizeMB: 15,
+    quality: 86,
+    recommendedQualityLevel: 'high',
+    allowedFormats: RASTER_ALLOWED_FORMATS,
+    recommendationNote: {
+      en: '9:16 full-screen vertical format for stories and reels',
+      ar: 'تنسيق عمودي 9:16 بملء الشاشة للقصص والريلز',
+    },
   },
 };
 

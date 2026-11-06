@@ -4,6 +4,7 @@ import type {
   ReactNode,
   Ref,
 } from 'react';
+import type { MultiUploadReorderApi } from '../../client/types';
 import type {
   QualityLevel,
   UploadedImageData,
@@ -79,7 +80,7 @@ export interface SingleUploadController {
 export type UseMultiUploadOptions<TPreset extends string = UploadPresetName> =
   Omit<MultiImageUploadProps<TPreset>, 'mode'> & { mode?: 'multiple' };
 
-export interface MultiUploadController {
+export interface MultiUploadController extends MultiUploadReorderApi {
   state: UploadVisualState;
   items: ImagePreview[];
   completedItems: ImagePreview[];
@@ -91,6 +92,7 @@ export interface MultiUploadController {
   hasFailedUploads: boolean;
   error: string;
   infoMessage: string;
+  liveAnnouncement: string;
   qualityLevel: QualityLevel;
   maxSizeMB: number;
   maxImages: number;
