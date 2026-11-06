@@ -1,81 +1,21 @@
-import {
-  type CSSProperties,
-  type ElementType,
-  type HTMLAttributes,
-  type ImgHTMLAttributes,
-  type SyntheticEvent,
-  useMemo,
-} from 'react';
+import { type CSSProperties, type SyntheticEvent, useMemo } from 'react';
 import { cx } from '../../utils/slotStyles';
-import { resolveMeaningfulColor, resolvePlaceholderUrl } from './placeholder';
+import {
+  DEFAULT_NEUTRAL_COLORS,
+  resolveBackgroundColor,
+  resolveIntrinsicPlaceholderUrl,
+  resolvePlaceholderUrl,
+} from './placeholder';
+import type { AnimatedImageObjectFit, AnimatedImageProps } from './types';
 import { useImageReveal } from './useImageReveal';
-
-export type AnimatedImageObjectFit = 'cover' | 'contain' | 'fill' | 'none' | 'scale-down';
-
-export interface AnimatedImageSource {
-  url: string;
-  altText?: string | null;
-  blurDataUrl?: string | null;
-  blurHash?: string | null;
-  blurColor?: string | null;
-  width?: number;
-  height?: number;
-}
-
-interface AnimatedImageBaseProps
-  extends Omit<ImgHTMLAttributes<HTMLImageElement>, 'src' | 'alt' | 'onLoad' | 'onError' | 'placeholder'> {
-  /** LQIP data URL (e.g. `UploadedImageData.blurDataUrl`). Highest priority placeholder. */
-  blurDataUrl?: string | null;
-  /** BlurHash string, decoded client-side when no `blurDataUrl` is given. */
-  blurHash?: string | null;
-  /** Dominant color (e.g. `UploadedImageData.blurColor`) used as background & gradient fallback. */
-  blurColor?: string | null;
-  /** Absolutely fill the nearest positioned parent (like `next/image` `fill`). */
-  fill?: boolean;
-  objectFit?: AnimatedImageObjectFit;
-  objectPosition?: CSSProperties['objectPosition'];
-  /** Show an animated shimmer while loading. Default `false`. */
-  showShimmer?: boolean;
-  /** Crossfade duration in ms. Default `700`. */
-  animationDuration?: number;
-  /** Render a custom image component (e.g. `next/image`, Gatsby, Astro). Receives all img props. */
-  as?: ElementType;
-  /** Extra props forwarded only to the `as` component (e.g. `{ quality: 80, priority: true }`). */
-  imageComponentProps?: Record<string, unknown>;
-  /** Strip all default `iuk-animated-image*` classes (bring your own CSS). */
-  unstyled?: boolean;
-  wrapperClassName?: string;
-  wrapperStyle?: CSSProperties;
-  wrapperProps?: HTMLAttributes<HTMLDivElement>;
-  placeholderClassName?: string;
-  /** Called after the image is decoded and the fade-in starts. */
-  onLoad?: (img: HTMLImageElement | null) => void;
-  onError?: (event: SyntheticEvent<HTMLImageElement, Event>) => void;
-}
-
-export type AnimatedImageProps = AnimatedImageBaseProps &
-  (
-    | {
-        /** Direct `UploadedImageData` object returned by `<SingleImageUpload>` or `<MultiImageUpload>`. */
-        image: AnimatedImageSource;
-        src?: string;
-        alt?: string;
-      }
-    | {
-        image?: undefined;
-        /** Image URL. */
-        src: string;
-        /** Accessible alt text (use `""` for decorative images). */
-        alt: string;
-      }
-  );
 
 const preventDrag = (event: SyntheticEvent) => event.preventDefault();
 const cn = (...classes: Parameters<typeof cx>) => cx(...classes) || undefined;
 
 /**
- * Blur-up image with a smooth, GPU-friendly crossfade from placeholder to sharp image.
- * Pure React, SSR-safe, framework-agnostic — plug in `next/image` via `as`.
+ * Blur-up image with a smooth, GPU-friendly crossfade and subtle zoom reveal.
+ * Matches the Imagine-Global reference design while remaining pure React,
+ * SSR-safe, and framework-agnostic — plug in `next/image` via `as`.
  */
 export function AnimatedImage({
   image,
@@ -84,13 +24,20 @@ export function AnimatedImage({
   blurDataUrl: blurDataUrlProp,
   blurHash: blurHashProp,
   blurColor: blurColorProp,
+  colorPlaceholder = 'flat',
+  neutralColors = DEFAULT_NEUTRAL_COLORS,
   width: widthProp,
   height: heightProp,
   fill = false,
+  priority,
+  quality,
   objectFit = 'cover',
   objectPosition = 'center',
   showShimmer = false,
-  animationDuration = 700,
+  animationDuration = 600,
+  revealScale = 1.02,
+  fallbackSrc,
+  renderError,
   as: ImageComponent,
   imageComponentProps,
   unstyled = false,
@@ -100,7 +47,7 @@ export function AnimatedImage({
   placeholderClassName,
   className,
   style,
-  loading = 'lazy',
+  loading: loadingProp,
   decoding = 'async',
   draggable = false,
   onLoad,
@@ -115,52 +62,92 @@ export function AnimatedImage({
   const width = widthProp ?? (!fill ? image?.width : undefined);
   const height = heightProp ?? (!fill ? image?.height : undefined);
 
-  const { isLoaded, showPlaceholder, hasError, imgRef, handleLoad, handleError } = useImageReveal({
+  const {
+    activeSrc,
+    retryKey,
+    isLoaded,
+    showPlaceholder,
+    hasError,
+    imgRef,
+    handleLoad,
+    handleError,
+    retry,
+  } = useImageReveal({
     srcKey: src,
+    fallbackSrc,
     animationDuration,
     onLoad,
   });
 
   const placeholderUrl = useMemo(
-    () => resolvePlaceholderUrl({ blurDataUrl, blurHash, blurColor }),
-    [blurDataUrl, blurHash, blurColor],
+    () =>
+      colorPlaceholder === 'gradient'
+        ? resolvePlaceholderUrl({ blurDataUrl, blurHash, blurColor, neutralColors })
+        : resolveIntrinsicPlaceholderUrl({ blurDataUrl, blurHash }),
+    [blurDataUrl, blurHash, blurColor, colorPlaceholder, neutralColors],
   );
 
   const state = hasError ? 'error' : isLoaded ? 'loaded' : 'loading';
-  const isContain = objectFit === 'contain';
+  const resolvedObjectFit =
+    (style?.objectFit as AnimatedImageObjectFit | undefined) ?? objectFit;
+  const isContain = resolvedObjectFit === 'contain';
   const cls = (name: string) => (unstyled ? undefined : name);
   const duration = Math.max(0, animationDuration);
+  const placeholderFadeDuration = Math.round(duration * (5 / 6));
 
   const containerStyle: CSSProperties = {
     backgroundColor:
-      resolveMeaningfulColor(blurColor) ??
-      (unstyled ? undefined : 'var(--iuk-animated-image-bg, rgba(38, 45, 56, 0.4))'),
-    ...(unstyled ? undefined : { ['--iuk-animated-image-duration' as string]: `${duration}ms` }),
+      resolveBackgroundColor(blurColor, neutralColors) ??
+      (unstyled
+        ? undefined
+        : 'var(--iuk-animated-image-bg, var(--background-card, rgba(38, 45, 56, 0.4)))'),
+    ...(unstyled
+      ? undefined
+      : {
+          ['--iuk-animated-image-duration' as string]: `${duration}ms`,
+          ['--iuk-ai-ph-dur' as string]: `${placeholderFadeDuration}ms`,
+          ['--iuk-animated-image-reveal-scale' as string]: String(revealScale),
+        }),
     ...wrapperStyle,
   };
 
-  // Staggered fade: keep the placeholder opaque for the first 25% so the
-  // background never "dips" through mid-transition.
   const placeholderStyle: CSSProperties = {
     objectFit: isContain ? 'contain' : 'cover',
-    transitionDuration: `${Math.round(duration * 0.75)}ms`,
-    transitionDelay: isLoaded ? `${Math.round(duration * 0.25)}ms` : '0ms',
+    transitionDuration: `${placeholderFadeDuration}ms`,
   };
 
   const imageStyle: CSSProperties = {
-    objectFit,
+    objectFit: resolvedObjectFit,
     objectPosition,
     transitionDuration: `${duration}ms`,
     ...style,
+    ...(hasError ? { opacity: 0, visibility: 'hidden' as const } : undefined),
   };
 
+  const isCustom = Boolean(ImageComponent);
+  const loadingAttr = priority
+    ? isCustom
+      ? undefined
+      : 'eager'
+    : (loadingProp ?? (isCustom ? undefined : 'lazy'));
+
+  const priorityProps = isCustom
+    ? {
+        ...(priority !== undefined ? { priority } : {}),
+        ...(quality !== undefined ? { quality } : {}),
+      }
+    : priority
+      ? { fetchPriority: 'high' as const }
+      : {};
+
   const sharedImgProps = {
+    ...priorityProps,
     ...imgProps,
     ...(width !== undefined ? { width } : {}),
     ...(height !== undefined ? { height } : {}),
-    src,
+    ...(loadingAttr !== undefined ? { loading: loadingAttr } : {}),
+    src: activeSrc,
     alt,
-    loading,
     decoding,
     draggable,
     ref: imgRef,
@@ -168,10 +155,13 @@ export function AnimatedImage({
     style: imageStyle,
     'data-state': state,
     onDragStart: imgProps.onDragStart ?? preventDrag,
-    onLoad: (event: SyntheticEvent<HTMLImageElement>) => handleLoad(event.currentTarget),
+    onLoad: (event: SyntheticEvent<HTMLImageElement>) =>
+      handleLoad(event.currentTarget),
     onError: (event: SyntheticEvent<HTMLImageElement, Event>) => {
-      handleError();
-      onError?.(event);
+      const isTerminal = handleError();
+      if (isTerminal) {
+        onError?.(event);
+      }
     },
   };
 
@@ -188,9 +178,9 @@ export function AnimatedImage({
       style={{ ...containerStyle, ...wrapperProps?.style }}
       data-slot="animated-image"
       data-state={state}
-      aria-busy={!isLoaded || undefined}
+      aria-busy={state === 'loading' || undefined}
     >
-      {showPlaceholder && (
+      {showPlaceholder && placeholderUrl && (
         <img
           src={placeholderUrl}
           alt=""
@@ -207,22 +197,26 @@ export function AnimatedImage({
         />
       )}
 
-      {showShimmer && showPlaceholder && (
+      {showShimmer && !isLoaded && !hasError && (
         <div
           aria-hidden="true"
           data-slot="animated-image-shimmer"
-          className={cn(
-            cls('iuk-animated-image__shimmer'),
-            isLoaded && cls('iuk-animated-image__shimmer--hidden'),
-          )}
+          className={cn(cls('iuk-animated-image__shimmer'))}
         />
       )}
 
       {ImageComponent ? (
-        <ImageComponent {...sharedImgProps} {...(fill ? { fill: true } : {})} {...imageComponentProps} />
+        <ImageComponent
+          key={retryKey > 0 ? retryKey : undefined}
+          {...sharedImgProps}
+          {...(fill ? { fill: true } : {})}
+          {...imageComponentProps}
+        />
       ) : (
-        <img {...sharedImgProps} />
+        <img key={retryKey > 0 ? retryKey : undefined} {...sharedImgProps} />
       )}
+
+      {hasError && renderError ? renderError({ src: activeSrc, retry }) : null}
     </div>
   );
 }

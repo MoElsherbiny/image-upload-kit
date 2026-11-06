@@ -1,31 +1,76 @@
 import { decodeBlurHashToDataURL } from '../../../blur/blurDataUtils';
 
 /**
- * Colors that carry no real information about the image (common DB defaults
- * or "empty" values). They are replaced by a neutral slate gradient so the
- * placeholder never flashes pitch-black or stark white.
+ * Default neutral colors that carry no real information about the image (common
+ * DB defaults or "empty" values). Ignored by default so placeholders never
+ * flash pitch-black or stark white unless `neutralColors={[]}` is passed.
  */
-const NEUTRAL_COLORS = new Set(['#1a1a1a', '#121212', '#000000', '#000', '#e5e7eb', '#ffffff', '#fff']);
+export const DEFAULT_NEUTRAL_COLORS = [
+  '#1a1a1a',
+  '#121212',
+  '#000000',
+  '#000',
+  '#e5e7eb',
+  '#ffffff',
+  '#fff',
+] as const;
 
 const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
 const FUNC_COLOR = /^(?:rgb|rgba|hsl|hsla|oklch|oklab)\([\d\s.,%/+-]+\)$/i;
+const CSS_VAR_COLOR = /^var\(--[a-zA-Z0-9_-]+(?:\s*,\s*[^;{}<>()]+)?\)$/;
 
-/** Returns a safe, meaningful color or `undefined` when the value is empty/neutral/invalid. */
-export function resolveMeaningfulColor(color?: string | null): string | undefined {
+function isNeutralColor(value: string, neutralColors: readonly string[]): boolean {
+  if (neutralColors.length === 0) return false;
+  const lower = value.toLowerCase();
+  for (const item of neutralColors) {
+    if (item.toLowerCase() === lower) return true;
+  }
+  return false;
+}
+
+/**
+ * Returns a safe, meaningful literal color (`#hex`, `rgb(...)`, `hsl(...)`, `oklch(...)`)
+ * suitable for inline SVG embedding, or `undefined` when empty/neutral/invalid.
+ * Rejects CSS variables (`var(--*)`) because SVG data URLs cannot resolve host DOM tokens.
+ */
+export function resolveMeaningfulColor(
+  color?: string | null,
+  neutralColors: readonly string[] = DEFAULT_NEUTRAL_COLORS,
+): string | undefined {
   const value = color?.trim();
   if (!value) return undefined;
-  if (NEUTRAL_COLORS.has(value.toLowerCase())) return undefined;
-  // Guard against CSS/SVG injection: only accept plain color literals.
+  if (isNeutralColor(value, neutralColors)) return undefined;
   if (!HEX_COLOR.test(value) && !FUNC_COLOR.test(value)) return undefined;
   return value;
+}
+
+/**
+ * Returns a safe CSS background-color value for the wrapper element.
+ * Accepts literal colors AND safe CSS custom property expressions (`var(--token)`),
+ * while rejecting neutral defaults and CSS injection payloads.
+ */
+export function resolveBackgroundColor(
+  color?: string | null,
+  neutralColors: readonly string[] = DEFAULT_NEUTRAL_COLORS,
+): string | undefined {
+  const value = color?.trim();
+  if (!value) return undefined;
+  if (isNeutralColor(value, neutralColors)) return undefined;
+  if (HEX_COLOR.test(value) || FUNC_COLOR.test(value) || CSS_VAR_COLOR.test(value)) {
+    return value;
+  }
+  return undefined;
 }
 
 /**
  * Inline SVG data URL that renders a soft gradient placeholder.
  * Uses the dominant color when provided, otherwise a neutral slate gradient.
  */
-export function createFallbackBlurSvg(color?: string | null): string {
-  const meaningful = resolveMeaningfulColor(color);
+export function createFallbackBlurSvg(
+  color?: string | null,
+  neutralColors: readonly string[] = DEFAULT_NEUTRAL_COLORS,
+): string {
+  const meaningful = resolveMeaningfulColor(color, neutralColors);
   const stop1 = meaningful ?? '#2c3340';
   const stop2 = meaningful ?? '#1e242d';
   const svg =
@@ -42,15 +87,17 @@ export interface PlaceholderSources {
   blurDataUrl?: string | null;
   blurHash?: string | null;
   blurColor?: string | null;
+  neutralColors?: readonly string[];
 }
 
 /**
- * Resolves the best available placeholder in priority order:
- * 1. `blurDataUrl` (LQIP data URL / remote URL)
- * 2. `blurHash` (decoded client-side; browser only)
- * 3. Gradient SVG derived from `blurColor` (or neutral fallback)
+ * Resolves an intrinsic image placeholder (`blurDataUrl` or decoded `blurHash`)
+ * without falling back to an SVG gradient. Returns `undefined` when neither is present.
  */
-export function resolvePlaceholderUrl({ blurDataUrl, blurHash, blurColor }: PlaceholderSources): string {
+export function resolveIntrinsicPlaceholderUrl({
+  blurDataUrl,
+  blurHash,
+}: Pick<PlaceholderSources, 'blurDataUrl' | 'blurHash'>): string | undefined {
   const dataUrl = blurDataUrl?.trim();
   if (dataUrl) return dataUrl;
   if (blurHash && typeof document !== 'undefined') {
@@ -58,8 +105,25 @@ export function resolvePlaceholderUrl({ blurDataUrl, blurHash, blurColor }: Plac
       const decoded = decodeBlurHashToDataURL(blurHash, 32, 32);
       if (decoded) return decoded;
     } catch {
-      // Invalid hash: fall through to color gradient.
+      // Invalid hash: ignore.
     }
   }
-  return createFallbackBlurSvg(blurColor);
+  return undefined;
+}
+
+/**
+ * Resolves the best available placeholder URL in priority order:
+ * 1. `blurDataUrl` (LQIP data URL / remote URL)
+ * 2. `blurHash` (decoded client-side; browser only)
+ * 3. Gradient SVG derived from `blurColor` (or neutral fallback)
+ */
+export function resolvePlaceholderUrl({
+  blurDataUrl,
+  blurHash,
+  blurColor,
+  neutralColors = DEFAULT_NEUTRAL_COLORS,
+}: PlaceholderSources): string {
+  const intrinsic = resolveIntrinsicPlaceholderUrl({ blurDataUrl, blurHash });
+  if (intrinsic) return intrinsic;
+  return createFallbackBlurSvg(blurColor, neutralColors);
 }

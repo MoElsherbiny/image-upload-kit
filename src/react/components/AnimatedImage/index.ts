@@ -1,8 +1,23 @@
+export { AnimatedImage } from './AnimatedImage';
 export {
-  AnimatedImage,
-  type AnimatedImageObjectFit,
-  type AnimatedImageProps,
-  type AnimatedImageSource,
-} from './AnimatedImage';
-export { useImageReveal, type ImageRevealState, type UseImageRevealOptions } from './useImageReveal';
-export { createFallbackBlurSvg, resolveMeaningfulColor, resolvePlaceholderUrl } from './placeholder';
+  createFallbackBlurSvg,
+  DEFAULT_NEUTRAL_COLORS,
+  type PlaceholderSources,
+  resolveBackgroundColor,
+  resolveIntrinsicPlaceholderUrl,
+  resolveMeaningfulColor,
+  resolvePlaceholderUrl,
+} from './placeholder';
+export type {
+  AnimatedImageBaseProps,
+  AnimatedImageColorPlaceholder,
+  AnimatedImageErrorContext,
+  AnimatedImageObjectFit,
+  AnimatedImageProps,
+  AnimatedImageSource,
+} from './types';
+export {
+  type ImageRevealState,
+  type UseImageRevealOptions,
+  useImageReveal,
+} from './useImageReveal';

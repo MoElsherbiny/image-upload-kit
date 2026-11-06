@@ -1,4 +1,4 @@
-/* ── AnimatedImage: blur-up crossfade image ─────────────────────────────── */
+/* ── AnimatedImage: blur-up crossfade image (Imagine-Global parity) ─────── */
 .iuk-animated-image {
   position: relative;
   width: 100%;
@@ -8,6 +8,7 @@
   border-radius: inherit;
   clip-path: inset(0 round inherit);
   contain: paint;
+  transition: background-color var(--iuk-animated-image-color-transition, 300ms ease);
 }
 
 .iuk-animated-image--fill {
@@ -17,19 +18,18 @@
 
 .iuk-animated-image__placeholder {
   position: absolute;
-  inset: -16px;
-  width: calc(100% + 32px);
-  height: calc(100% + 32px);
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-position: center;
-  /* Tiny placeholder stretched to full size must be blurred to avoid pixelation.
-     The layer unmounts after the crossfade, so the filter only runs while loading. */
+  /* Tiny placeholder stretched to full size is blurred and scaled slightly so
+     blurred edges stay clipped inside the overflow: hidden wrapper. */
   filter: blur(var(--iuk-animated-image-blur, 20px));
-  transform: scale(1.06);
+  transform: scale(var(--iuk-animated-image-placeholder-scale, 1.1));
   transform-origin: center;
   z-index: 1;
   opacity: 1;
-  transition-property: opacity;
-  transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1);
+  transition: opacity var(--iuk-ai-ph-dur, 500ms) ease-in-out;
   pointer-events: none;
 }
 
@@ -44,17 +44,24 @@
   width: 100%;
   height: auto;
   opacity: 0;
+  transform: scale(var(--iuk-animated-image-reveal-scale, 1.02));
   border-radius: inherit;
   user-select: none;
   -webkit-user-select: none;
   -webkit-user-drag: none;
-  transition-property: opacity, transform;
-  transition-timing-function: cubic-bezier(0.25, 0.1, 0.25, 1), cubic-bezier(0.4, 0, 0.2, 1);
+  transition:
+    opacity var(--iuk-animated-image-duration, 600ms) ease-in-out,
+    transform var(--iuk-animated-image-duration, 600ms) ease-in-out;
 }
 
-.iuk-animated-image__img[data-state='loaded'],
-.iuk-animated-image__img[data-state='error'] {
+.iuk-animated-image__img[data-state='loaded'] {
   opacity: 1;
+  transform: scale(1);
+}
+
+.iuk-animated-image__img[data-state='error'] {
+  opacity: 0;
+  visibility: hidden;
 }
 
 .iuk-animated-image--fill .iuk-animated-image__img {
@@ -82,12 +89,11 @@
   background: linear-gradient(
     90deg,
     transparent 0%,
-    var(--iuk-animated-image-shimmer, rgba(255, 255, 255, 0.12)) 50%,
+    var(--iuk-animated-image-shimmer, rgba(255, 255, 255, 0.1)) 50%,
     transparent 100%
   );
-  animation: iuk-animated-image-shimmer 1.8s infinite;
+  animation: iuk-animated-image-shimmer 2s infinite;
   pointer-events: none;
-  transition: opacity 0.35s ease-out;
 }
 
 .iuk-animated-image__shimmer--hidden {
@@ -102,6 +108,7 @@
 @media (prefers-reduced-motion: reduce) {
   .iuk-animated-image__img,
   .iuk-animated-image__placeholder {
+    transform: none !important;
     transition-duration: 0ms !important;
     transition-delay: 0ms !important;
   }
