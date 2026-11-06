@@ -72,14 +72,23 @@ export function createFallbackBlurSvg(
 ): string {
   const meaningful = resolveMeaningfulColor(color, neutralColors);
   const stop1 = meaningful ?? '#2c3340';
-  const stop2 = meaningful ?? '#1e242d';
+  const stop2 = meaningful ? '#0f172a' : '#1e242d';
   const svg =
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="100%" height="100%">' +
-    '<defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">' +
-    `<stop offset="0%" stop-color="${stop1}" stop-opacity="0.95"/>` +
-    `<stop offset="100%" stop-color="${stop2}" stop-opacity="0.9"/>` +
-    '</linearGradient></defs>' +
-    '<rect width="100%" height="100%" fill="url(#g)"/></svg>';
+    '<defs>' +
+    '<linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">' +
+    `<stop offset="0%" stop-color="${stop1}" stop-opacity="1"/>` +
+    `<stop offset="55%" stop-color="${stop1}" stop-opacity="0.78"/>` +
+    `<stop offset="100%" stop-color="${stop2}" stop-opacity="0.96"/>` +
+    '</linearGradient>' +
+    '<radialGradient id="h" cx="24%" cy="22%" r="65%">' +
+    '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.22"/>' +
+    '<stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>' +
+    '</radialGradient>' +
+    '</defs>' +
+    '<rect width="100%" height="100%" fill="url(#g)"/>' +
+    '<rect width="100%" height="100%" fill="url(#h)"/>' +
+    '</svg>';
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
