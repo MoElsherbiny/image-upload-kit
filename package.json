@@ -35,6 +35,7 @@
   "files": [
     "dist",
     "README.md",
+    "MIGRATION.md",
     "CHANGELOG.md",
     "LICENSE"
   ],
@@ -194,6 +195,6 @@
     "vitest": "^3.2.0"
   },
   "engines": {
-    "node": ">=18.17.0"
+    "node": ">=20.0.0"
   }
 }
