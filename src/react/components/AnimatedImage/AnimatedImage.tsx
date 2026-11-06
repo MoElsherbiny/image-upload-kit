@@ -112,7 +112,7 @@ export function AnimatedImage({
   };
 
   const placeholderStyle: CSSProperties = {
-    objectFit: isContain ? 'contain' : 'cover',
+    objectFit: 'cover',
     transitionDuration: `${placeholderFadeDuration}ms`,
   };
 
@@ -200,7 +200,7 @@ export function AnimatedImage({
       data-state={state}
       aria-busy={state === 'loading' || undefined}
     >
-      {showPlaceholder && placeholderUrl && (
+      {(showPlaceholder || isContain) && placeholderUrl && (
         <img
           src={placeholderUrl}
           alt=""
@@ -210,7 +210,7 @@ export function AnimatedImage({
           data-slot="animated-image-placeholder"
           className={cn(
             cls('iuk-animated-image__placeholder'),
-            isLoaded && cls('iuk-animated-image__placeholder--hidden'),
+            isLoaded && !isContain && cls('iuk-animated-image__placeholder--hidden'),
             placeholderClassName,
           )}
           style={placeholderStyle}

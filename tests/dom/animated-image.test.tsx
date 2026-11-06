@@ -217,4 +217,38 @@ describe('Phase 6: AnimatedImage — Imagine-Global Parity (jsdom)', () => {
     expect(wrappers[1].querySelector('img.hero-img')).toHaveAttribute('data-next-quality', '85');
     expect(wrappers[2]).toHaveClass('iuk-animated-image--contain');
   });
+
+  it('keeps the generated blur placeholder mounted with objectFit=cover behind objectFit=contain images after load', () => {
+    vi.useFakeTimers();
+    const { container } = render(
+      <AnimatedImage
+        src="/gallery/wide.webp"
+        alt="Wide gallery photo"
+        fill
+        objectFit="contain"
+        blurDataUrl={SAMPLE_LQIP}
+        blurColor="#344040"
+      />,
+    );
+
+    const placeholder = container.querySelector<HTMLImageElement>(
+      '[data-slot="animated-image-placeholder"]',
+    )!;
+    const mainImg = container.querySelector<HTMLImageElement>('.iuk-animated-image__img')!;
+    mainImg.decode = vi.fn(() => Promise.resolve());
+
+    expect(placeholder.style.objectFit).toBe('cover');
+    expect(mainImg.style.objectFit).toBe('contain');
+
+    fireEvent.load(mainImg);
+    act(() => {
+      vi.advanceTimersByTime(1000);
+    });
+
+    const retainedPlaceholder = container.querySelector<HTMLImageElement>(
+      '[data-slot="animated-image-placeholder"]',
+    );
+    expect(retainedPlaceholder).toBeInTheDocument();
+    expect(retainedPlaceholder).not.toHaveClass('iuk-animated-image__placeholder--hidden');
+  });
 });

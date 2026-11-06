@@ -70,14 +70,8 @@
   height: 100%;
 }
 
-/* Pixel-perfect containment: no overscan or scaling offset */
-.iuk-animated-image--contain .iuk-animated-image__placeholder {
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  transform: none;
-}
-
+/* In contain mode, the generated blur placeholder stays visible with object-fit: cover
+   and scale(1.1) behind the contained image so letterbox/pillarbox bars show the blur. */
 .iuk-animated-image--contain .iuk-animated-image__img {
   transform: none;
 }
