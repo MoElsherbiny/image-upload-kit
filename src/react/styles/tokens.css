@@ -107,3 +107,17 @@
   border-top-color: var(--iuk-primary);
   animation: iuk-spin 0.8s linear infinite;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .iuk-spin,
+  .iuk-spinner,
+  .iuk-root *,
+  .iuk-single *,
+  .iuk-multi *,
+  .iuk-modal-backdrop *,
+  .iuk-progress-dock * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

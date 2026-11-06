@@ -7,6 +7,7 @@ import {
   resolveTranslations,
   type UploadTranslations,
 } from '../i18n';
+import { resolveSlotClass } from '../utils/slotStyles';
 
 export interface AltTextInputProps {
   value: string;
@@ -18,6 +19,7 @@ export interface AltTextInputProps {
   showHint?: boolean;
   locale?: UploadLocale;
   translations?: Partial<UploadTranslations>;
+  unstyled?: boolean;
 }
 
 export function AltTextInput({
@@ -30,20 +32,28 @@ export function AltTextInput({
   showHint = true,
   locale: propLocale,
   translations,
+  unstyled: propUnstyled,
 }: AltTextInputProps) {
   const ctx = useImageUploadContext();
+  const isUnstyled = propUnstyled ?? ctx.unstyled;
   const locale = normalizeUploadLocale(propLocale || ctx.locale);
   const ui = resolveTranslations(locale, translations || ctx.translations);
   const resolvedPlaceholder = placeholder || ui.describeImagePlaceholder;
   const resolvedLabel = label || ui.addImageDescription;
   const inputId = useId();
   const hintId = showHint ? `${inputId}-hint` : undefined;
+  const cls = (defaultClass: string) => resolveSlotClass(defaultClass, isUnstyled);
 
   return (
-    <div className="iuk-alt-input" dir={locale === 'ar' ? 'rtl' : 'ltr'}>
-      <div className="iuk-alt-input__header">
+    <div
+      data-slot="alt-input"
+      data-unstyled={isUnstyled || undefined}
+      className={cls('iuk-alt-input')}
+      dir={locale === 'ar' ? 'rtl' : 'ltr'}
+    >
+      <div className={cls('iuk-alt-input__header')}>
         <TypeIcon size={16} />
-        <label htmlFor={inputId} className="iuk-alt-input__label">
+        <label htmlFor={inputId} className={cls('iuk-alt-input__label')}>
           {resolvedLabel}
         </label>
       </div>
@@ -53,14 +63,13 @@ export function AltTextInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={resolvedPlaceholder}
-        className="iuk-alt-input__field"
+        className={cls('iuk-alt-input__field')}
         disabled={disabled}
         maxLength={maxLength}
-        aria-label={ui.addAltTextAria}
         aria-describedby={hintId}
       />
       {showHint && (
-        <p className="iuk-alt-input__hint" id={hintId}>
+        <p className={cls('iuk-alt-input__hint')} id={hintId}>
           <span>
             {value.length}/{maxLength} {ui.characters}
           </span>

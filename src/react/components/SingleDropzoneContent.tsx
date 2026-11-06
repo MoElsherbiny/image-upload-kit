@@ -111,6 +111,11 @@ export function SingleDropzoneEmptyPrompt({
       {isUploading && showProgress && progress > 0 && (
         <p
           data-slot="dropzone-progress"
+          role="progressbar"
+          aria-valuenow={Math.round(progress)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={ui.uploading}
           className={slotClass('dropzoneProgress', 'iuk-dropzone__progress')}
           style={slotStyle('dropzoneProgress')}
         >
@@ -151,6 +156,7 @@ export interface SingleStatusFooterProps extends SingleSlotStylingProps {
   onDownload: () => void;
   helperText?: string;
   displayError?: string;
+  statusTextId?: string;
   isOpen?: boolean;
   requireAltText?: boolean;
   disabled?: boolean;
@@ -160,7 +166,7 @@ export interface SingleStatusFooterProps extends SingleSlotStylingProps {
 
 export function SingleStatusFooter({
   showMissingAltWarning, hasPreview, hasAltText, uploadMessage, isUploading,
-  sizeInfo, canDownload, onDownload, helperText, displayError,
+  sizeInfo, canDownload, onDownload, helperText, displayError, statusTextId,
   isOpen, requireAltText, disabled, onSave, ui,
   unstyled, providerClassNames, classNames, providerStyles, styles,
 }: SingleStatusFooterProps) {
@@ -174,6 +180,7 @@ export function SingleStatusFooter({
       {showMissingAltWarning && hasPreview && !hasAltText && (
         <div
           data-slot="alert"
+          role="alert"
           className={slotClass('alert', 'iuk-alert iuk-alert--warning')}
           style={slotStyle('alert')}
         >
@@ -185,6 +192,7 @@ export function SingleStatusFooter({
       {uploadMessage && !isUploading && sizeInfo && (
         <div
           data-slot="alert"
+          role="status"
           className={slotClass('alert', 'iuk-alert iuk-alert--success')}
           style={slotStyle('alert')}
         >
@@ -214,6 +222,8 @@ export function SingleStatusFooter({
 
       {(helperText || displayError) && (
         <p
+          id={statusTextId}
+          role={displayError ? 'alert' : undefined}
           data-slot={displayError ? 'error-text' : 'helper-text'}
           className={resolveSlotClass(
             cx('iuk-helper-text', Boolean(displayError) && 'iuk-helper-text--error'),

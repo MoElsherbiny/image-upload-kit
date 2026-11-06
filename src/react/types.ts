@@ -40,6 +40,7 @@ export interface ClientUploadRequestParams {
   quality?: number;
   maxDimensions?: ImageDimensions;
   metadata?: Record<string, string>;
+  signal?: AbortSignal;
   onUploadProgress?: (percent: number) => void;
 }
 

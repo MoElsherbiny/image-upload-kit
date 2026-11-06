@@ -1,4 +1,4 @@
-import type { ChangeEvent, HTMLAttributes } from 'react';
+import { type ChangeEvent, type HTMLAttributes, useId } from 'react';
 import type { UploadPresetName } from '../../types';
 import { useImageUploadContext } from '../context';
 import { useDragAndDrop } from '../hooks/useDragAndDrop';
@@ -40,34 +40,48 @@ export function SingleImageUpload<TPreset extends string = UploadPresetName>(
 
   const state = useSingleImageState(props);
   const { isDragging, dragHandlers } = useDragAndDrop({ disabled, onDrop: state.handleFileSelect });
+  const labelId = useId();
+  const inputId = useId();
+  const statusTextId = useId();
 
   const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files && files.length > 0) void state.handleFileSelect(files);
+    event.target.value = '';
   };
 
   const openFileDialog = () => { if (!disabled) state.fileInputRef.current?.click(); };
   const displayError = error || state.validationError;
   const hasPreview = Boolean(state.preview);
   const hasError = Boolean(displayError);
+  const hasLabel = Boolean(label || state.ui.uploadImage);
+  const hasStatusText = Boolean(helperText || displayError);
   const visualState = resolveUploadDataState({
     disabled, hasError, isUploading: state.isUploading, isDragging, hasContent: hasPreview,
   });
 
-  const dropzoneProps: HTMLAttributes<HTMLElement> = {
-    ...dragHandlers,
-    onClick: () => { if (!disabled && !state.preview) openFileDialog(); },
-    onKeyDown: (event) => {
-      if (!disabled && !state.preview && (event.key === 'Enter' || event.key === ' ')) {
-        event.preventDefault();
-        openFileDialog();
+  const dropzoneProps: HTMLAttributes<HTMLElement> = hasPreview
+    ? {
+        ...dragHandlers,
+        'aria-disabled': disabled || undefined,
       }
-    },
-    role: 'button',
-    tabIndex: disabled ? -1 : 0,
-    'aria-label': state.ui.uploadImageAria,
-    'aria-disabled': disabled || undefined,
-  };
+    : {
+        ...dragHandlers,
+        onClick: () => { if (!disabled) openFileDialog(); },
+        onKeyDown: (event) => {
+          if (!disabled && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            openFileDialog();
+          }
+        },
+        role: 'button',
+        tabIndex: disabled ? -1 : 0,
+        'aria-label': state.ui.uploadImageAria,
+        'aria-labelledby': hasLabel ? labelId : undefined,
+        'aria-invalid': hasError || undefined,
+        'aria-describedby': hasStatusText ? statusTextId : undefined,
+        'aria-disabled': disabled || undefined,
+      };
 
   const slotStylingProps = {
     unstyled: isUnstyled, providerClassNames: pCls, classNames: cCls, providerStyles: pSty, styles: cSty,
@@ -85,29 +99,42 @@ export function SingleImageUpload<TPreset extends string = UploadPresetName>(
       style={resolveSlotStyle(pSty?.root, cSty?.root, style)}
       dir={state.locale === 'ar' ? 'rtl' : 'ltr'}
     >
-      {(label || state.ui.uploadImage) && (
-        <label data-slot="label" className={slotClass('label', 'iuk-label')} style={slotStyle('label')}>
+      <div role="status" aria-live="polite" aria-atomic="true" style={HIDDEN_INPUT_STYLE}>
+        {state.liveAnnouncement}
+      </div>
+
+      {hasLabel && (
+        <label
+          id={labelId}
+          htmlFor={inputId}
+          data-slot="label"
+          className={slotClass('label', 'iuk-label')}
+          style={slotStyle('label')}
+        >
           <span>{label || state.ui.uploadImage}</span>
           {required && <span className={resolveSlotClass('iuk-required', isUnstyled)}>*</span>}
         </label>
       )}
 
-      {showQualitySelector && !state.preview && (
+      {showQualitySelector && (
         <div data-slot="quality-selector" className={slotClass('qualitySelector')} style={slotStyle('qualitySelector')}>
           <QualitySelector
             value={state.qualityLevel} onChange={state.setQualityLevel} preset={preset}
             recommendedLevel={recommendedQuality} recommendationNote={qualityNote}
             originalFileSize={state.selectedFile?.size} locale={state.locale}
-            disabled={disabled || state.isUploading}
+            disabled={disabled || state.isUploading} unstyled={isUnstyled}
           />
         </div>
       )}
 
       <input
+        id={inputId}
         ref={state.fileInputRef} type="file" accept={accept} onChange={handleInputChange}
         className={resolveSlotClass('iuk-hidden-input', isUnstyled)}
         style={isUnstyled ? HIDDEN_INPUT_STYLE : undefined}
         disabled={disabled} aria-label={state.ui.fileInputAria}
+        aria-invalid={hasError || undefined}
+        aria-describedby={hasStatusText ? statusTextId : undefined}
       />
 
       {!state.preview && renderDropzone ? (
@@ -193,7 +220,7 @@ export function SingleImageUpload<TPreset extends string = UploadPresetName>(
         uploadMessage={state.uploadMessage} isUploading={state.isUploading}
         sizeInfo={state.sizeInfo} canDownload={state.canDownload}
         onDownload={() => void state.handleDownload()}
-        helperText={helperText} displayError={displayError}
+        helperText={helperText} displayError={displayError} statusTextId={statusTextId}
         isOpen={isOpen} requireAltText={state.requireAltText}
         disabled={disabled} onSave={state.handleSaveImage}
         ui={state.ui} {...slotStylingProps}

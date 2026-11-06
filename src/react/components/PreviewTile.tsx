@@ -17,7 +17,8 @@ import {
   type UploadTranslations,
 } from '../i18n';
 import type { CustomImageRenderer, ImagePreview } from '../types';
-import { cx, resolveSlotClass } from '../utils/slotStyles';
+import { appendCacheBuster } from '../utils/sessionMetaCache';
+import { cx, resolveSlotClass, resolveUploadDataState } from '../utils/slotStyles';
 import { BlurImage } from './BlurImage';
 import { BlurVisualizationModal } from './BlurVisualizationModal';
 
@@ -33,6 +34,7 @@ export interface PreviewTileProps {
   onAdjustColor?: (id: string) => void;
   onChangeColor?: (id: string, color: string) => void;
   onChangeAltText?: (id: string, altText: string) => void;
+  appendCacheBuster?: boolean;
   locale?: UploadLocale;
   translations?: Partial<UploadTranslations>;
   renderImage?: CustomImageRenderer;
@@ -42,23 +44,11 @@ export interface PreviewTileProps {
 }
 
 export function PreviewTile({
-  preview,
-  onRemove,
-  disabled = false,
-  blurType = 'card',
-  isSelected = false,
-  onToggleSelect,
-  onEditAltText,
-  showCheckbox = true,
-  onAdjustColor,
-  onChangeColor,
-  onChangeAltText,
-  locale: propLocale,
-  translations,
-  renderImage,
-  unstyled: propUnstyled,
-  className,
-  style,
+  preview, onRemove, disabled = false, blurType = 'card', isSelected = false,
+  onToggleSelect, onEditAltText, showCheckbox = true, onAdjustColor,
+  onChangeColor, onChangeAltText, appendCacheBuster: appendBuster = false,
+  locale: propLocale, translations, renderImage,
+  unstyled: propUnstyled, className, style,
 }: PreviewTileProps) {
   const ctx = useImageUploadContext();
   const isUnstyled = propUnstyled ?? ctx.unstyled;
@@ -73,32 +63,27 @@ export function PreviewTile({
       preview.url?.includes('image/svg+xml'),
   );
 
-  const [sessionBuster] = useState(() => Date.now());
+  const displayUrl = useMemo(
+    () =>
+      appendCacheBuster(preview.url, {
+        enabled: appendBuster,
+        token: preview.data?.contentHash || preview.data?.uploadedAt,
+      }),
+    [preview.url, preview.data?.contentHash, preview.data?.uploadedAt, appendBuster],
+  );
 
-  const displayUrl = useMemo(() => {
-    const url = preview.url;
-    if (!url || url.startsWith('data:') || url.startsWith('blob:')) return url;
-    if (url.includes('?v=') || url.includes('&v=') || url.includes('?t=') || url.includes('&t=')) {
-      return url;
-    }
-    const buster = preview.data?.contentHash || preview.data?.uploadedAt || sessionBuster;
-    return `${url}${url.includes('?') ? '&' : '?'}t=${buster}`;
-  }, [preview.url, preview.data?.contentHash, preview.data?.uploadedAt, sessionBuster]);
-
-  const fallbackBlurDataURL = useBlurDataURL(preview.url, {
-    type: blurType,
-    size: 'small',
-  });
-
+  const fallbackBlurDataURL = useBlurDataURL(preview.url, { type: blurType, size: 'small' });
   const actualBlurDataUrl = preview.data?.blurDataUrl || fallbackBlurDataURL;
   const actualBlurColor = preview.blurColor || preview.data?.blurColor;
 
   const isUploading = Boolean(preview.isUploading);
   const hasError = Boolean(preview.error);
+  const visualState = resolveUploadDataState({
+    disabled, hasError, isUploading, hasContent: true,
+  });
   const isSuccess = Boolean(
     !isUploading && !hasError && preview.originalSize && preview.optimizedSize,
   );
-
   const reductionPercent =
     isSuccess && preview.originalSize && preview.optimizedSize
       ? Math.round(
@@ -109,22 +94,19 @@ export function PreviewTile({
   return (
     <div
       data-slot="tile"
+      data-state={visualState}
       data-selected={isSelected || undefined}
       data-uploading={isUploading || undefined}
       data-error={hasError || undefined}
       className={resolveSlotClass(
-        cx(
-          'iuk-tile',
-          isSelected && 'iuk-tile--selected',
-          hasError && 'iuk-tile--error',
-        ),
+        cx('iuk-tile', isSelected && 'iuk-tile--selected', hasError && 'iuk-tile--error'),
         isUnstyled,
         className,
       )}
       style={style}
       onClick={() => onToggleSelect && !disabled && onToggleSelect(preview.id)}
     >
-      <div className={cls('iuk-tile__media')}>
+      <div data-slot="tile-media" className={cls('iuk-tile__media')}>
         <BlurImage
           src={displayUrl}
           alt={preview.altText || ui.previewAlt}
@@ -138,6 +120,7 @@ export function PreviewTile({
 
         {showCheckbox && !disabled && !isUploading && onToggleSelect && (
           <div
+            data-slot="tile-checkbox"
             className={cls('iuk-tile__checkbox')}
             onClick={(e) => e.stopPropagation()}
           >
@@ -153,6 +136,7 @@ export function PreviewTile({
         {!disabled && onEditAltText && (
           <button
             type="button"
+            data-slot="tile-alt-btn"
             className={cls(
               cx(
                 'iuk-tile__action iuk-tile__action--alt',
@@ -177,6 +161,7 @@ export function PreviewTile({
         {!disabled && !isUploading && (
           <button
             type="button"
+            data-slot="tile-blur-btn"
             className={cls('iuk-tile__action iuk-tile__action--blur')}
             onClick={(e) => {
               e.stopPropagation();
@@ -193,6 +178,7 @@ export function PreviewTile({
         {!disabled && !isUploading && (
           <button
             type="button"
+            data-slot="tile-remove-btn"
             className={cls('iuk-tile__action iuk-tile__action--remove')}
             onClick={(e) => {
               e.stopPropagation();
@@ -205,13 +191,20 @@ export function PreviewTile({
         )}
 
         {isUploading && (
-          <div className={cls('iuk-tile__overlay')}>
+          <div data-slot="tile-overlay" className={cls('iuk-tile__overlay')}>
             <Loader2 size={24} className={cls('iuk-spin')} />
             <p className={cls('iuk-tile__status')}>
               {preview.uploadMessage || `${ui.uploading}...`}
             </p>
             {preview.progress !== undefined && preview.progress > 0 && (
-              <div className={cls('iuk-progress-bar')}>
+              <div
+                role="progressbar"
+                aria-valuenow={Math.round(preview.progress)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={ui.uploading}
+                className={cls('iuk-progress-bar')}
+              >
                 <div
                   className={cls('iuk-progress-bar__fill')}
                   style={{ width: `${preview.progress}%` }}
@@ -222,24 +215,25 @@ export function PreviewTile({
         )}
 
         {isSuccess && (
-          <div className={cls('iuk-tile__badge iuk-tile__badge--success')}>
+          <div data-slot="tile-badge" className={cls('iuk-tile__badge iuk-tile__badge--success')}>
             <CheckCircle2 size={13} />
             {reductionPercent > 0 && <span>-{reductionPercent}%</span>}
           </div>
         )}
 
         {!disabled && !isUploading && !hasError && actualBlurColor && (
-          <div className={cls('iuk-tile__badge iuk-tile__badge--color')}>
-            <span
-              className={cls('iuk-tile__color-dot')}
-              style={{ backgroundColor: actualBlurColor }}
-            />
+          <div data-slot="tile-color-badge" className={cls('iuk-tile__badge iuk-tile__badge--color')}>
+            <span className={cls('iuk-tile__color-dot')} style={{ backgroundColor: actualBlurColor }} />
             <code>{actualBlurColor.toUpperCase()}</code>
           </div>
         )}
 
         {hasError && (
-          <div className={cls('iuk-tile__overlay iuk-tile__overlay--error')}>
+          <div
+            data-slot="tile-error"
+            role="alert"
+            className={cls('iuk-tile__overlay iuk-tile__overlay--error')}
+          >
             <XCircle size={22} />
             <p>{preview.error}</p>
           </div>
@@ -259,7 +253,13 @@ export function PreviewTile({
         locale={locale}
         translations={translations}
         renderImage={renderImage}
+        unstyled={isUnstyled}
         onChangeColor={(hex) => onChangeColor?.(preview.id, hex)}
+        onUseDetectedColor={
+          onChangeColor && preview.data?.blurColor
+            ? () => onChangeColor(preview.id, preview.data!.blurColor!)
+            : undefined
+        }
         onChangeAltText={(nextAlt) => onChangeAltText?.(preview.id, nextAlt)}
       />
     </div>

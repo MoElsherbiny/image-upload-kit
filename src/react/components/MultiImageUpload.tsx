@@ -1,4 +1,4 @@
-import { type ChangeEvent, Fragment, type HTMLAttributes, useEffect, useRef, useState } from 'react';
+import { type ChangeEvent, Fragment, type HTMLAttributes, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { UploadPresetName } from '../../types';
 import { useImageUploadContext } from '../context';
@@ -6,12 +6,7 @@ import { useDragAndDrop } from '../hooks/useDragAndDrop';
 import { useMultiImageState } from '../hooks/useMultiImageState';
 import type { MultiUploadSlot } from '../styling';
 import type { MultiImageUploadProps } from '../types';
-import {
-  HIDDEN_INPUT_STYLE,
-  resolveSlotClass,
-  resolveSlotStyle,
-  resolveUploadDataState,
-} from '../utils/slotStyles';
+import { HIDDEN_INPUT_STYLE, resolveSlotClass, resolveSlotStyle, resolveUploadDataState } from '../utils/slotStyles';
 import { AltTextModal } from './AltTextModal';
 import { MultiAddMoreTile, MultiEmptyDropzone } from './MultiDropzoneViews';
 import { MultiFooterSection, MultiUploadHeaderAlerts } from './MultiUploadHeaderAlerts';
@@ -50,6 +45,9 @@ export function MultiImageUpload<TPreset extends string = UploadPresetName>(
     locale, ui, previews, selectedPreviews, uploadingPreviews, imagesWithoutAlt, editingTarget,
   } = state;
 
+  const labelId = useId();
+  const inputId = useId();
+  const statusTextId = useId();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -116,12 +114,9 @@ export function MultiImageUpload<TPreset extends string = UploadPresetName>(
 
   const displayError = error || state.validationError;
   const hasError = Boolean(displayError) || state.hasFailedUploads;
+  const hasStatusText = Boolean(helperText || displayError);
   const visualState = resolveUploadDataState({
-    disabled,
-    hasError,
-    isUploading: state.isUploading,
-    isDragging,
-    hasContent: previews.length > 0,
+    disabled, hasError, isUploading: state.isUploading, isDragging, hasContent: previews.length > 0,
   });
 
   const dockItems: UploadItem[] = isUploading
@@ -131,9 +126,20 @@ export function MultiImageUpload<TPreset extends string = UploadPresetName>(
       }))
     : (retainedItems ?? []);
 
-  const dropzoneProps: HTMLAttributes<HTMLElement> = {
+  const dropzoneProps: HTMLAttributes<HTMLElement> & { 'data-state'?: string } = {
     ...dragHandlers,
-    'aria-disabled': disabled || undefined,
+    role: 'button', tabIndex: disabled ? -1 : 0,
+    'aria-label': ui.selectFilesAria, 'aria-disabled': disabled || undefined,
+    'aria-invalid': hasError || undefined,
+    'aria-describedby': hasStatusText ? statusTextId : undefined,
+    'data-state': visualState,
+    onClick: () => { if (!disabled) openFilePicker(); },
+    onKeyDown: (event) => {
+      if (!disabled && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        openFilePicker();
+      }
+    },
   };
 
   const slotStylingProps = {
@@ -159,14 +165,14 @@ export function MultiImageUpload<TPreset extends string = UploadPresetName>(
           })
         ) : (
           <MultiUploadHeaderAlerts
-            label={label} required={required} disabled={disabled}
+            label={label} labelId={labelId} inputId={inputId} required={required} disabled={disabled}
             totalCount={previews.length} selectedCount={selectedPreviews.size}
             uploadingCount={uploadingPreviews.length} missingAltCount={imagesWithoutAlt.length}
             isUploading={state.isUploading} hasFailedUploads={state.hasFailedUploads}
             infoMessage={state.infoMessage} showMissingAltWarning={state.showMissingAltWarning}
-            uploadStats={state.uploadStats} ui={ui} onSelectAll={selectAll}
-            onDeselectAll={clearSelection} onRemoveSelected={state.handleRemoveSelected}
-            onRetryFailed={retryFailed} {...slotStylingProps}
+            uploadStats={state.uploadStats} locale={locale} translations={translations} ui={ui}
+            onSelectAll={selectAll} onDeselectAll={clearSelection}
+            onRemoveSelected={state.handleRemoveSelected} onRetryFailed={retryFailed} {...slotStylingProps}
           />
         )}
 
@@ -176,15 +182,17 @@ export function MultiImageUpload<TPreset extends string = UploadPresetName>(
               value={state.qualityLevel} onChange={state.setQualityLevel}
               preset={preset} recommendedLevel={recommendedQuality}
               recommendationNote={qualityNote} locale={locale}
-              disabled={state.isUploading || disabled}
+              disabled={state.isUploading || disabled} unstyled={isUnstyled}
             />
           </div>
         )}
 
         <input
-          ref={fileInputRef} type="file" accept={accept} onChange={handleFilesInputChange}
+          id={inputId} ref={fileInputRef} type="file" accept={accept} onChange={handleFilesInputChange}
           className={hiddenInputClass} style={hiddenInputStyle}
           disabled={disabled} multiple aria-label={ui.selectFilesAria}
+          aria-invalid={hasError || undefined}
+          aria-describedby={hasStatusText ? statusTextId : undefined}
         />
         <input
           ref={folderInputRef} type="file" accept={accept} onChange={handleFilesInputChange}
@@ -209,18 +217,12 @@ export function MultiImageUpload<TPreset extends string = UploadPresetName>(
             />
           )
         ) : (
-          <div
-            data-slot="grid"
-            className={slotClass('grid', 'iuk-multi__grid')}
-            style={slotStyle('grid')}
-          >
+          <div data-slot="grid" className={slotClass('grid', 'iuk-multi__grid')} style={slotStyle('grid')}>
             {previews.map((item, index) =>
               renderTile ? (
                 <Fragment key={item.id}>
                   {renderTile({
-                    item, index,
-                    isSelected: selectedPreviews.has(item.id),
-                    disabled,
+                    item, index, isSelected: selectedPreviews.has(item.id), disabled,
                     toggleSelect: () => state.toggleSelect(item.id),
                     remove: () => state.handleRemove(item.id),
                     openAltTextModal: () => state.setEditingAltTextId(item.id),
@@ -259,7 +261,7 @@ export function MultiImageUpload<TPreset extends string = UploadPresetName>(
         )}
 
         <MultiFooterSection
-          helperText={helperText} displayError={displayError} isOpen={isOpen}
+          helperText={helperText} displayError={displayError} statusTextId={statusTextId} isOpen={isOpen}
           hasPreviews={previews.length > 0} hasCompletedPreviews={state.completedPreviews.length > 0}
           isUploading={state.isUploading} disabled={disabled} requireAltText={state.requireAltText}
           missingAltCount={imagesWithoutAlt.length} onSave={state.handleSaveImages} ui={ui} {...slotStylingProps}
@@ -272,6 +274,7 @@ export function MultiImageUpload<TPreset extends string = UploadPresetName>(
           onSave={(nextAlt) => state.handleAltTextSave(editingTarget.id, nextAlt)}
           onClose={() => state.setEditingAltTextId(null)}
           locale={locale} translations={translations} renderImage={renderImage}
+          unstyled={isUnstyled}
         />
       )}
 
@@ -280,7 +283,7 @@ export function MultiImageUpload<TPreset extends string = UploadPresetName>(
           <UploadProgressPanel
             items={dockItems} completedCount={state.uploadStats.completed}
             totalCount={state.uploadStats.total} locale={locale}
-            translations={translations} renderImage={renderImage}
+            translations={translations} renderImage={renderImage} unstyled={isUnstyled}
           />,
           document.body,
         )}

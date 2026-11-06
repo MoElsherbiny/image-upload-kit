@@ -39,7 +39,10 @@ export function BlurImage({
   const ctx = useImageUploadContext();
   const renderImage = propRenderImage || ctx.renderImage;
   const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const onImageLoadRef = useRef(onImageLoad);
+  onImageLoadRef.current = onImageLoad;
 
   const decodedHashUrl = useMemo(() => {
     if (blurDataUrl || !blurHash) return null;
@@ -48,22 +51,25 @@ export function BlurImage({
 
   const effectiveBlurUrl = blurDataUrl || decodedHashUrl || undefined;
   const isLoaded = loadedSrc === src;
+  const hasFailed = failedSrc === src;
 
   useEffect(() => {
     const el = imgRef.current;
     if (el && el.complete && el.naturalWidth > 0) {
       setLoadedSrc(src);
-      onImageLoad?.(el);
+      onImageLoadRef.current?.(el);
     }
-  }, [src, onImageLoad]);
+  }, [src]);
 
   const imgStyle: CSSProperties = {
     width: '100%',
     height: '100%',
     objectFit,
-    opacity: isLoaded || !effectiveBlurUrl ? 1 : 0,
+    opacity: isLoaded || hasFailed || !effectiveBlurUrl ? 1 : 0,
     transition: 'opacity 0.28s ease-out',
   };
+
+  const escapedBlurUrl = effectiveBlurUrl ? effectiveBlurUrl.replace(/"/g, '\\"') : undefined;
 
   return (
     <div
@@ -73,12 +79,12 @@ export function BlurImage({
         ...style,
       }}
     >
-      {effectiveBlurUrl && (
+      {escapedBlurUrl && (
         <div
           aria-hidden="true"
           className={`iuk-blur-image-backdrop ${isLoaded ? 'iuk-blur-image-backdrop--hidden' : ''}`}
           style={{
-            backgroundImage: `url(${effectiveBlurUrl})`,
+            backgroundImage: `url("${escapedBlurUrl}")`,
             backgroundSize: objectFit === 'contain' ? 'contain' : 'cover',
           }}
         />
@@ -92,7 +98,7 @@ export function BlurImage({
           style: imgStyle,
           onLoad: (el) => {
             setLoadedSrc(src);
-            onImageLoad?.(el);
+            onImageLoadRef.current?.(el);
           },
         })
       ) : (
@@ -106,7 +112,10 @@ export function BlurImage({
           style={imgStyle}
           onLoad={(e) => {
             setLoadedSrc(src);
-            onImageLoad?.(e.currentTarget);
+            onImageLoadRef.current?.(e.currentTarget);
+          }}
+          onError={() => {
+            setFailedSrc(src);
           }}
         />
       )}

@@ -8,12 +8,14 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { UploadPresetName } from '../../types';
 import { useImageUploadContext } from '../context';
+import { useDialog } from '../hooks/useDialog';
 import { normalizeUploadLocale, resolveTranslations } from '../i18n';
 import type {
   ImageUploadProps,
   MultiImageUploadProps,
   SingleImageUploadProps,
 } from '../types';
+import { resolveSlotClass } from '../utils/slotStyles';
 import { MultiImageUpload } from './MultiImageUpload';
 import { SingleImageUpload } from './SingleImageUpload';
 
@@ -21,6 +23,7 @@ export function ImageUpload<TPreset extends string = UploadPresetName>(
   props: ImageUploadProps<TPreset>,
 ) {
   const ctx = useImageUploadContext();
+  const isUnstyled = props.unstyled ?? ctx.unstyled;
   const uploadLocale = normalizeUploadLocale(props.locale || ctx.locale);
   const ui = resolveTranslations(
     uploadLocale,
@@ -30,9 +33,24 @@ export function ImageUpload<TPreset extends string = UploadPresetName>(
   const { isOpen, onClose, title, modeVariant } = props;
   const [isMinimized, setIsMinimized] = useState(false);
   const [dockNode, setDockNode] = useState<HTMLElement | null>(null);
+  const cls = (defaultClass: string) => resolveSlotClass(defaultClass, isUnstyled);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isOpen) {
+      setIsMinimized(false);
+    }
+  }, [isOpen]);
+
+  const { dialogRef, titleId } = useDialog({
+    isOpen: Boolean(isOpen) && !isMinimized,
+    onClose,
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isOpen || !isMinimized) {
+      setDockNode(null);
+      return;
+    }
 
     const updateDockReference = () => {
       const node = document.querySelector('[data-upload-progress-dock]');
@@ -50,7 +68,7 @@ export function ImageUpload<TPreset extends string = UploadPresetName>(
     });
 
     return () => observer.disconnect();
-  }, []);
+  }, [isOpen, isMinimized]);
 
   const content =
     props.mode === 'multiple' ? (
@@ -61,7 +79,13 @@ export function ImageUpload<TPreset extends string = UploadPresetName>(
 
   if (isOpen === undefined) {
     return (
-      <div className="iuk-root" dir={dir} data-upload-locale={uploadLocale}>
+      <div
+        data-slot="upload-root"
+        data-unstyled={isUnstyled || undefined}
+        className={cls('iuk-root')}
+        dir={dir}
+        data-upload-locale={uploadLocale}
+      >
         {content}
       </div>
     );
@@ -72,14 +96,15 @@ export function ImageUpload<TPreset extends string = UploadPresetName>(
   const minimizedButton = (
     <button
       type="button"
-      className="iuk-minimized-pill"
+      data-slot="minimized-pill"
+      className={cls('iuk-minimized-pill')}
       onClick={() => setIsMinimized(false)}
       title={ui.restoreUploadWindow}
     >
-      <Loader2 size={16} className="iuk-spin" />
-      <span className="iuk-minimized-pill__copy">
-        <span className="iuk-minimized-pill__primary">{ui.uploadWindow}</span>
-        <span className="iuk-minimized-pill__secondary">{ui.tapToResume}</span>
+      <Loader2 size={16} className={cls('iuk-spin')} />
+      <span className={cls('iuk-minimized-pill__copy')}>
+        <span className={cls('iuk-minimized-pill__primary')}>{ui.uploadWindow}</span>
+        <span className={cls('iuk-minimized-pill__secondary')}>{ui.tapToResume}</span>
       </span>
       <ChevronUp size={16} />
     </button>
@@ -88,21 +113,33 @@ export function ImageUpload<TPreset extends string = UploadPresetName>(
   return (
     <>
       <div
-        className={`iuk-root iuk-modal-backdrop ${isMinimized ? 'iuk-modal-backdrop--hidden' : ''}`}
+        data-slot="upload-modal-backdrop"
+        data-unstyled={isUnstyled || undefined}
+        className={cls(
+          `iuk-root iuk-modal-backdrop ${isMinimized ? 'iuk-modal-backdrop--hidden' : ''}`.trim(),
+        )}
         dir={dir}
         data-upload-locale={uploadLocale}
         role="dialog"
         aria-modal={!isMinimized}
         aria-hidden={isMinimized}
+        aria-labelledby={title ? titleId : undefined}
+        aria-label={!title ? ui.uploadWindow : undefined}
+        onClick={() => onClose?.()}
       >
         <div
-          className={`iuk-upload-dialog ${isMinimized ? 'iuk-upload-dialog--hidden' : ''}`}
+          ref={dialogRef}
+          data-slot="upload-dialog"
+          className={cls(
+            `iuk-upload-dialog ${isMinimized ? 'iuk-upload-dialog--hidden' : ''}`.trim(),
+          )}
+          onClick={(e) => e.stopPropagation()}
         >
           {onClose && (
-            <div className="iuk-upload-dialog__controls">
+            <div className={cls('iuk-upload-dialog__controls')}>
               <button
                 type="button"
-                className="iuk-icon-btn iuk-icon-btn--floating"
+                className={cls('iuk-icon-btn iuk-icon-btn--floating')}
                 onClick={() => setIsMinimized(true)}
                 aria-label={ui.minimize}
                 title={ui.minimizeUploader}
@@ -111,7 +148,7 @@ export function ImageUpload<TPreset extends string = UploadPresetName>(
               </button>
               <button
                 type="button"
-                className="iuk-icon-btn iuk-icon-btn--floating"
+                className={cls('iuk-icon-btn iuk-icon-btn--floating')}
                 onClick={onClose}
                 aria-label={ui.close}
               >
@@ -120,11 +157,11 @@ export function ImageUpload<TPreset extends string = UploadPresetName>(
             </div>
           )}
           <div
-            className="iuk-upload-dialog__card"
+            className={cls('iuk-upload-dialog__card')}
             onClick={(e) => e.stopPropagation()}
           >
             {title && (
-              <h3 className="iuk-upload-dialog__title">
+              <h3 id={titleId} className={cls('iuk-upload-dialog__title')}>
                 {modeVariant === 'edit'
                   ? ui.editPrefix.replace('{title}', title)
                   : title}
@@ -139,11 +176,11 @@ export function ImageUpload<TPreset extends string = UploadPresetName>(
         typeof document !== 'undefined' &&
         (dockNode ? (
           createPortal(
-            <div className="iuk-minimized-portal">{minimizedButton}</div>,
+            <div className={cls('iuk-minimized-portal')}>{minimizedButton}</div>,
             dockNode,
           )
         ) : (
-          <div className="iuk-minimized-dock">{minimizedButton}</div>
+          <div className={cls('iuk-minimized-dock')}>{minimizedButton}</div>
         ))}
     </>
   );

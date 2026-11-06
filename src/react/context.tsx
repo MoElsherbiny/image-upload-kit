@@ -14,7 +14,7 @@ export interface ImageUploadContextValue {
   uploader?: CustomUploaderFn;
   headers?: Record<string, string>;
   withCredentials?: boolean;
-  locale: UploadLocale;
+  locale?: UploadLocale;
   translations?: Partial<UploadTranslations>;
   renderImage?: CustomImageRenderer;
   storageKeyPrefix: string;
@@ -28,7 +28,7 @@ export interface ImageUploadContextValue {
 
 const DEFAULT_CONTEXT: ImageUploadContextValue = {
   endpoint: '/api/upload',
-  locale: 'en',
+  locale: undefined,
   storageKeyPrefix: 'iuk',
   requireAltText: true,
   unstyled: false,
@@ -75,7 +75,7 @@ export function ImageUploadProvider({
   uploader,
   headers,
   withCredentials,
-  locale = 'en',
+  locale,
   translations,
   renderImage,
   storageKeyPrefix = 'iuk',

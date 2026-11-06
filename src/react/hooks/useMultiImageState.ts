@@ -3,8 +3,20 @@ import type { QualityLevel, StandardPresetName, UploadedImageData, UploadPresetN
 import { QUALITY_PRESETS, STANDARD_PRESETS } from '../../types';
 import { validateMultipleFiles } from '../../utils/validators';
 import { useImageUploadContext } from '../context';
-import { normalizeUploadLocale, resolveTranslations } from '../i18n';
+import {
+  formatNeedsAltMessage,
+  formatSkippedImagesMessage,
+  normalizeUploadLocale,
+  resolveTranslations,
+} from '../i18n';
 import type { ImagePreview, MultiImageUploadProps } from '../types';
+import {
+  collectUploadedData,
+  mapUploadedToPreview,
+  resolveInitialQuality,
+  runParallelUploadPool,
+  syncPreviewsWithValue,
+} from './uploadQueue';
 import { useFilePreview } from './useFilePreview';
 import { useImageUpload } from './useImageUpload';
 
@@ -15,25 +27,7 @@ export interface MultiUploadStats { total: number; completed: number; failed: nu
 export type UseMultiImageStateOptions<TPreset extends string = UploadPresetName> =
   Omit<MultiImageUploadProps<TPreset>, 'mode'> & { mode?: 'multiple' };
 
-function mapUploadedToPreview(img: UploadedImageData, prev?: ImagePreview): ImagePreview {
-  const altText = prev?.altText && !img.altText?.trim() ? prev.altText : img.altText;
-  return {
-    id: img.url, url: img.url, file: null, uploadMessage: null,
-    originalSize: img.originalSize, optimizedSize: img.size,
-    data: { ...img, altText }, altText, blurColor: img.blurColor || prev?.blurColor,
-  };
-}
-
-function resolveInitialQuality(q?: number, fallback: QualityLevel = 'high'): QualityLevel {
-  if (!q) return fallback;
-  return q <= 55 ? 'low' : q <= 78 ? 'medium' : q <= 90 ? 'high' : 'maximum';
-}
-
-function collectUploadedData(list: ImagePreview[], readyOnly: boolean): UploadedImageData[] {
-  return list
-    .filter((p) => p.data && (!readyOnly || !p.isUploading))
-    .map((p) => ({ ...p.data!, altText: p.altText ?? p.data!.altText, blurColor: p.blurColor ?? p.data!.blurColor }));
-}
+let tempIdCounter = 0;
 
 export function useMultiImageState<TPreset extends string = UploadPresetName>(
   options: UseMultiImageStateOptions<TPreset>,
@@ -54,6 +48,9 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
   const [previews, setPreviews] = useState<ImagePreview[]>(() => value.map((img) => mapUploadedToPreview(img)));
   const previewsRef = useRef<ImagePreview[]>(previews);
   previewsRef.current = previews;
+  const uncommittedIdsRef = useRef<Set<string>>(new Set());
+  const isRetryingRef = useRef(false);
+
   const [validationError, setValidationError] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
   const [selectedPreviews, setSelectedPreviews] = useState<Set<string>>(() => new Set());
@@ -64,55 +61,37 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
     resolveInitialQuality(options.quality ?? standardPreset?.quality, standardPreset?.recommendedQualityLevel),
   );
 
-  const { createPreview } = useFilePreview();
-
+  const { createPreview, revokePreview } = useFilePreview({ errorLabel: ui.failedCreatePreview });
   const infoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    return () => {
-      if (infoTimeoutRef.current) clearTimeout(infoTimeoutRef.current);
-    };
+  useEffect(() => () => {
+    if (infoTimeoutRef.current) clearTimeout(infoTimeoutRef.current);
   }, []);
 
   useEffect(() => {
     setPreviews((current) => {
-      const prevMap = new Map<string, ImagePreview>();
-      current.forEach((p) => {
-        prevMap.set(p.id, p);
-        if (p.url) prevMap.set(p.url, p);
-      });
-      const synced = value.map((img) => mapUploadedToPreview(img, prevMap.get(img.url)));
-      const pending = current.filter(
-        (p) =>
-          !value.some((img) => img.url === p.id || (p.url && img.url === p.url)) &&
-          (p.isUploading || Boolean(p.error)),
-      );
-      const next = [...synced, ...pending];
-      const isSame =
-        next.length === current.length &&
-        next.every((it, idx) => {
-          const p = current[idx];
-          return (
-            p &&
-            p.id === it.id &&
-            p.url === it.url &&
-            p.altText === it.altText &&
-            p.blurColor === it.blurColor &&
-            p.isUploading === it.isUploading
-          );
-        });
-      const resolved = isSame ? current : next;
+      const resolved = syncPreviewsWithValue(current, value, requiresManualCommit, uncommittedIdsRef.current);
       previewsRef.current = resolved;
       return resolved;
     });
-  }, [value]);
+  }, [value, requiresManualCommit]);
 
   const emitImmediateChange = (nextPreviews: ImagePreview[]) => {
     if (!requiresManualCommit) onChange(collectUploadedData(nextPreviews, true));
   };
 
-  const patchByFile = (file: File | undefined, patch: Partial<ImagePreview>, emit = false) => {
-    const next = previewsRef.current.map((p) => (p.file === file ? { ...p, ...patch } : p));
+  const patchByIdOrFile = (
+    uploadId: string | undefined,
+    file: File | undefined,
+    patch: Partial<ImagePreview>,
+    emit = false,
+  ) => {
+    const next = previewsRef.current.map((p) => {
+      const matched = uploadId ? p.id === uploadId : p.file === file;
+      if (!matched) return p;
+      if (patch.url && p.url && p.url !== patch.url) revokePreview(p.url);
+      return { ...p, ...patch };
+    });
     previewsRef.current = next;
     setPreviews(next);
     if (emit) emitImmediateChange(next);
@@ -125,28 +104,36 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
     emitImmediateChange(next);
   };
 
-  const { uploadImage } = useImageUpload({
+  const { uploadImage, abortUpload, abortAll } = useImageUpload({
     preset, folder: options.folder, bucket: options.bucket, metadata: options.metadata,
     outputFormat: options.outputFormat, quality: QUALITY_PRESETS[qualityLevel].value,
     maxDimensions: options.maxDimensions, customFilename: options.customFilename,
     endpoint: options.endpoint, uploader: options.uploader,
     headers: options.headers, withCredentials: options.withCredentials, locale,
-    onSuccess: (data, file) => {
-      patchByFile(file, {
+    onSuccess: (data, file, uploadId) => {
+      if (uploadId && requiresManualCommit) uncommittedIdsRef.current.add(uploadId);
+      patchByIdOrFile(uploadId, file, {
         url: data.url, uploadMessage: undefined, originalSize: data.originalSize,
         optimizedSize: data.size, data, blurColor: data.blurColor,
         error: undefined, isUploading: false, progress: 100,
       }, true);
       setUploadStats((s) => ({ ...s, completed: s.completed + 1 }));
     },
-    onError: (error, file) => {
-      patchByFile(file, { uploadMessage: undefined, error, isUploading: false, progress: 0 });
+    onError: (error, file, uploadId) => {
+      patchByIdOrFile(uploadId, file, { uploadMessage: undefined, error, isUploading: false, progress: 0 });
       setUploadStats((s) => ({ ...s, failed: s.failed + 1 }));
     },
-    onProgress: (progress, uploadMessage, file) => {
-      patchByFile(file, { uploadMessage, progress, isUploading: true });
+    onProgress: (progress, uploadMessage, file, uploadId) => {
+      patchByIdOrFile(uploadId, file, { uploadMessage, progress, isUploading: true });
     },
   });
+
+  useEffect(() => {
+    if (isOpen === false) {
+      abortAll();
+      uncommittedIdsRef.current.clear();
+    }
+  }, [isOpen, abortAll]);
 
   const handleFileSelect = async (files: FileList) => {
     setValidationError('');
@@ -159,16 +146,13 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
     }
     if (allFiles.length > imageFiles.length) {
       const skipped = allFiles.length - imageFiles.length;
-      const msg = ui.selectedImagesSkipped
-        .replace('{imageCount}', String(imageFiles.length))
-        .replace('{imageSuffix}', imageFiles.length > 1 ? 's' : '')
-        .replace('{skippedCount}', String(skipped))
-        .replace('{skippedSuffix}', skipped > 1 ? 's' : '');
-      setInfoMessage(msg);
+      setInfoMessage(formatSkippedImagesMessage(ui, imageFiles.length, skipped, locale));
       if (infoTimeoutRef.current) clearTimeout(infoTimeoutRef.current);
       infoTimeoutRef.current = setTimeout(() => setInfoMessage(''), 5000);
     }
-    const validationResult = validateMultipleFiles(imageFiles, maxSizeMB, previews.length, maxImages, locale);
+
+    const activeCount = previewsRef.current.filter((p) => !p.error).length;
+    const validationResult = validateMultipleFiles(imageFiles, maxSizeMB, activeCount, maxImages, locale);
     if (validationResult) {
       setValidationError(validationResult);
       return;
@@ -179,8 +163,9 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
     for (const file of imageFiles) {
       try {
         const url = await createPreview(file);
+        tempIdCounter += 1;
         newPreviews.push({
-          id: `temp-${Date.now()}-${Math.random()}`, url, file, fileName: file.name,
+          id: `temp-${Date.now()}-${tempIdCounter}`, url, file, fileName: file.name,
           uploadMessage: ui.queued, originalSize: file.size, optimizedSize: null,
           isUploading: true, progress: 0,
         });
@@ -193,20 +178,21 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
     previewsRef.current = nextBatch;
     setPreviews(nextBatch);
 
-    let nextIndex = 0;
-    const workerCount = Math.max(1, Math.min(maxParallelUploads, imageFiles.length));
-    await Promise.all(
-      Array.from({ length: workerCount }, async () => {
-        while (nextIndex < imageFiles.length) {
-          const file = imageFiles[nextIndex];
-          nextIndex += 1;
-          await uploadImage(file);
-        }
-      }),
-    );
+    await runParallelUploadPool(newPreviews, maxParallelUploads, async (item) => {
+      if (!previewsRef.current.some((p) => p.id === item.id)) return;
+      if (item.file) await uploadImage(item.file, item.altText, undefined, { uploadId: item.id });
+    });
   };
 
   const removeIds = (ids: Set<string>) => {
+    for (const p of previewsRef.current) {
+      if (ids.has(p.id)) {
+        abortUpload(p.id);
+        if (p.file) abortUpload(p.file);
+        revokePreview(p.url);
+        uncommittedIdsRef.current.delete(p.id);
+      }
+    }
     const next = previewsRef.current.filter((p) => !ids.has(p.id));
     previewsRef.current = next;
     setPreviews(next);
@@ -238,11 +224,28 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
   };
 
   const handleRetryFailed = async () => {
-    for (const item of previews.filter((p) => p.error && p.file)) {
-      if (item.file) {
-        patchByFile(item.file, { error: undefined, isUploading: true, uploadMessage: ui.retrying });
-        await uploadImage(item.file);
-      }
+    if (isRetryingRef.current) return;
+    const failedItems = previewsRef.current.filter((p) => p.error && p.file);
+    if (failedItems.length === 0) return;
+
+    isRetryingRef.current = true;
+    try {
+      setUploadStats({ total: failedItems.length, completed: 0, failed: 0 });
+      const failedIds = new Set(failedItems.map((p) => p.id));
+      const updated = previewsRef.current.map((p) =>
+        failedIds.has(p.id)
+          ? { ...p, error: undefined, isUploading: true, progress: 0, uploadMessage: ui.retrying }
+          : p,
+      );
+      previewsRef.current = updated;
+      setPreviews(updated);
+
+      await runParallelUploadPool(failedItems, maxParallelUploads, async (item) => {
+        if (!previewsRef.current.some((p) => p.id === item.id)) return;
+        if (item.file) await uploadImage(item.file, item.altText, undefined, { uploadId: item.id });
+      });
+    } finally {
+      isRetryingRef.current = false;
     }
   };
 
@@ -265,15 +268,13 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
 
   const handleSaveImages = () => {
     if (requireAltText && imagesWithoutAlt.length > 0) {
-      const count = imagesWithoutAlt.length;
       setShowMissingAltWarning(true);
-      setValidationError(
-        ui.needsAltBeforeSave.replace('{count}', String(count)).replace('{suffix}', count > 1 ? 's' : '').replace('{verbSuffix}', count > 1 ? '' : 's'),
-      );
+      setValidationError(formatNeedsAltMessage(ui, imagesWithoutAlt.length, locale));
       return;
     }
     setShowMissingAltWarning(false);
     setValidationError('');
+    uncommittedIdsRef.current.clear();
     onChange(collectUploadedData(previews, false));
     onClose?.();
   };

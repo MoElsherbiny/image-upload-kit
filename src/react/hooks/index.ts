@@ -6,17 +6,21 @@ import {
 } from './useBlurService';
 
 export * from './useBlurService';
+export { useDialog, type UseDialogOptions } from './useDialog';
 export {
   useDragAndDrop,
   type UseDragAndDropOptions,
 } from './useDragAndDrop';
-export { useFilePreview } from './useFilePreview';
+export { useFilePreview, type UseFilePreviewOptions } from './useFilePreview';
 export {
+  type UploadCallOptions,
   useImageUpload,
   type UseImageUploadOptions,
 } from './useImageUpload';
 export {
   buildUploadFormData,
+  createUploadAbortError,
+  isUploadAbortError,
   parseErrorPayload,
   type UploadFormFields,
   uploadViaXhr,

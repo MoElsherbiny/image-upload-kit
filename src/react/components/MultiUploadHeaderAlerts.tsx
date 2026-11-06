@@ -7,7 +7,12 @@ import {
   XCircleIcon as XCircle,
 } from '../icons';
 import type { MultiUploadStats } from '../hooks/useMultiImageState';
-import type { UploadTranslations } from '../i18n';
+import {
+  formatNeedsAltMessage,
+  formatUploadingCount,
+  type UploadLocale,
+  type UploadTranslations,
+} from '../i18n';
 import type {
   MultiUploadClassNames, MultiUploadSlot, MultiUploadStyles,
 } from '../styling';
@@ -24,6 +29,8 @@ export interface MultiSlotStylingProps {
 
 export interface MultiUploadHeaderAlertsProps extends MultiSlotStylingProps {
   label?: string;
+  labelId?: string;
+  inputId?: string;
   required?: boolean;
   disabled?: boolean;
   totalCount: number;
@@ -35,6 +42,8 @@ export interface MultiUploadHeaderAlertsProps extends MultiSlotStylingProps {
   infoMessage: string;
   showMissingAltWarning: boolean;
   uploadStats: MultiUploadStats;
+  locale?: UploadLocale;
+  translations?: Partial<UploadTranslations>;
   ui: UploadTranslations;
   onSelectAll: () => void;
   onDeselectAll: () => void;
@@ -43,10 +52,11 @@ export interface MultiUploadHeaderAlertsProps extends MultiSlotStylingProps {
 }
 
 export function MultiUploadHeaderAlerts({
-  label, required = false, disabled = false,
+  label, labelId, inputId, required = false, disabled = false,
   totalCount, selectedCount, uploadingCount, missingAltCount,
   isUploading, hasFailedUploads, infoMessage, showMissingAltWarning,
-  uploadStats, ui, onSelectAll, onDeselectAll, onRemoveSelected, onRetryFailed,
+  uploadStats, locale = 'en', translations, ui,
+  onSelectAll, onDeselectAll, onRemoveSelected, onRetryFailed,
   unstyled, providerClassNames, classNames, providerStyles, styles,
 }: MultiUploadHeaderAlertsProps) {
   const slotClass = (slot: MultiUploadSlot, defaultClass?: string) =>
@@ -56,13 +66,11 @@ export function MultiUploadHeaderAlerts({
 
   return (
     <>
-      <div
-        data-slot="header"
-        className={slotClass('header', 'iuk-multi__header')}
-        style={slotStyle('header')}
-      >
+      <div data-slot="header" className={slotClass('header', 'iuk-multi__header')} style={slotStyle('header')}>
         {(label || ui.uploadImages) && (
           <label
+            id={labelId}
+            htmlFor={inputId}
             data-slot="label"
             className={slotClass('label', 'iuk-label')}
             style={slotStyle('label')}
@@ -70,11 +78,7 @@ export function MultiUploadHeaderAlerts({
             <span>{label || ui.uploadImages}</span>
             {required && <span className={resolveSlotClass('iuk-required', unstyled)}>*</span>}
             {totalCount > 0 && (
-              <span
-                data-slot="count"
-                className={slotClass('count', 'iuk-multi__count')}
-                style={slotStyle('count')}
-              >
+              <span data-slot="count" className={slotClass('count', 'iuk-multi__count')} style={slotStyle('count')}>
                 ({totalCount})
               </span>
             )}
@@ -82,38 +86,28 @@ export function MultiUploadHeaderAlerts({
         )}
 
         {totalCount > 0 && (
-          <div
-            data-slot="bulk-actions"
-            className={slotClass('bulkActions', 'iuk-multi__bulk')}
-            style={slotStyle('bulkActions')}
-          >
+          <div data-slot="bulk-actions" className={slotClass('bulkActions', 'iuk-multi__bulk')} style={slotStyle('bulkActions')}>
             {selectedCount === 0 ? (
               <button
-                type="button"
-                onClick={onSelectAll}
+                type="button" onClick={onSelectAll} disabled={disabled}
                 className={slotClass('bulkButton', 'iuk-btn iuk-btn--secondary iuk-btn--sm')}
                 style={slotStyle('bulkButton')}
-                disabled={disabled}
               >
                 {ui.selectAll}
               </button>
             ) : (
               <>
                 <button
-                  type="button"
-                  onClick={onDeselectAll}
+                  type="button" onClick={onDeselectAll} disabled={disabled}
                   className={slotClass('bulkButton', 'iuk-btn iuk-btn--secondary iuk-btn--sm')}
                   style={slotStyle('bulkButton')}
-                  disabled={disabled}
                 >
                   {ui.deselectAll} ({selectedCount})
                 </button>
                 <button
-                  type="button"
-                  onClick={onRemoveSelected}
+                  type="button" onClick={onRemoveSelected} disabled={disabled}
                   className={slotClass('bulkDangerButton', 'iuk-btn iuk-btn--danger iuk-btn--sm')}
                   style={slotStyle('bulkDangerButton')}
-                  disabled={disabled}
                 >
                   <Trash2 size={14} />
                   <span>{ui.removeSelected}</span>
@@ -127,15 +121,14 @@ export function MultiUploadHeaderAlerts({
       {isUploading && (
         <div
           data-slot="alert"
+          role="status"
+          aria-live="polite"
           className={slotClass('alert', 'iuk-alert iuk-alert--info')}
           style={slotStyle('alert')}
         >
           <span className={resolveSlotClass('iuk-alert__row', unstyled)}>
             <Loader2 size={16} className={resolveSlotClass('iuk-spin', unstyled)} />
-            <span>
-              {ui.uploading} {uploadingCount}{' '}
-              {uploadingCount !== 1 ? ui.uploadImages : ui.uploadImage}...
-            </span>
+            <span>{formatUploadingCount(ui, uploadingCount, locale, translations)}...</span>
           </span>
           {uploadStats.total > 0 && (
             <strong>
@@ -148,6 +141,7 @@ export function MultiUploadHeaderAlerts({
       {hasFailedUploads && (
         <div
           data-slot="alert"
+          role="alert"
           className={slotClass('alert', 'iuk-alert iuk-alert--error')}
           style={slotStyle('alert')}
         >
@@ -157,6 +151,7 @@ export function MultiUploadHeaderAlerts({
             <button
               type="button"
               onClick={onRetryFailed}
+              disabled={isUploading || disabled}
               className={resolveSlotClass('iuk-link-btn', unstyled)}
             >
               {ui.retryFailedUploads}
@@ -168,6 +163,7 @@ export function MultiUploadHeaderAlerts({
       {infoMessage && (
         <div
           data-slot="alert"
+          role="status"
           className={slotClass('alert', 'iuk-alert iuk-alert--success')}
           style={slotStyle('alert')}
         >
@@ -179,16 +175,12 @@ export function MultiUploadHeaderAlerts({
       {showMissingAltWarning && missingAltCount > 0 && (
         <div
           data-slot="alert"
+          role="alert"
           className={slotClass('alert', 'iuk-alert iuk-alert--warning')}
           style={slotStyle('alert')}
         >
           <AlertTriangle size={16} />
-          <span>
-            {ui.needsAltBeforeSave
-              .replace('{count}', String(missingAltCount))
-              .replace('{suffix}', missingAltCount > 1 ? 's' : '')
-              .replace('{verbSuffix}', missingAltCount > 1 ? '' : 's')}
-          </span>
+          <span>{formatNeedsAltMessage(ui, missingAltCount, locale)}</span>
         </div>
       )}
     </>
@@ -198,6 +190,7 @@ export function MultiUploadHeaderAlerts({
 export interface MultiFooterSectionProps extends MultiSlotStylingProps {
   helperText?: string;
   displayError?: string;
+  statusTextId?: string;
   isOpen?: boolean;
   hasPreviews: boolean;
   hasCompletedPreviews: boolean;
@@ -210,7 +203,7 @@ export interface MultiFooterSectionProps extends MultiSlotStylingProps {
 }
 
 export function MultiFooterSection({
-  helperText, displayError, isOpen, hasPreviews, hasCompletedPreviews,
+  helperText, displayError, statusTextId, isOpen, hasPreviews, hasCompletedPreviews,
   isUploading, disabled, requireAltText, missingAltCount, onSave, ui,
   unstyled, providerClassNames, classNames, providerStyles, styles,
 }: MultiFooterSectionProps) {
@@ -223,6 +216,8 @@ export function MultiFooterSection({
     <>
       {(helperText || displayError) && (
         <p
+          id={statusTextId}
+          role={displayError ? 'alert' : undefined}
           data-slot={displayError ? 'error-text' : 'helper-text'}
           className={resolveSlotClass(
             cx('iuk-helper-text', Boolean(displayError) && 'iuk-helper-text--error'),
@@ -242,11 +237,7 @@ export function MultiFooterSection({
       )}
 
       {isOpen && hasPreviews && (
-        <div
-          data-slot="commit-bar"
-          className={slotClass('commitBar', 'iuk-commit-bar')}
-          style={slotStyle('commitBar')}
-        >
+        <div data-slot="commit-bar" className={slotClass('commitBar', 'iuk-commit-bar')} style={slotStyle('commitBar')}>
           {requireAltText && missingAltCount > 0 && (
             <div className={resolveSlotClass('iuk-badge iuk-badge--warning', unstyled)}>
               <AlertTriangle size={13} />

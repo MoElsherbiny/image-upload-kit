@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { QualityLevel, StandardPresetName, UploadedImageData, UploadPresetConfig, UploadPresetName } from '../../types';
+import type { QualityLevel, StandardPresetName, UploadedImageData, UploadPresetName } from '../../types';
 import { QUALITY_PRESETS, STANDARD_PRESETS } from '../../types';
 import { DEFAULT_BLUR_COLOR, normalizeColorInput } from '../../utils/color';
 import { validateImageFile } from '../../utils/validators';
@@ -7,16 +7,16 @@ import { useImageUploadContext } from '../context';
 import { normalizeUploadLocale, resolveTranslations } from '../i18n';
 import type { SingleImageUploadProps } from '../types';
 import { createUploadSessionCache, downloadImageWithFallback } from '../utils/sessionMetaCache';
+import {
+  buildSingleImagePayload,
+  resolveInitialQualityLevel,
+  resolveLiveAnnouncement,
+  stripUrlCacheQuery,
+} from './singleStateHelpers';
 import { useFilePreview } from './useFilePreview';
 import { useImageUpload } from './useImageUpload';
 
-function resolveInitialQualityLevel(quality?: number, preset?: UploadPresetConfig): QualityLevel {
-  const q = quality ?? preset?.quality;
-  if (!q) return preset?.recommendedQualityLevel || 'high';
-  if (q <= 55) return 'low';
-  if (q <= 78) return 'medium';
-  return q <= 90 ? 'high' : 'maximum';
-}
+export { resolveLiveAnnouncement };
 
 export function useSingleImageState<TPreset extends string = UploadPresetName>(
   props: SingleImageUploadProps<TPreset>,
@@ -44,6 +44,9 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
   const initColor = objVal?.blurColor || DEFAULT_BLUR_COLOR;
 
   const [preview, setPreview] = useState<string | null>(initPreview);
+  const previewRef = useRef<string | null>(initPreview);
+  previewRef.current = preview;
+
   const [altText, setAltText] = useState<string>(initAlt);
   const [blurColor, setBlurColor] = useState<string>(initColor);
   const [detectedBlurColor, setDetectedBlurColor] = useState<string>(initColor);
@@ -59,6 +62,8 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
   const [qualityLevel, setQualityLevel] = useState<QualityLevel>(() => resolveInitialQualityLevel(initialQualityProp, standardPreset));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastAltRef = useRef<string>(initAlt);
+  const activeUploadIdRef = useRef<string | null>(null);
+  const uploadSeqRef = useRef(0);
 
   const resetColorAndErrorState = () => {
     setValidationError('');
@@ -68,16 +73,16 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
     setIsBlurModalOpen(false);
   };
 
-  const { createPreview } = useFilePreview();
-  const { uploadImage, isUploading, progress, uploadMessage, reset } = useImageUpload({
+  const { createPreview, revokePreview } = useFilePreview({ errorLabel: ui.failedCreatePreview });
+
+  const { uploadImage, abortAll, isUploading, progress, uploadMessage, reset } = useImageUpload({
     preset, folder, bucket, metadata, outputFormat, maxDimensions, customFilename,
     quality: QUALITY_PRESETS[qualityLevel].value,
     endpoint, uploader, headers, withCredentials, locale,
-    onSuccess: (data) => {
-      const nextPreviewUrl = /^(?:blob:|data:)/i.test(data.url)
-        ? data.url
-        : `${data.url}${data.url.includes('?') ? '&' : '?'}t=${Date.now()}`;
-      setPreview(nextPreviewUrl);
+    onSuccess: (data, _file, uploadId) => {
+      if (uploadId && activeUploadIdRef.current && uploadId !== activeUploadIdRef.current) return;
+      if (previewRef.current && previewRef.current !== data.url) revokePreview(previewRef.current);
+      setPreview(data.url);
       setSizeInfo({ original: data.originalSize || 0, optimized: data.size });
       const normColor = data.blurColor || DEFAULT_BLUR_COLOR;
       setBlurColor(normColor);
@@ -86,18 +91,26 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
       setBlurDataUrlState(data.blurDataUrl || '');
       const keyInfo = { url: data.url, contentHash: data.contentHash };
       cache.writeBlurMetaFor(keyInfo, { blurDataUrl: data.blurDataUrl || '', blurColor: normColor });
-      const payload: UploadedImageData = { ...data, altText, blurColor: normColor };
+      const currentAlt = lastAltRef.current || data.altText || '';
+      setAltText(currentAlt);
+      lastAltRef.current = currentAlt;
+      const payload: UploadedImageData = { ...data, altText: currentAlt, blurColor: normColor };
       setUploadedData(payload);
-      lastAltRef.current = altText;
-      cache.writeAltMetaFor(keyInfo, altText);
+      cache.writeAltMetaFor(keyInfo, currentAlt);
       if (!requiresManualCommit) onChange(payload);
     },
-    onError: (errorMsg) => {
+    onError: (errorMsg, _file, uploadId) => {
+      if (uploadId && activeUploadIdRef.current && uploadId !== activeUploadIdRef.current) return;
+      revokePreview(previewRef.current);
       setValidationError(errorMsg);
       setPreview(null);
       setUploadedData(null);
     },
   });
+
+  useEffect(() => {
+    if (isOpen === false) abortAll();
+  }, [isOpen, abortAll]);
 
   useEffect(() => {
     const incomingObj = typeof value === 'object' && value ? value : null;
@@ -110,10 +123,11 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
         : rawAlt;
     const nextColor = incomingObj?.blurColor || DEFAULT_BLUR_COLOR;
 
-    const stripCacheQuery = (u: string | null) =>
-      u && !/^(?:blob:|data:)/i.test(u) ? u.split('?')[0] : u;
-    if (stripCacheQuery(nextPreview) !== stripCacheQuery(preview)) setPreview(nextPreview);
-    if (nextAlt !== altText && (nextPreview !== preview || nextAlt.trim() !== '' || !altText.trim())) setAltText(nextAlt);
+    if (stripUrlCacheQuery(nextPreview) !== stripUrlCacheQuery(preview)) setPreview(nextPreview);
+    if (nextAlt !== altText && (nextPreview !== preview || nextAlt.trim() !== '' || !altText.trim())) {
+      setAltText(nextAlt);
+      lastAltRef.current = nextAlt;
+    }
 
     const nextIsFallback = nextColor === DEFAULT_BLUR_COLOR;
     if (nextColor !== blurColor && (nextPreview !== preview || (!hasColorOverride && (!nextIsFallback || blurColor === DEFAULT_BLUR_COLOR)))) {
@@ -143,6 +157,7 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
       setBlurDataUrlState('');
       setSizeInfo(null);
       setSelectedFile(null);
+      lastAltRef.current = propInitialAltText || '';
       if (fileInputRef.current) fileInputRef.current.value = '';
     } else if (incomingObj?.url) {
       setUploadedData((prev) => (prev?.url === incomingObj.url ? prev : incomingObj));
@@ -150,28 +165,12 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, propInitialAltText]);
 
-  const buildExistingImagePayload = (overrides: Partial<UploadedImageData> = {}): UploadedImageData | null => {
-    const base: UploadedImageData | null = uploadedData
-      ? { ...uploadedData }
-      : objVal
-        ? { ...objVal }
-        : typeof value === 'string' && value.trim()
-          ? { url: value, blurDataUrl: '', blurColor: DEFAULT_BLUR_COLOR, altText: '', width: 0, height: 0, format: 'webp', size: 0, contentHash: 'existing-image', uploadedAt: new Date().toISOString() }
-          : null;
-    if (!base) return null;
-    return {
-      ...base,
-      ...overrides,
-      url: (overrides.url ?? base.url) || preview || '',
-      altText: overrides.altText ?? altText ?? base.altText ?? '',
-      blurColor: overrides.blurColor ?? blurColor ?? base.blurColor ?? DEFAULT_BLUR_COLOR,
-      blurDataUrl: overrides.blurDataUrl ?? base.blurDataUrl ?? blurDataUrlState ?? '',
-    };
-  };
-
   const commitIfAuto = (overrides: Partial<UploadedImageData>) => {
     if (!requiresManualCommit) {
-      const payload = buildExistingImagePayload(overrides);
+      const payload = buildSingleImagePayload(
+        { uploadedData, objVal, value, preview, altText, blurColor, blurDataUrlState },
+        overrides,
+      );
       if (payload) onChange(payload);
     }
   };
@@ -193,6 +192,7 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
   const handleFileSelect = async (files: FileList) => {
     const file = files[0];
     if (!file) return;
+    abortAll();
     setSelectedFile(file);
     resetColorAndErrorState();
     const err = validateImageFile(file, maxSizeMB, locale);
@@ -200,20 +200,32 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
       setValidationError(err);
       return;
     }
+    uploadSeqRef.current += 1;
+    const uploadId = `single-${uploadSeqRef.current}`;
+    activeUploadIdRef.current = uploadId;
     try {
-      setPreview(await createPreview(file));
+      const nextBlobUrl = await createPreview(file);
+      if (activeUploadIdRef.current !== uploadId) {
+        revokePreview(nextBlobUrl);
+        return;
+      }
+      revokePreview(previewRef.current);
+      setPreview(nextBlobUrl);
       setAltText('');
       lastAltRef.current = '';
     } catch {
       setValidationError(ui.failedCreatePreview);
       return;
     }
-    await uploadImage(file, altText);
+    await uploadImage(file, '', customFilename, { uploadId });
   };
 
   const handleRemoveTile = () => {
+    activeUploadIdRef.current = null;
+    revokePreview(previewRef.current);
     setPreview(null);
     setAltText('');
+    lastAltRef.current = '';
     setBlurDataUrlState('');
     setSizeInfo(null);
     setUploadedData(null);
@@ -241,7 +253,7 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
     }
     setShowMissingAltWarning(false);
     setValidationError('');
-    const payload = buildExistingImagePayload();
+    const payload = buildSingleImagePayload({ uploadedData, objVal, value, preview, altText, blurColor, blurDataUrlState });
     if (payload) {
       lastAltRef.current = payload.altText || lastAltRef.current;
       cache.writeAltMetaFor({ url: payload.url, contentHash: payload.contentHash }, payload.altText || '');
@@ -255,12 +267,14 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
     if (downloadUrl) await downloadImageWithFallback(downloadUrl, uploadedData?.format);
   }, [downloadUrl, uploadedData?.format]);
 
+  const liveAnnouncement = resolveLiveAnnouncement(isUploading, progress, Boolean(sizeInfo && !isUploading), ui);
+
   return {
     locale, ui, requireAltText, maxSizeMB, fileInputRef,
     preview, altText, blurColor, detectedBlurColor, blurDataUrlState,
     validationError, showMissingAltWarning, editingAltText, setEditingAltText,
     sizeInfo, uploadedData, isBlurModalOpen, setIsBlurModalOpen,
-    selectedFile, qualityLevel, setQualityLevel, isUploading, progress, uploadMessage,
+    selectedFile, qualityLevel, setQualityLevel, isUploading, progress, uploadMessage, liveAnnouncement,
     currentImageData: uploadedData ?? objVal, canDownload: Boolean(downloadUrl),
     applyBlurColor, handleResetColor, handleFileSelect, handleRemoveTile,
     handleAltTextSave, handleSaveImage, handleDownload,

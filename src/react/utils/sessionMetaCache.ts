@@ -17,6 +17,24 @@ export interface UploadSessionCache {
   readBlurMetaFor: (info: SessionMetaLookup) => CachedBlurMeta | null;
 }
 
+const SIGNED_URL_QUERY_RE =
+  /[?&](?:X-Amz-Signature|X-Amz-Credential|X-Amz-Algorithm|X-Goog-Signature|Signature|AWSAccessKeyId|GoogleAccessId|token|sig|sv|se)=/i;
+
+export function isSignedStorageUrl(url: string): boolean {
+  return SIGNED_URL_QUERY_RE.test(url);
+}
+
+export function appendCacheBuster(
+  url: string,
+  options: { enabled?: boolean; token?: string | number } = {},
+): string {
+  if (!url || !options.enabled) return url;
+  if (/^(?:blob:|data:)/i.test(url) || isSignedStorageUrl(url)) return url;
+  if (/[?&](?:v|t)=/i.test(url)) return url;
+  const buster = options.token ?? Date.now();
+  return `${url}${url.includes('?') ? '&' : '?'}t=${buster}`;
+}
+
 export function readSessionJson<T>(key: string): T | null {
   if (typeof window === 'undefined') return null;
   try {
@@ -102,9 +120,13 @@ export async function downloadImageWithFallback(
 ): Promise<void> {
   if (!url || typeof window === 'undefined') return;
   try {
-    const sep = url.includes('?') ? '&' : '?';
-    const fetchUrl = `${url}${sep}t=${Date.now()}`;
+    const fetchUrl = isSignedStorageUrl(url)
+      ? url
+      : appendCacheBuster(url, { enabled: true });
     const res = await fetch(fetchUrl, { cache: 'no-store' });
+    if (!res.ok) {
+      throw new Error(`Download failed with status ${res.status}`);
+    }
     const blob = await res.blob();
     const objectUrl = URL.createObjectURL(blob);
 
@@ -114,8 +136,17 @@ export async function downloadImageWithFallback(
     const anchor = document.createElement('a');
     anchor.href = objectUrl;
     anchor.download = `image-${Date.now()}.${ext}`;
+    anchor.style.display = 'none';
+    document.body?.appendChild(anchor);
     anchor.click();
-    URL.revokeObjectURL(objectUrl);
+    anchor.remove();
+    setTimeout(() => {
+      try {
+        URL.revokeObjectURL(objectUrl);
+      } catch {
+        // Ignore revocation errors
+      }
+    }, 1000);
   } catch {
     window.open(url, '_blank', 'noopener,noreferrer');
   }

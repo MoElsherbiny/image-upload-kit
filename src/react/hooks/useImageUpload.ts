@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type {
-  ExplicitOutputFormat,
-  ImageDimensions,
-  UploadedImageData,
-  UploadLocale,
-} from '../../types';
-import {
-  createSuccessMessage,
-  getStatusMessage,
-} from '../../utils/formatters';
+import type { ExplicitOutputFormat, ImageDimensions, UploadedImageData, UploadLocale } from '../../types';
+import { createSuccessMessage, getStatusMessage } from '../../utils/formatters';
 import { useImageUploadContext } from '../context';
 import { normalizeUploadLocale, resolveTranslations } from '../i18n';
 import type { CustomUploaderFn } from '../types';
-import { buildUploadFormData, uploadViaXhr } from './xhrUpload';
+import { createUploadTracker, type UploadTracker } from './uploadTracker';
+import { buildUploadFormData, isUploadAbortError, uploadViaXhr } from './xhrUpload';
+
+export interface UploadCallOptions {
+  uploadId?: string;
+  signal?: AbortSignal;
+}
 
 export interface UseImageUploadOptions {
   preset?: string;
@@ -30,29 +28,17 @@ export interface UseImageUploadOptions {
   headers?: Record<string, string>;
   withCredentials?: boolean;
   locale?: UploadLocale;
-  onSuccess?: (data: UploadedImageData, file?: File) => void;
-  onError?: (error: string, file?: File) => void;
-  onProgress?: (progress: number, message: string, file?: File) => void;
+  onSuccess?: (data: UploadedImageData, file?: File, uploadId?: string) => void;
+  onError?: (error: string, file?: File, uploadId?: string) => void;
+  onProgress?: (progress: number, message: string, file?: File, uploadId?: string) => void;
 }
 
 export function useImageUpload({
-  preset,
-  folder,
-  bucket,
-  metadata,
-  altText,
-  outputFormat,
-  quality,
-  maxDimensions,
+  preset, folder, bucket, metadata, altText, outputFormat, quality, maxDimensions,
   customFilename: defaultCustomFilename,
-  endpoint: propEndpoint,
-  uploader: propUploader,
-  headers: propHeaders,
-  withCredentials: propWithCredentials,
-  locale: propLocale,
-  onSuccess,
-  onError,
-  onProgress,
+  endpoint: propEndpoint, uploader: propUploader, headers: propHeaders,
+  withCredentials: propWithCredentials, locale: propLocale,
+  onSuccess, onError, onProgress,
 }: UseImageUploadOptions = {}) {
   const ctx = useImageUploadContext();
   const uploadLocale = normalizeUploadLocale(propLocale || ctx.locale);
@@ -69,14 +55,8 @@ export function useImageUpload({
 
   const isMountedRef = useRef(true);
   const timeoutsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
-  const activeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const clearProgressInterval = useCallback(() => {
-    if (activeIntervalRef.current) {
-      clearInterval(activeIntervalRef.current);
-      activeIntervalRef.current = null;
-    }
-  }, []);
+  const trackerRef = useRef<UploadTracker | null>(null);
+  if (!trackerRef.current) trackerRef.current = createUploadTracker();
 
   const clearAllTimeouts = useCallback(() => {
     timeoutsRef.current.forEach((t) => clearTimeout(t));
@@ -86,9 +66,7 @@ export function useImageUpload({
   const safeSetTimeout = useCallback((fn: () => void, ms: number) => {
     const handle = setTimeout(() => {
       timeoutsRef.current.delete(handle);
-      if (isMountedRef.current) {
-        fn();
-      }
+      if (isMountedRef.current) fn();
     }, ms);
     timeoutsRef.current.add(handle);
     return handle;
@@ -96,161 +74,149 @@ export function useImageUpload({
 
   useEffect(() => {
     isMountedRef.current = true;
+    const tracker = trackerRef.current;
     return () => {
       isMountedRef.current = false;
-      clearProgressInterval();
+      tracker?.abortAll();
       clearAllTimeouts();
     };
-  }, [clearProgressInterval, clearAllTimeouts]);
+  }, [clearAllTimeouts]);
+
+  const abortUpload = useCallback((idOrFile: string | File) => {
+    const tracker = trackerRef.current!;
+    const aborted = tracker.abortByIdOrFile(idOrFile);
+    if (aborted && isMountedRef.current && tracker.entries.size === 0) {
+      setIsUploading(false);
+      setProgress(0);
+      setUploadMessage('');
+    }
+    return aborted;
+  }, []);
+
+  const abortAll = useCallback(() => {
+    trackerRef.current?.abortAll();
+    clearAllTimeouts();
+    if (isMountedRef.current) {
+      setIsUploading(false);
+      setProgress(0);
+      setUploadMessage('');
+    }
+  }, [clearAllTimeouts]);
 
   const uploadImage = useCallback(
     async (
       file: File,
       customAltText?: string,
       overrideCustomFilename?: string,
+      callOptions?: UploadCallOptions,
     ): Promise<UploadedImageData | null> => {
-      clearProgressInterval();
-      clearAllTimeouts();
+      const tracker = trackerRef.current!;
+      const entry = tracker.createEntry(
+        file,
+        ui.preparingUpload,
+        callOptions?.uploadId,
+        callOptions?.signal,
+      );
+      const { id: uploadId, controller } = entry;
 
       const originalSize = file.size;
       setIsUploading(true);
       setProgress(0);
       setUploadMessage(ui.preparingUpload);
-      onProgress?.(0, ui.preparingUpload, file);
+      onProgress?.(0, ui.preparingUpload, file, uploadId);
 
-      const reportProgress = (nextPct: number) => {
-        if (!isMountedRef.current) return;
-        setProgress((prev) => {
-          const clamped = Math.max(prev, Math.min(94, nextPct));
-          const msg = getStatusMessage(clamped, uploadLocale);
-          setUploadMessage(msg);
-          onProgress?.(clamped, msg, file);
-          return clamped;
-        });
+      const updateEntryProgress = (nextPct: number, maxCap: number) => {
+        if (!isMountedRef.current || controller.signal.aborted) return;
+        const clamped = Math.max(entry.progress, Math.min(maxCap, nextPct));
+        entry.progress = clamped;
+        const msg = getStatusMessage(clamped, uploadLocale);
+        entry.message = msg;
+        setProgress(clamped);
+        setUploadMessage(msg);
+        onProgress?.(clamped, msg, file, uploadId);
       };
 
+      const reportProgress = (nextPct: number) => updateEntryProgress(nextPct, 94);
+
       try {
-        activeIntervalRef.current = setInterval(() => {
-          if (!isMountedRef.current) {
-            clearProgressInterval();
+        entry.interval = setInterval(() => {
+          if (!isMountedRef.current || controller.signal.aborted) {
+            tracker.removeEntry(uploadId);
             return;
           }
-          setProgress((prev) => {
-            const nextProgress = Math.min(prev + 6, 92);
-            const msg = getStatusMessage(nextProgress, uploadLocale);
-            setUploadMessage(msg);
-            onProgress?.(nextProgress, msg, file);
-            return nextProgress;
-          });
+          updateEntryProgress(entry.progress + 6, 92);
         }, 300);
 
-        const finalAlt = customAltText || altText || undefined;
-        const finalCustomFilename =
-          overrideCustomFilename || defaultCustomFilename || undefined;
-
+        const finalAlt = customAltText !== undefined ? customAltText || undefined : altText || undefined;
+        const finalCustomFilename = overrideCustomFilename || defaultCustomFilename || undefined;
         const requestFields = {
-          preset,
-          folder,
-          bucket,
-          altText: finalAlt,
-          customFilename: finalCustomFilename,
-          outputFormat,
-          quality,
-          maxDimensions,
-          metadata,
+          preset, folder, bucket, altText: finalAlt, customFilename: finalCustomFilename,
+          outputFormat, quality, maxDimensions, metadata,
         };
 
         const data = resolvedUploader
           ? await resolvedUploader(file, {
               ...requestFields,
+              signal: controller.signal,
               onUploadProgress: reportProgress,
             })
-          : await uploadViaXhr(
-              resolvedEndpoint,
-              buildUploadFormData(file, requestFields),
-              {
-                headers: resolvedHeaders,
-                withCredentials: resolvedCredentials,
-                fallbackErrorLabel: ui.uploadFailed,
-                onUploadProgress: reportProgress,
-              },
-            );
+          : await uploadViaXhr(resolvedEndpoint, buildUploadFormData(file, requestFields), {
+              headers: resolvedHeaders,
+              withCredentials: resolvedCredentials,
+              signal: controller.signal,
+              fallbackErrorLabel: ui.uploadFailed,
+              networkErrorLabel: ui.networkError,
+              invalidResponseLabel: ui.invalidUploadResponse,
+              abortedErrorLabel: ui.uploadAborted,
+              onUploadProgress: reportProgress,
+            });
 
-        clearProgressInterval();
-        if (!isMountedRef.current) return data;
+        tracker.removeEntry(uploadId);
+        if (!isMountedRef.current || controller.signal.aborted) return null;
 
+        entry.progress = 100;
         setProgress(100);
-        const successMsg = createSuccessMessage(
-          originalSize,
-          data.size,
-          false,
-          uploadLocale,
-        );
+        const successMsg = createSuccessMessage(originalSize, data.size, false, uploadLocale);
         setUploadMessage(successMsg);
-        onProgress?.(100, successMsg, file);
+        onProgress?.(100, successMsg, file, uploadId);
 
         safeSetTimeout(() => {
-          setUploadMessage('');
+          if (tracker.entries.size === 0) setUploadMessage('');
         }, 5000);
 
-        onSuccess?.(data, file);
+        onSuccess?.(data, file, uploadId);
         return data;
       } catch (err) {
-        clearProgressInterval();
-        if (!isMountedRef.current) return null;
+        tracker.removeEntry(uploadId);
+        if (!isMountedRef.current || controller.signal.aborted || isUploadAbortError(err)) {
+          return null;
+        }
         const errorMsg = err instanceof Error ? err.message : ui.uploadFailed;
         setUploadMessage('');
-        onError?.(errorMsg, file);
+        onError?.(errorMsg, file, uploadId);
         return null;
       } finally {
-        clearProgressInterval();
-        if (isMountedRef.current) {
+        tracker.removeEntry(uploadId);
+        if (isMountedRef.current && tracker.entries.size === 0) {
           setIsUploading(false);
           safeSetTimeout(() => {
-            setProgress(0);
+            if (tracker.entries.size === 0) setProgress(0);
           }, 1000);
         }
       }
     },
     [
-      preset,
-      folder,
-      bucket,
-      metadata,
-      altText,
-      outputFormat,
-      quality,
-      maxDimensions,
-      defaultCustomFilename,
-      resolvedEndpoint,
-      resolvedUploader,
-      resolvedHeaders,
-      resolvedCredentials,
-      uploadLocale,
-      ui.preparingUpload,
-      ui.uploadFailed,
-      onSuccess,
-      onError,
-      onProgress,
-      clearProgressInterval,
-      clearAllTimeouts,
-      safeSetTimeout,
+      preset, folder, bucket, metadata, altText, outputFormat, quality, maxDimensions,
+      defaultCustomFilename, resolvedEndpoint, resolvedUploader, resolvedHeaders,
+      resolvedCredentials, uploadLocale, ui.preparingUpload, ui.uploadFailed,
+      ui.networkError, ui.invalidUploadResponse, ui.uploadAborted,
+      onSuccess, onError, onProgress, safeSetTimeout,
     ],
   );
 
   const reset = useCallback(() => {
-    clearProgressInterval();
-    clearAllTimeouts();
-    setIsUploading(false);
-    setProgress(0);
-    setUploadMessage('');
-  }, [clearProgressInterval, clearAllTimeouts]);
+    abortAll();
+  }, [abortAll]);
 
-  return {
-    uploadImage,
-    isUploading,
-    progress,
-    uploadMessage,
-    reset,
-  };
+  return { uploadImage, abortUpload, abortAll, isUploading, progress, uploadMessage, reset };
 }

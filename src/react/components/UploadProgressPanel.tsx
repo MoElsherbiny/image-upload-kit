@@ -7,11 +7,13 @@ import { useState } from 'react';
 import type { UploadLocale } from '../../types';
 import { useImageUploadContext } from '../context';
 import {
+  formatUploadingCount,
   normalizeUploadLocale,
   resolveTranslations,
   type UploadTranslations,
 } from '../i18n';
 import type { CustomImageRenderer } from '../types';
+import { cx, resolveSlotClass } from '../utils/slotStyles';
 import { BlurImage } from './BlurImage';
 
 export interface UploadItem {
@@ -29,6 +31,7 @@ export interface UploadProgressPanelProps {
   locale?: UploadLocale;
   translations?: Partial<UploadTranslations>;
   renderImage?: CustomImageRenderer;
+  unstyled?: boolean;
 }
 
 export function UploadProgressPanel({
@@ -38,37 +41,47 @@ export function UploadProgressPanel({
   locale: propLocale,
   translations,
   renderImage,
+  unstyled: propUnstyled,
 }: UploadProgressPanelProps) {
   const ctx = useImageUploadContext();
+  const isUnstyled = propUnstyled ?? ctx.unstyled;
   const locale = normalizeUploadLocale(propLocale || ctx.locale);
-  const ui = resolveTranslations(locale, translations || ctx.translations);
+  const effectiveOverrides = translations || ctx.translations;
+  const ui = resolveTranslations(locale, effectiveOverrides);
   const [isMinimized, setIsMinimized] = useState(false);
   const uploadingCount = items.length;
+  const cls = (defaultClass: string) => resolveSlotClass(defaultClass, isUnstyled);
 
   if (uploadingCount === 0) return null;
 
   return (
     <div
       data-upload-progress-dock
+      data-slot="progress-dock"
+      data-unstyled={isUnstyled || undefined}
       dir={locale === 'ar' ? 'rtl' : 'ltr'}
-      className={`iuk-progress-dock ${isMinimized ? 'iuk-progress-dock--collapsed' : ''}`}
+      className={cls(
+        cx('iuk-progress-dock', isMinimized && 'iuk-progress-dock--collapsed'),
+      )}
     >
       <div
-        className={`iuk-progress-panel ${isMinimized ? 'iuk-progress-panel--minimized' : ''}`}
+        className={cls(
+          cx('iuk-progress-panel', isMinimized && 'iuk-progress-panel--minimized'),
+        )}
       >
         <button
           type="button"
-          className="iuk-progress-panel__header"
+          className={cls('iuk-progress-panel__header')}
+          aria-expanded={!isMinimized}
           onClick={() => setIsMinimized((prev) => !prev)}
         >
-          <span className="iuk-progress-panel__title">
-            <Loader2 size={16} className="iuk-spin" />
+          <span className={cls('iuk-progress-panel__title')}>
+            <Loader2 size={16} className={cls('iuk-spin')} />
             <span>
-              {ui.uploading} {uploadingCount}{' '}
-              {uploadingCount !== 1 ? ui.uploadImages : ui.uploadImage}
+              {formatUploadingCount(ui, uploadingCount, locale, effectiveOverrides)}
             </span>
             {totalCount > 0 && (
-              <span className="iuk-progress-panel__count">
+              <span className={cls('iuk-progress-panel__count')}>
                 ({completedCount}/{totalCount})
               </span>
             )}
@@ -77,10 +90,10 @@ export function UploadProgressPanel({
         </button>
 
         {!isMinimized && (
-          <div className="iuk-progress-panel__body">
+          <div className={cls('iuk-progress-panel__body')}>
             {items.map((item) => (
-              <div key={item.id} className="iuk-progress-item">
-                <div className="iuk-progress-item__thumb">
+              <div key={item.id} className={cls('iuk-progress-item')}>
+                <div className={cls('iuk-progress-item__thumb')}>
                   <BlurImage
                     src={item.url}
                     alt={ui.uploadingAlt}
@@ -88,17 +101,24 @@ export function UploadProgressPanel({
                     renderImage={renderImage}
                   />
                 </div>
-                <div className="iuk-progress-item__info">
-                  <div className="iuk-progress-item__name">
+                <div className={cls('iuk-progress-item__info')}>
+                  <div className={cls('iuk-progress-item__name')}>
                     {item.fileName || ui.image}
                   </div>
-                  <div className="iuk-progress-item__status">
+                  <div className={cls('iuk-progress-item__status')}>
                     {item.message || ui.processing}
                   </div>
                   {item.progress !== undefined && item.progress > 0 && (
-                    <div className="iuk-progress-bar">
+                    <div
+                      role="progressbar"
+                      aria-valuenow={Math.round(item.progress)}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-label={item.fileName || ui.uploading}
+                      className={cls('iuk-progress-bar')}
+                    >
                       <div
-                        className="iuk-progress-bar__fill"
+                        className={cls('iuk-progress-bar__fill')}
                         style={{ width: `${item.progress}%` }}
                       />
                     </div>
