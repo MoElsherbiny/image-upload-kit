@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  buildUploadFormData,
   createUploadTracker,
+  deleteUploadedImage,
   getAssetSize,
   isHeicAsset,
   isUploadAbortError,
   type NativeUploadAsset,
   runTransformAsset,
   type TransformAssetFn,
-  uploadViaXhr,
+  type UploadMode,
+  uploadAsset as uploadClientAsset,
 } from '../../client';
 import {
   type CropStrategy,
@@ -38,6 +39,7 @@ export interface NativeUploadCallOptions {
   crop?: CropStrategy;
   maxSizeMB?: number;
   metadata?: Record<string, string>;
+  uploadMode?: UploadMode;
   transformAsset?: TransformAssetFn<NativeUploadAsset>;
   signal?: AbortSignal;
   onProgress?: (percent: number) => void;
@@ -46,6 +48,7 @@ export interface NativeUploadCallOptions {
 export interface UseNativeUploadOptions {
   endpoint?: string;
   deleteEndpoint?: string;
+  uploadMode?: UploadMode;
   headers?: Record<string, string>;
   withCredentials?: boolean;
   defaultPreset?: UploadPresetName;
@@ -59,6 +62,7 @@ export function useNativeUpload(options: UseNativeUploadOptions = {}) {
   const ctx = useNativeImageUploadConfig();
   const endpoint = options.endpoint ?? ctx.endpoint;
   const deleteEndpoint = options.deleteEndpoint ?? ctx.deleteEndpoint ?? endpoint;
+  const uploadMode = options.uploadMode ?? ctx.uploadMode ?? 'direct';
   const headers = options.headers ?? ctx.headers;
   const withCredentials = options.withCredentials ?? ctx.withCredentials;
   const defaultPreset = options.defaultPreset ?? ctx.defaultPreset;
@@ -154,43 +158,34 @@ export function useNativeUpload(options: UseNativeUploadOptions = {}) {
             ? callOptions.aspectRatio
             : undefined;
 
-        let result: UploadedImageData;
-        if (customUploader) {
-          result = await customUploader(transformed, {
-            preset,
-            folder: callOptions.folder,
-            bucket: callOptions.bucket,
-            altText: callOptions.altText,
-            customFilename: callOptions.customFilename,
-            quality: callOptions.quality,
-            aspectRatio: effectiveAspectRatio,
-            crop: callOptions.crop,
-            metadata: callOptions.metadata,
-            signal: entry.controller.signal,
-            onProgress: handleProgress,
-          });
-        } else {
-          const formData = buildUploadFormData(transformed, {
-            preset,
-            folder: callOptions.folder,
-            bucket: callOptions.bucket,
-            altText: callOptions.altText,
-            customFilename: callOptions.customFilename,
-            outputFormat: callOptions.outputFormat,
-            quality: callOptions.quality,
-            maxDimensions: callOptions.maxDimensions,
-            aspectRatio: effectiveAspectRatio,
-            crop: callOptions.crop,
-            metadata: callOptions.metadata,
-          });
+        const requestFields = {
+          preset,
+          folder: callOptions.folder,
+          bucket: callOptions.bucket,
+          altText: callOptions.altText,
+          customFilename: callOptions.customFilename,
+          outputFormat: callOptions.outputFormat,
+          quality: callOptions.quality,
+          maxDimensions: callOptions.maxDimensions,
+          aspectRatio: effectiveAspectRatio,
+          crop: callOptions.crop,
+          metadata: callOptions.metadata,
+        };
 
-          result = await uploadViaXhr(endpoint, formData, {
-            headers,
-            withCredentials,
-            signal: entry.controller.signal,
-            onUploadProgress: handleProgress,
-          });
-        }
+        const result = customUploader
+          ? await customUploader(transformed, {
+              ...requestFields,
+              signal: entry.controller.signal,
+              onProgress: handleProgress,
+            })
+          : await uploadClientAsset(transformed, requestFields, {
+              endpoint,
+              mode: callOptions.uploadMode ?? uploadMode,
+              headers,
+              withCredentials,
+              signal: entry.controller.signal,
+              onUploadProgress: handleProgress,
+            });
 
         handleProgress(100);
         return result;
@@ -215,6 +210,7 @@ export function useNativeUpload(options: UseNativeUploadOptions = {}) {
       options.maxSizeMB,
       options.transformAsset,
       syncUploadingState,
+      uploadMode,
       withCredentials,
     ],
   );
@@ -238,13 +234,15 @@ export function useNativeUpload(options: UseNativeUploadOptions = {}) {
       if (customDeleter) {
         return customDeleter(url);
       }
-      const target = `${deleteEndpoint}?url=${encodeURIComponent(url)}`;
-      const res = await fetch(target, {
-        method: 'DELETE',
-        headers,
-        credentials: withCredentials ? 'include' : 'same-origin',
-      });
-      return res.ok;
+      try {
+        await deleteUploadedImage(deleteEndpoint, url, {
+          headers,
+          withCredentials,
+        });
+        return true;
+      } catch {
+        return false;
+      }
     },
     [customDeleter, deleteEndpoint, headers, withCredentials],
   );

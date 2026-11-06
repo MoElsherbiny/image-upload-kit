@@ -1,8 +1,7 @@
 import type { AngularComputed, AngularSignal } from './types';
 
 export interface SubscribableDependency {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  subscribe: (listener: (value: any) => void) => () => void;
+  subscribe: (listener: () => void) => () => void;
 }
 
 /**

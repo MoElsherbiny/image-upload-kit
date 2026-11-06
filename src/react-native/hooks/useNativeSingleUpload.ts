@@ -53,6 +53,7 @@ export function useNativeSingleUpload(
   } = useNativeUpload({
     endpoint: props.endpoint,
     deleteEndpoint: props.deleteEndpoint,
+    uploadMode: props.uploadMode,
     headers: props.headers,
     withCredentials: props.withCredentials,
     defaultPreset: props.preset,
@@ -93,6 +94,7 @@ export function useNativeSingleUpload(
           crop: props.crop,
           maxSizeMB: props.maxSizeMB,
           metadata: props.metadata,
+          uploadMode: props.uploadMode,
           transformAsset: props.transformAsset,
         });
 

@@ -5,11 +5,19 @@ export {
   type SubscribableDependency,
 } from './signals';
 export {
+  type AngularDestroyRefLike,
+  type AngularSignalsAdapter,
+  type AngularWritableSignalLike,
+  withAngularSignals,
+} from './withAngularSignals';
+export {
   type AngularValueProvider,
+  IMAGE_UPLOAD_CONFIG,
   IMAGE_UPLOAD_CONFIG_TOKEN,
   injectImageUploadConfig,
   provideImageUploadConfig,
   resetImageUploadConfig,
+  resolveImageUploadConfig,
 } from './config';
 export {
   type AngularImageRevealController,

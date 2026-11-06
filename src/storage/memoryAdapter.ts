@@ -1,11 +1,15 @@
 import {
   type StorageAdapter,
+  type StorageDownloadOptions,
   type StorageFileEntry,
   type StorageListOptions,
   type StoragePaginatedListResult,
+  type StoragePresignParams,
+  type StoragePresignResult,
   type StorageUploadParams,
   type StorageUploadResult,
   toPaginatedListResult,
+  validateStorageMetadata,
 } from './types';
 
 export interface StoredMemoryObject {
@@ -19,6 +23,7 @@ export interface StoredMemoryObject {
 
 export interface MemoryStorageAdapter extends StorageAdapter {
   exists(bucket: string, path: string): Promise<boolean>;
+  stat(bucket: string, path: string): Promise<{ size: number; contentType?: string } | null>;
   getPublicUrl(bucket: string, path: string): string;
   list(
     bucket: string,
@@ -26,6 +31,20 @@ export interface MemoryStorageAdapter extends StorageAdapter {
     options?: StorageListOptions,
   ): Promise<StoragePaginatedListResult>;
   deleteByUrl(url: string): Promise<boolean>;
+  createPresignedUpload(
+    params: StoragePresignParams,
+  ): Promise<StoragePresignResult>;
+  download(
+    bucket: string,
+    path: string,
+    options?: StorageDownloadOptions,
+  ): Promise<Uint8Array>;
+  putPresigned(
+    bucket: string,
+    path: string,
+    data: Buffer | Uint8Array,
+    contentType?: string,
+  ): Promise<void>;
   getObject(bucket: string, path: string): StoredMemoryObject | undefined;
   clear(): void;
   readonly size: number;
@@ -90,6 +109,11 @@ export function createMemoryStorageAdapter(
       return store.has(toKey(bucket, path));
     },
 
+    async stat(bucket: string, path: string) {
+      const obj = store.get(toKey(bucket, path.replace(/^\/+/, '')));
+      return obj ? { size: obj.data.byteLength, contentType: obj.contentType } : null;
+    },
+
     getPublicUrl,
 
     async list(
@@ -145,6 +169,65 @@ export function createMemoryStorageAdapter(
       const bucket = rest.slice(0, slashIdx);
       const filePath = rest.slice(slashIdx + 1);
       return { bucket, path: filePath };
+    },
+
+    async createPresignedUpload(
+      params: StoragePresignParams,
+    ): Promise<StoragePresignResult> {
+      validateStorageMetadata(params.metadata);
+      const cleanPath = params.path.replace(/^\/+/, '');
+      const expiresAt = new Date(
+        Date.now() + (params.expiresInSeconds ?? 300) * 1000,
+      ).toISOString();
+      return {
+        method: 'PUT',
+        url: `memory://presigned/${params.bucket}/${cleanPath}`,
+        headers: { 'content-type': params.contentType },
+        expiresAt,
+      };
+    },
+
+    async download(
+      bucket: string,
+      path: string,
+      downloadOptions?: StorageDownloadOptions,
+    ): Promise<Uint8Array> {
+      const cleanPath = path.replace(/^\/+/, '');
+      const obj = store.get(toKey(bucket, cleanPath));
+      if (!obj) {
+        const err = new Error(
+          `Object not found at ${bucket}/${cleanPath}`,
+        ) as Error & { status?: number; code?: string };
+        err.status = 404;
+        err.code = 'ENOENT';
+        throw err;
+      }
+      if (
+        downloadOptions?.maxBytes !== undefined &&
+        obj.data.byteLength > downloadOptions.maxBytes
+      ) {
+        const err = new Error(
+          'Staged file size exceeds maximum allowed bytes',
+        ) as Error & { status?: number };
+        err.status = 400;
+        throw err;
+      }
+      return new Uint8Array(obj.data);
+    },
+
+    async putPresigned(
+      bucket: string,
+      path: string,
+      data: Buffer | Uint8Array,
+      contentType = 'application/octet-stream',
+    ): Promise<void> {
+      await this.upload({
+        bucket,
+        path,
+        data,
+        contentType,
+        upsert: true,
+      });
     },
 
     getObject(bucket: string, path: string): StoredMemoryObject | undefined {

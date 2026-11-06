@@ -35,9 +35,6 @@ export default tseslint.config(
   },
   {
     files: ['src/**/*.{ts,tsx}', 'tests/**/*.ts', 'tests/**/*.tsx'],
-    plugins: {
-      'react-hooks': reactHooks,
-    },
     rules: {
       'max-lines': [
         'error',
@@ -47,8 +44,6 @@ export default tseslint.config(
           skipComments: false,
         },
       ],
-      'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
       '@typescript-eslint/no-unused-vars': [
         'error',
         {
@@ -57,7 +52,120 @@ export default tseslint.config(
           caughtErrorsIgnorePattern: '^_',
         },
       ],
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'error',
+    },
+  },
+  {
+    files: [
+      'src/react/**/*.{ts,tsx}',
+      'src/react-native/**/*.{ts,tsx}',
+      'tests/**/*.tsx',
+    ],
+    plugins: {
+      'react-hooks': reactHooks,
+    },
+    rules: {
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
+    },
+  },
+  {
+    files: ['src/client/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                'react',
+                'react-*',
+                'vue',
+                '@angular/*',
+                '**/react/**',
+                '**/vue/**',
+                '**/angular/**',
+                '**/blur/blurDataUtils*',
+              ],
+              message:
+                'src/client must remain framework-agnostic and free of canvas/DOM dependencies.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/vue/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                'react',
+                'react-*',
+                '@angular/*',
+                '**/react/**',
+                '**/angular/**',
+                '**/react-native/**',
+              ],
+              message:
+                'src/vue must not import React, Angular, or React Native modules.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/angular/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                'react',
+                'react-*',
+                'vue',
+                '**/react/**',
+                '**/vue/**',
+                '**/react-native/**',
+              ],
+              message:
+                'src/angular must not import React, Vue, or React Native modules.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ['src/react-native/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                'react-dom',
+                'vue',
+                '@angular/*',
+                '**/react/**',
+                '**/vue/**',
+                '**/angular/**',
+                '**/blur/blurDataUtils*',
+              ],
+              message:
+                'src/react-native must not import react-dom, Vue, Angular, or canvas-based blurDataUtils.',
+            },
+          ],
+        },
+      ],
     },
   },
 );

@@ -37,6 +37,23 @@ export type UploadPhase =
   | 'error'
   | 'cancelled';
 
+export type UploadMode = 'direct' | 'presigned';
+
+export interface PresignedUploadTarget {
+  method: 'POST' | 'PUT';
+  url: string;
+  fields?: Record<string, string>;
+  headers?: Record<string, string>;
+}
+
+export interface PresignResponsePayload {
+  upload: PresignedUploadTarget;
+  token: string;
+  expiresAt: string;
+  bucket?: string;
+  path?: string;
+}
+
 export interface TransformAssetContext {
   signal: AbortSignal;
   preset?: string;

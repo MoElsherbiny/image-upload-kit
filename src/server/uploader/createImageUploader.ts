@@ -10,12 +10,20 @@ import {
   STANDARD_PRESETS,
   SVG_MIME_TYPE,
 } from '../../types';
-import { validateImageFileStrict } from '../../utils/validators';
 import { UploadValidationError } from '../handler/responses';
-import { assertMagicBytesAllowed, sanitizeSvg } from '../security';
 import { AsyncSemaphore, SemaphoreQueueFullError } from '../semaphore';
 import { processImageBuffer } from './bufferProcessor';
+import { createMemoryDedupeStore, type DedupeStore } from './dedupe';
 import { createDefaultPathGenerator, formatToExtension } from './pathGenerator';
+import {
+  collectAllowedBuckets,
+  collectMirrorDirs,
+  computeMaxSizeMB,
+  evictDedupeForPath,
+  lookupDedupeCache,
+  readAndValidateUploadInput,
+  resolveUploadSettings,
+} from './resolveUploadSettings';
 import type {
   ImageUploader,
   ImageUploaderOptions,
@@ -33,7 +41,6 @@ import {
   deleteStoredVariants,
   generateImageVariants,
   invokeRecordHookWithRollback,
-  resolveEffectiveAllowedFormats,
 } from './variantGenerator';
 
 export function createImageUploader<
@@ -62,11 +69,27 @@ export function createImageUploader<
     optimizationTimeoutMs = 60000,
     blurTimeoutMs = 30000,
     includeBlurHash: defaultIncludeBlurHash = false,
+    deduplicate,
+    deduplicateByHash = false,
   } = options;
+
+  const dedupeObj =
+    typeof deduplicate === 'object' && deduplicate !== null ? deduplicate : undefined;
+  const defaultDedupeEnabled =
+    typeof deduplicate === 'boolean'
+      ? deduplicate
+      : Boolean(dedupeObj ? dedupeObj.enabled !== false : deduplicateByHash);
+  const verifyDedupeExists = dedupeObj?.verifyExists !== false;
+  const dedupeStore: DedupeStore = dedupeObj?.store ?? createMemoryDedupeStore();
 
   const mergedPresets: Record<string, UploadPresetConfig> = {
     ...(includeStandardPresets ? STANDARD_PRESETS : {}),
     ...(customPresets || {}),
+  };
+  const uploaderDefaults = {
+    defaultBucket, defaultFolder, defaultMaxSizeMB, defaultAllowedFormats,
+    defaultMaxDimensions, defaultAllowSvg, defaultIncludeBlurHash,
+    defaultLimitInputPixels, defaultDedupeEnabled,
   };
 
   const semaphore = new AsyncSemaphore(concurrency, { maxQueue });
@@ -76,27 +99,7 @@ export function createImageUploader<
 
   const resolvePreset = (name?: string): UploadPresetConfig | undefined =>
     name ? mergedPresets[name] : undefined;
-
-  const getAllowedBuckets = (): string[] => {
-    const buckets = new Set<string>([defaultBucket]);
-    for (const preset of Object.values(mergedPresets)) {
-      if (preset?.bucket) buckets.add(preset.bucket);
-    }
-    return [...buckets];
-  };
-
-  const getMirrorDirs = (): string[] =>
-    [...new Set(Object.values(mergedPresets).map((p) => p?.mirrorDir).filter(Boolean) as string[])];
-
-  const getMaxSizeMB = (allowedPresets?: string[]): number => {
-    let maxMB = defaultMaxSizeMB;
-    const keys = allowedPresets?.length ? allowedPresets : Object.keys(mergedPresets);
-    for (const key of keys) {
-      const p = mergedPresets[key];
-      if (p?.maxSizeMB && p.maxSizeMB > maxMB) maxMB = p.maxSizeMB;
-    }
-    return maxMB;
-  };
+  const getMirrorDirs = (): string[] => collectMirrorDirs(mergedPresets);
 
   const cleanupVariantsFor = async (bucket: string, basePath: string): Promise<void> => {
     const key = `${bucket}:${basePath}`;
@@ -110,9 +113,23 @@ export function createImageUploader<
 
   return {
     defaultBucket,
+    storage,
+    getStorage: () => storage,
     resolvePreset,
-    getAllowedBuckets,
-    getMaxSizeMB,
+    resolveUploadLimits: (presetName?: string) => {
+      const r = resolveUploadSettings(
+        { preset: presetName as InferredPresetKey<TPresets> | undefined },
+        resolvePreset,
+        uploaderDefaults,
+      );
+      return {
+        maxSizeMB: r.maxSizeMB, allowedFormats: r.allowedFormats,
+        allowSvg: r.allowSvg, defaultFolder: r.folder,
+      };
+    },
+    getAllowedBuckets: () => collectAllowedBuckets(defaultBucket, mergedPresets),
+    getMaxSizeMB: (allowedPresets?: string[]) =>
+      computeMaxSizeMB(defaultMaxSizeMB, mergedPresets, allowedPresets),
     parseUrl: (url: string) => (storage.parseUrl ? storage.parseUrl(url) : null),
 
     async processBuffer(
@@ -134,50 +151,29 @@ export function createImageUploader<
       input,
       uploadOptions: ImageUploadOptions<InferredPresetKey<TPresets>> = {},
     ): Promise<UploadedImageData> {
-      const presetConfig = resolvePreset(uploadOptions.preset);
-      if (uploadOptions.preset && !presetConfig) {
-        throw new UploadValidationError(`Invalid preset "${uploadOptions.preset}".`);
-      }
-
-      const bucket = uploadOptions.bucket || presetConfig?.bucket || defaultBucket;
-      const folder = uploadOptions.folder ?? presetConfig?.folder ?? defaultFolder;
-      const maxSizeMB = uploadOptions.maxSizeMB ?? presetConfig?.maxSizeMB ?? defaultMaxSizeMB;
-      const allowSvg = uploadOptions.allowSvg ?? presetConfig?.allowSvg ?? defaultAllowSvg;
-      const explicitAllowSvg = Boolean(
-        uploadOptions.allowSvg ??
-          presetConfig?.allowSvg ??
-          (defaultAllowSvg && !uploadOptions.allowedFormats && !presetConfig?.allowedFormats),
-      );
-      const allowedFormats = resolveEffectiveAllowedFormats(
-        uploadOptions.allowedFormats ?? presetConfig?.allowedFormats ?? defaultAllowedFormats,
-        allowSvg, explicitAllowSvg,
-      );
-      const maxDimensions = uploadOptions.maxDimensions ?? presetConfig?.maxDimensions ?? defaultMaxDimensions;
-      const aspectRatio = uploadOptions.aspectRatio ?? presetConfig?.aspectRatio;
-      const crop = uploadOptions.crop ?? presetConfig?.crop;
-      const outputFormat = uploadOptions.outputFormat ?? presetConfig?.outputFormat;
-      const quality = uploadOptions.quality ?? presetConfig?.quality;
-      const includeBlurHash = uploadOptions.includeBlurHash ?? presetConfig?.includeBlurHash ?? defaultIncludeBlurHash;
-      const limitInputPixels = uploadOptions.limitInputPixels ?? presetConfig?.limitInputPixels ?? defaultLimitInputPixels;
-      const variantWidths = uploadOptions.variantWidths ?? presetConfig?.variantWidths;
-
-      const isWebFile = typeof (input as File).arrayBuffer === 'function';
-      if (isWebFile) {
-        const pre = validateImageFileStrict({ size: (input as File).size, type: input.type }, maxSizeMB, allowedFormats);
-        if (!pre.valid) throw new UploadValidationError(pre.error!);
-      }
+      const {
+        presetConfig, bucket, folder, maxSizeMB, allowSvg, allowedFormats,
+        maxDimensions, aspectRatio, crop, outputFormat, quality,
+        includeBlurHash, limitInputPixels, variantWidths, shouldDedupe, dedupeSettings,
+      } = resolveUploadSettings(uploadOptions, resolvePreset, uploaderDefaults);
 
       try {
-        let originalBuffer = isWebFile
-          ? Buffer.from(await (input as File).arrayBuffer())
-          : (input as { buffer: Buffer }).buffer;
-        if (!originalBuffer || originalBuffer.length === 0) throw new UploadValidationError('File is empty');
+        const originalBuffer = await readAndValidateUploadInput(
+          input, maxSizeMB, allowedFormats, allowSvg,
+        );
 
-        const validation = validateImageFileStrict({ size: originalBuffer.length, type: input.type }, maxSizeMB, allowedFormats);
-        if (!validation.valid) throw new UploadValidationError(validation.error!);
-
-        const sniffed = assertMagicBytesAllowed(originalBuffer, allowedFormats, allowSvg);
-        if (sniffed.format === 'svg') originalBuffer = sanitizeSvg(originalBuffer);
+        let dedupeKey: string | undefined;
+        let sourceHash: string | undefined;
+        if (shouldDedupe) {
+          const hit = await lookupDedupeCache({
+            originalBuffer, dedupeSettings, dedupeStore,
+            verifyExists: verifyDedupeExists, storage, bucket,
+            altText: uploadOptions.altText,
+          });
+          if (hit.cachedResult) return hit.cachedResult;
+          dedupeKey = hit.dedupeKey;
+          sourceHash = hit.sourceHash;
+        }
 
         const { optimized, blurData, contentHash, originalSize } = await semaphore.run(
           () =>
@@ -249,11 +245,16 @@ export function createImageUploader<
           uploadedAt: new Date().toISOString(),
         };
 
-        const record: ImageUploadRecord = { ...result, quality: optimized.quality ?? quality ?? 85 };
+        const record: ImageUploadRecord = {
+          ...result,
+          quality: optimized.quality ?? quality ?? 85,
+          ...(sourceHash && { sourceHash }),
+        };
         await invokeRecordHookWithRollback({
           onUploadRecord, awaitRecordHook, record, storage, bucket: storageTarget.bucket,
           mainPath: uploadResult.path, variantPaths, mirrorDirs: getMirrorDirs(), onError,
         });
+        if (shouldDedupe && dedupeKey) await dedupeStore.set(dedupeKey, result);
         return result;
       } catch (error) {
         if (error instanceof UploadValidationError || error instanceof SemaphoreQueueFullError) {
@@ -269,6 +270,7 @@ export function createImageUploader<
         await storage.delete(targetBucket, targetPath);
         await deleteMirroredFiles(getMirrorDirs(), targetPath);
         await cleanupVariantsFor(targetBucket, targetPath);
+        await evictDedupeForPath(dedupeStore, storage, targetBucket, targetPath);
       } catch (error) {
         throw new Error(`Image deletion failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
@@ -277,6 +279,10 @@ export function createImageUploader<
     async deleteByUrl(url: string): Promise<boolean> {
       const parsed = storage.parseUrl?.(url);
       const deleted = storage.deleteByUrl ? await storage.deleteByUrl(url) : false;
+      await dedupeStore.deleteByUrl?.(url);
+      if (parsed?.path) {
+        await evictDedupeForPath(dedupeStore, storage, parsed.bucket || defaultBucket, parsed.path);
+      }
       if (deleted && parsed?.path) {
         await deleteMirroredFiles(getMirrorDirs(), parsed.path);
         await cleanupVariantsFor(parsed.bucket || defaultBucket, parsed.path);

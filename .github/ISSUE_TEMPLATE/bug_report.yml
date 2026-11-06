@@ -1,0 +1,33 @@
+name: Bug Report
+description: Report a reproducible bug in img-upload-kit
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: img-upload-kit Version
+      placeholder: "2.2.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: subpath
+    attributes:
+      label: Subpath / Platform
+      options:
+        - img-upload-kit (core)
+        - img-upload-kit/client
+        - img-upload-kit/server & /server/handler
+        - img-upload-kit/storage
+        - img-upload-kit/react & /headless
+        - img-upload-kit/vue
+        - img-upload-kit/angular
+        - img-upload-kit/react-native
+        - img-upload-kit/cli
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+    validations:
+      required: true

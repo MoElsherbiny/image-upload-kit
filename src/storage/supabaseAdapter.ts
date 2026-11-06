@@ -1,7 +1,10 @@
 import {
   type StorageAdapter,
+  type StorageDownloadOptions,
   type StorageListOptions,
   type StoragePaginatedListResult,
+  type StoragePresignParams,
+  type StoragePresignResult,
   type StorageUploadParams,
   type StorageUploadResult,
   toPaginatedListResult,
@@ -50,6 +53,18 @@ export interface SupabaseBucketClientLike {
       id: string | null;
       created_at: string | null;
     }> | null;
+    error: { message: string } | null;
+  }>;
+  createSignedUploadUrl?(
+    path: string,
+  ): Promise<{
+    data: { signedUrl: string; token?: string; path?: string } | null;
+    error: { message: string } | null;
+  }>;
+  download?(
+    path: string,
+  ): Promise<{
+    data: Blob | Uint8Array | ArrayBuffer | null;
     error: { message: string } | null;
   }>;
 }
@@ -197,6 +212,65 @@ export function createSupabaseStorageAdapter(
       } catch {
         return false;
       }
+    },
+
+    async createPresignedUpload(
+      params: StoragePresignParams,
+    ): Promise<StoragePresignResult> {
+      validateStorageMetadata(params.metadata);
+      const cleanPath = params.path.replace(/^\/+/, '');
+      const bucketClient = client.storage.from(params.bucket);
+      if (!bucketClient.createSignedUploadUrl) {
+        throw new Error('Supabase storage client does not support createSignedUploadUrl');
+      }
+      const { data, error } = await bucketClient.createSignedUploadUrl(cleanPath);
+      if (error || !data?.signedUrl) {
+        throw new Error(
+          `Failed to create Supabase signed upload URL: ${error?.message || 'Unknown error'}`,
+        );
+      }
+      // Supabase signed upload URLs use Supabase's server-defined TTL rather than a client-supplied expiration.
+      return {
+        method: 'PUT',
+        url: data.signedUrl,
+        headers: { 'content-type': params.contentType },
+      };
+    },
+
+    async download(
+      bucket: string,
+      path: string,
+      downloadOptions?: StorageDownloadOptions,
+    ): Promise<Uint8Array> {
+      const cleanPath = path.replace(/^\/+/, '');
+      const bucketClient = client.storage.from(bucket);
+      if (!bucketClient.download) {
+        throw new Error('Supabase storage client does not support download');
+      }
+      const { data, error } = await bucketClient.download(cleanPath);
+      if (error || !data) {
+        throw new Error(
+          `Failed to download from Supabase storage (bucket: ${bucket}, path: ${cleanPath}): ${error?.message || 'Not found'}`,
+        );
+      }
+      let bytes: Uint8Array;
+      if (data instanceof Uint8Array) {
+        bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+      } else if (data instanceof ArrayBuffer) {
+        bytes = new Uint8Array(data);
+      } else if (typeof (data as Blob).arrayBuffer === 'function') {
+        bytes = new Uint8Array(await (data as Blob).arrayBuffer());
+      } else {
+        throw new Error('Unsupported download payload from Supabase storage');
+      }
+      if (downloadOptions?.maxBytes !== undefined && bytes.byteLength > downloadOptions.maxBytes) {
+        const err = new Error('Staged file size exceeds maximum allowed bytes') as Error & {
+          status?: number;
+        };
+        err.status = 400;
+        throw err;
+      }
+      return bytes;
     },
   };
 }

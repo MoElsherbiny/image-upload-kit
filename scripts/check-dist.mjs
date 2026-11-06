@@ -18,14 +18,20 @@ const SERVER_SAFE_ENTRIES = [
   'server-handler',
   'storage',
   'blur',
+  'vue',
   'angular',
 ];
 const REACT_IMPORT_RE =
   /(?:from\s*|import\s*\(\s*|require\(\s*)["']react(?:\/jsx-runtime|-dom)?["']/;
 const REACT_DOM_IMPORT_RE =
   /(?:from\s*|import\s*\(\s*|require\(\s*)["']react-dom["']/;
+const VUE_IMPORT_RE =
+  /(?:from\s*|import\s*\(\s*|require\(\s*)["']vue["']/;
 const SHARP_IMPORT_RE =
   /(?:from\s*|import\s*\(\s*|require\(\s*)["'](?:sharp|lqip-modern)["']/;
+const BANNED_DEP_IMPORT_RE =
+  /(?:from\s*|import\s*\(\s*|require\(\s*)["'](?:blurhash|commander|lqip-modern)["']/;
+const EVAL_RE = /\beval\s*\(|new\s+Function\s*\(/;
 const FS_IMPORT_RE =
   /(?:from\s*|import\s*\(\s*|require\(\s*)["'](?:node:)?fs(?:\/promises)?["']/;
 const CANVAS_RE = /createElement\(\s*["']canvas["']\s*\)|decodeBlurHashToDataURL/;
@@ -78,7 +84,7 @@ export function runDistChecks(rootDir = process.cwd()) {
   const check = (ok, message) => (ok ? passes : failures).push(message);
 
   if (!existsSync(distDir)) {
-    return { failures: ['dist/ does not exist — run `npm run build` first'], passes };
+    return { failures: ['dist/ does not exist - run `npm run build` first'], passes };
   }
 
   const files = readdirSync(distDir);
@@ -100,7 +106,17 @@ export function runDistChecks(rootDir = process.cwd()) {
       }
     }
 
-    // 2. Exactly one ImageUploadContext and one NativeImageUploadContext definition per module format.
+    // 2. Supply-chain & zero-eval checks across all dist JS/CJS files.
+    const evalFiles = jsFiles.filter((file) => EVAL_RE.test(read(distDir, file)));
+    check(evalFiles.length === 0, `no eval() or new Function() in *.${ext} ${evalFiles.join(', ')}`.trim());
+
+    const bannedDepFiles = jsFiles.filter((file) => BANNED_DEP_IMPORT_RE.test(read(distDir, file)));
+    check(
+      bannedDepFiles.length === 0,
+      `no external blurhash/commander/lqip-modern imports in *.${ext} ${bannedDepFiles.join(', ')}`.trim(),
+    );
+
+    // 3. Exactly one ImageUploadContext and one NativeImageUploadContext definition per module format.
     const contextDefs = jsFiles.reduce(
       (count, file) => count + (read(distDir, file).match(CONTEXT_DEF_RE)?.length ?? 0),
       0,
@@ -116,15 +132,15 @@ export function runDistChecks(rootDir = process.cwd()) {
       `exactly one NativeImageUploadContext createContext() in *.${ext} (found ${nativeContextDefs})`,
     );
 
-    // 3. Exactly one blurService singleton instantiation per module format.
+    // 4. Exactly one blurService singleton instantiation per module format.
     const blurSingletons = jsFiles.reduce(
       (count, file) => count + (read(distDir, file).match(/blurService\s*=\s*new BlurService\(\)/g)?.length ?? 0),
       0,
     );
     check(blurSingletons === 1, `exactly one blurService singleton in *.${ext} (found ${blurSingletons})`);
 
-    // 4. Server-safe & non-React entries never pull in React or 'use client';
-    //    root/client/angular/react-native never pull in sharp / lqip-modern.
+    // 5. Server-safe & non-React entries never pull in React or 'use client';
+    //    non-Vue entries never pull in Vue; root/client/vue/angular/react-native never pull in sharp.
     for (const entry of SERVER_SAFE_ENTRIES) {
       const graph = collectGraph(distDir, `${entry}.${ext}`);
       const reactFiles = graph.filter((file) => {
@@ -133,9 +149,16 @@ export function runDistChecks(rootDir = process.cwd()) {
       });
       check(reactFiles.length === 0, `dist/${entry}.${ext} graph is free of React/'use client' ${reactFiles.join(', ')}`.trim());
     }
+
+    for (const nonVueEntry of ['index', 'client', 'server', 'server-handler', 'storage', 'blur', 'react', 'headless', 'angular', 'react-native']) {
+      const graph = collectGraph(distDir, `${nonVueEntry}.${ext}`);
+      const vueFiles = graph.filter((file) => VUE_IMPORT_RE.test(read(distDir, file)));
+      check(vueFiles.length === 0, `dist/${nonVueEntry}.${ext} graph does not import vue ${vueFiles.join(', ')}`.trim());
+    }
+
     const rootGraph = collectGraph(distDir, `index.${ext}`);
     const sharpFiles = rootGraph.filter((file) => SHARP_IMPORT_RE.test(read(distDir, file)));
-    check(sharpFiles.length === 0, `dist/index.${ext} graph does not import sharp/lqip-modern ${sharpFiles.join(', ')}`.trim());
+    check(sharpFiles.length === 0, `dist/index.${ext} graph does not import sharp ${sharpFiles.join(', ')}`.trim());
 
     const clientGraph = collectGraph(distDir, `client.${ext}`);
     const clientHeavyFiles = clientGraph.filter((file) => {
@@ -145,6 +168,16 @@ export function runDistChecks(rootDir = process.cwd()) {
     check(
       clientHeavyFiles.length === 0,
       `dist/client.${ext} graph is free of sharp/fs/canvas ${clientHeavyFiles.join(', ')}`.trim(),
+    );
+
+    const vueGraph = collectGraph(distDir, `vue.${ext}`);
+    const vueHeavyFiles = vueGraph.filter((file) => {
+      const code = read(distDir, file);
+      return SHARP_IMPORT_RE.test(code) || FS_IMPORT_RE.test(code);
+    });
+    check(
+      vueHeavyFiles.length === 0,
+      `dist/vue.${ext} graph is free of sharp/fs ${vueHeavyFiles.join(', ')}`.trim(),
     );
 
     const rnGraph = collectGraph(distDir, `react-native.${ext}`);
@@ -164,12 +197,16 @@ export function runDistChecks(rootDir = process.cwd()) {
     });
     check(
       handlerHeavyFiles.length === 0,
-      `dist/server-handler.${ext} graph does not import sharp/lqip-modern/fs ${handlerHeavyFiles.join(', ')}`.trim(),
+      `dist/server-handler.${ext} graph does not import sharp/fs ${handlerHeavyFiles.join(', ')}`.trim(),
     );
   }
 
-  // 5. Every package.json export target exists.
+  // 6. Every package.json export target exists & dependencies is empty.
   const pkg = JSON.parse(readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
+  check(
+    Object.keys(pkg.dependencies ?? {}).length === 0,
+    'package.json has zero runtime dependencies',
+  );
   const targets = [...new Set(collectExportTargets(pkg.exports))];
   for (const target of targets) {
     if (target.includes('*')) {

@@ -1,0 +1,14 @@
+name: Feature Request
+description: Propose an enhancement or new adapter for img-upload-kit
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Feature Summary & Use Case
+    validations:
+      required: true
+  - type: textarea
+    id: api
+    attributes:
+      label: Proposed API Sketch

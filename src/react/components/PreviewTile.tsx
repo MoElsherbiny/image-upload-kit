@@ -138,6 +138,7 @@ export function PreviewTile({
   return (
     <div
       data-slot="tile"
+      data-index={index}
       data-state={visualState}
       data-selected={isSelected || undefined}
       data-uploading={isUploading || undefined}

@@ -1,4 +1,5 @@
 import { createDeleteHandler } from './deleteRoute';
+import { handleFinalizeRequest } from './finalizeRoute';
 import {
   checkAllowedOrigin,
   readBoundedFormData,
@@ -8,24 +9,40 @@ import {
 import type {
   AllowClientOverrides,
   AuthorizeContext,
+  PresignedHandlerOptions,
   UploadErrorContext,
   UploadHttpHandlerOptions,
 } from './options';
 import { parseUploadForm, peekUploadAuthContext } from './parseUploadForm';
+import { handlePresignRequest, sweepStagedUploads } from './presignRoute';
 import {
   handleUnexpectedError,
   isClientValidationError,
   jsonResponse,
   UploadValidationError,
 } from './responses';
+import {
+  type PresignTokenPayload,
+  type PresignTokenStore,
+  signUploadToken,
+  type VerifyUploadTokenOptions,
+  verifyUploadToken,
+} from './uploadToken';
 
 export {
   type AllowClientOverrides,
   type AuthorizeContext,
   isClientValidationError,
+  type PresignedHandlerOptions,
+  type PresignTokenPayload,
+  type PresignTokenStore,
+  signUploadToken,
+  sweepStagedUploads,
   type UploadErrorContext,
   type UploadHttpHandlerOptions,
   UploadValidationError,
+  type VerifyUploadTokenOptions,
+  verifyUploadToken,
 };
 
 /**
@@ -40,6 +57,15 @@ export function createUploadHttpHandler<TPreset extends string = string>(
 
   async function POST(request: Request): Promise<Response> {
     try {
+      const { searchParams } = new URL(request.url, 'http://localhost');
+      const action = searchParams.get('action');
+      if (action === 'presign') {
+        return handlePresignRequest(request, options);
+      }
+      if (action === 'finalize') {
+        return handleFinalizeRequest(request, options);
+      }
+
       const originError = checkAllowedOrigin(request, allowedOrigins);
       if (originError) return originError;
 

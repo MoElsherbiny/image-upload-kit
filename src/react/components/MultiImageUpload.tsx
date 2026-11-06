@@ -1,5 +1,5 @@
 import {
-  type ChangeEvent, type ForwardedRef, Fragment, forwardRef, type HTMLAttributes,
+  type ChangeEvent, type ForwardedRef, forwardRef, type HTMLAttributes,
   type ReactElement, type Ref, useId, useImperativeHandle, useRef,
 } from 'react';
 import { createPortal } from 'react-dom';
@@ -12,9 +12,9 @@ import type { MultiUploadSlot } from '../styling';
 import type { ImageUploadHandle, MultiImageUploadProps } from '../types';
 import { HIDDEN_INPUT_STYLE, resolveSlotClass, resolveSlotStyle, resolveUploadDataState } from '../utils/slotStyles';
 import { AltTextModal } from './AltTextModal';
-import { MultiAddMoreTile, MultiEmptyDropzone } from './MultiDropzoneViews';
+import { MultiEmptyDropzone } from './MultiDropzoneViews';
+import { MultiImageGrid } from './MultiImageGrid';
 import { MultiFooterSection, MultiUploadHeaderAlerts } from './MultiUploadHeaderAlerts';
-import { PreviewTile } from './PreviewTile';
 import { QualitySelector } from './QualitySelector';
 import { UploadProgressPanel, useRetainedProgressItems } from './UploadProgressPanel';
 
@@ -198,56 +198,25 @@ function MultiImageUploadInner<TPreset extends string = UploadPresetName>(
             />
           )
         ) : (
-          <div data-slot="grid" className={slotClass('grid', 'iuk-multi__grid')} style={slotStyle('grid')}>
-            {previews.map((item, index) =>
-              renderTile ? (
-                <Fragment key={item.id}>
-                  {renderTile({
-                    item, index, isCover: index === 0, isSelected: selectedPreviews.has(item.id), disabled,
-                    toggleSelect: () => state.toggleSelect(item.id),
-                    remove: () => state.handleRemove(item.id),
-                    cancel: () => state.handleCancelUpload(item.id),
-                    retry: () => void state.handleRetryUpload(item.id),
-                    moveEarlier: () => state.move(index, index - 1),
-                    moveLater: () => state.move(index, index + 1),
-                    setAsCover: () => state.setCover(index),
-                    openAltTextModal: () => state.setEditingAltTextId(item.id),
-                    setAltText: (altText) => state.handleAltTextSave(item.id, altText),
-                    setBlurColor: (hex) => state.handleColorChange(item.id, hex),
-                    locale, ui,
-                  })}
-                </Fragment>
-              ) : (
-                <PreviewTile
-                  key={item.id} preview={item} index={index} totalCount={previews.length}
-                  reorderable={reorderable} showCoverBadge={showCoverBadge}
-                  onMove={state.move} onSetCover={state.setCover}
-                  onRemove={state.handleRemove} onCancel={state.handleCancelUpload}
-                  onRetry={(id) => void state.handleRetryUpload(id)}
-                  disabled={disabled} blurType={blurType} isSelected={selectedPreviews.has(item.id)}
-                  onToggleSelect={state.toggleSelect} onEditAltText={(id) => state.setEditingAltTextId(id)}
-                  onChangeAltText={state.handleAltTextSave} onChangeColor={state.handleColorChange}
-                  locale={locale} translations={translations} renderImage={renderImage}
-                  unstyled={isUnstyled} className={slotClass('tile')} style={slotStyle('tile')}
-                />
-              ),
-            )}
-
-            {renderAddMore ? (
-              renderAddMore({
-                isDragging, disabled, allowFolder,
-                remainingCount: Math.max(0, maxImages - previews.length),
-                openFileDialog: openFilePicker, openFolderDialog: openFolderPicker,
-                dropzoneProps, locale, ui,
-              })
-            ) : (
-              <MultiAddMoreTile
-                isDragging={isDragging} disabled={disabled} allowFolder={allowFolder} ui={ui}
-                dragHandlers={dragHandlers} onSelectFiles={openFilePicker} onSelectFolder={openFolderPicker}
-                {...slotStylingProps}
-              />
-            )}
-          </div>
+          <MultiImageGrid
+            previews={previews} selectedPreviews={selectedPreviews} maxImages={maxImages}
+            reorderable={reorderable} showCoverBadge={showCoverBadge}
+            disabled={disabled} isUploading={state.isUploading} isDragging={isDragging}
+            allowFolder={allowFolder} blurType={blurType} locale={locale}
+            translations={translations} ui={ui} renderImage={renderImage}
+            dragHandlers={dragHandlers} dropzoneProps={dropzoneProps}
+            slotClass={slotClass} slotStyle={slotStyle}
+            onSelectFiles={openFilePicker} onSelectFolder={openFolderPicker}
+            onMove={state.move} onSetCover={state.setCover}
+            onRemove={state.handleRemove} onCancel={state.handleCancelUpload}
+            onRetry={(id) => void state.handleRetryUpload(id)}
+            onToggleSelect={state.toggleSelect}
+            onEditAltText={(id) => state.setEditingAltTextId(id)}
+            onChangeAltText={state.handleAltTextSave}
+            onChangeColor={state.handleColorChange}
+            renderTile={renderTile} renderAddMore={renderAddMore}
+            {...slotStylingProps}
+          />
         )}
 
         <MultiFooterSection

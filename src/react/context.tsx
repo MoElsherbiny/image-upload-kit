@@ -1,4 +1,5 @@
 import { createContext, type ReactNode, useContext, useMemo } from 'react';
+import type { UploadMode } from '../client/types';
 import type { UploadLocale } from '../types';
 import type { UploadTranslations } from './i18n';
 import type {
@@ -7,11 +8,18 @@ import type {
   SingleUploadClassNames,
   SingleUploadStyles,
 } from './styling';
-import type { CustomImageRenderer, CustomUploaderFn } from './types';
+import type {
+  CustomDeleterFn,
+  CustomImageRenderer,
+  CustomUploaderFn,
+} from './types';
 
 export interface ImageUploadContextValue {
   endpoint: string;
+  deleteEndpoint?: string;
   uploader?: CustomUploaderFn;
+  customDeleter?: CustomDeleterFn;
+  uploadMode?: UploadMode;
   headers?: Record<string, string>;
   withCredentials?: boolean;
   locale?: UploadLocale;
@@ -41,8 +49,14 @@ export interface ImageUploadProviderProps {
   children: ReactNode;
   /** Default server endpoint for uploads (defaults to `'/api/upload'`) */
   endpoint?: string;
+  /** Optional server endpoint for opt-in `DELETE` requests when an uploaded image is removed */
+  deleteEndpoint?: string;
   /** Custom async uploader function used across all upload components */
   uploader?: CustomUploaderFn;
+  /** Custom async deleter function invoked when an uploaded image is removed */
+  customDeleter?: CustomDeleterFn;
+  /** Upload transport mode (`'direct'` or `'presigned'`) */
+  uploadMode?: UploadMode;
   /** Custom HTTP headers attached to FormData upload requests */
   headers?: Record<string, string>;
   /** Send credentials/cookies with XHR/fetch requests */
@@ -72,7 +86,10 @@ export interface ImageUploadProviderProps {
 export function ImageUploadProvider({
   children,
   endpoint = '/api/upload',
+  deleteEndpoint,
   uploader,
+  customDeleter,
+  uploadMode,
   headers,
   withCredentials,
   locale,
@@ -89,7 +106,10 @@ export function ImageUploadProvider({
   const value = useMemo<ImageUploadContextValue>(
     () => ({
       endpoint,
+      deleteEndpoint,
       uploader,
+      customDeleter,
+      uploadMode,
       headers,
       withCredentials,
       locale,
@@ -105,7 +125,10 @@ export function ImageUploadProvider({
     }),
     [
       endpoint,
+      deleteEndpoint,
       uploader,
+      customDeleter,
+      uploadMode,
       headers,
       withCredentials,
       locale,

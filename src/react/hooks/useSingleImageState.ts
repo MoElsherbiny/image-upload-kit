@@ -13,7 +13,8 @@ import {
   resolveInitialQualityLevel,
   resolveLiveAnnouncement,
   serializeSingleFormValue,
-  stripUrlCacheQuery,
+  syncIncomingSingleValue,
+  triggerOptionalDelete,
 } from './singleStateHelpers';
 import { useFilePreview } from './useFilePreview';
 import { useImageUpload } from './useImageUpload';
@@ -24,10 +25,10 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
   props: SingleImageUploadProps<TPreset>,
 ) {
   const {
-    value, onChange, preset, folder, bucket, metadata, endpoint, uploader,
-    headers, withCredentials, locale: propLocale, translations,
-    initialAltText: propInitialAltText, maxSizeMB: propMaxSizeMB,
-    maxDimensions, aspectRatio, crop, transformAsset,
+    value, onChange, preset, folder, bucket, metadata, endpoint, deleteEndpoint,
+    uploader, customDeleter, uploadMode, headers, withCredentials,
+    locale: propLocale, translations, initialAltText: propInitialAltText,
+    maxSizeMB: propMaxSizeMB, maxDimensions, aspectRatio, crop, transformAsset,
     requireAltText: propRequireAltText, required, isOpen, onClose,
     outputFormat, quality: initialQualityProp, customFilename, formValue,
   } = props;
@@ -81,7 +82,7 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
   const { uploadImage, abortAll, isUploading, progress, uploadMessage, reset } = useImageUpload({
     preset, folder, bucket, metadata, outputFormat, maxDimensions, aspectRatio, crop,
     transformAsset, customFilename, quality: QUALITY_PRESETS[qualityLevel].value,
-    endpoint, uploader, headers, withCredentials, locale,
+    endpoint, uploader, uploadMode, headers, withCredentials, locale,
     onSuccess: (data, _file, uploadId) => {
       if (uploadId && activeUploadIdRef.current && uploadId !== activeUploadIdRef.current) return;
       if (previewRef.current && previewRef.current !== data.url) revokePreview(previewRef.current);
@@ -116,55 +117,12 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
   }, [isOpen, abortAll]);
 
   useEffect(() => {
-    const incomingObj = typeof value === 'object' && value ? value : null;
-    const nextPreview = typeof value === 'string' ? value : incomingObj?.url || null;
-    const rawAlt = incomingObj?.altText || propInitialAltText || '';
-    const cachedAlt = cache.readAltMetaFor({ url: incomingObj ? incomingObj.url : nextPreview, contentHash: incomingObj?.contentHash ?? null });
-    const nextAlt =
-      rawAlt.trim() === '' && nextPreview === preview && (lastAltRef.current.trim() !== '' || cachedAlt?.trim())
-        ? lastAltRef.current.trim() || cachedAlt || rawAlt
-        : rawAlt;
-    const nextColor = incomingObj?.blurColor || DEFAULT_BLUR_COLOR;
-
-    if (stripUrlCacheQuery(nextPreview) !== stripUrlCacheQuery(preview)) setPreview(nextPreview);
-    if (nextAlt !== altText && (nextPreview !== preview || nextAlt.trim() !== '' || !altText.trim())) {
-      setAltText(nextAlt);
-      lastAltRef.current = nextAlt;
-    }
-
-    const nextIsFallback = nextColor === DEFAULT_BLUR_COLOR;
-    if (nextColor !== blurColor && (nextPreview !== preview || (!hasColorOverride && (!nextIsFallback || blurColor === DEFAULT_BLUR_COLOR)))) {
-      setBlurColor(nextColor);
-      setDetectedBlurColor(nextColor);
-      setHasColorOverride(false);
-    }
-    const nextBlurUrl = incomingObj?.blurDataUrl || '';
-    if (nextPreview !== preview || (nextBlurUrl && nextBlurUrl !== blurDataUrlState)) {
-      setBlurDataUrlState(nextBlurUrl);
-    }
-
-    if (nextPreview) {
-      const cached = cache.readBlurMetaFor({
-        url: nextPreview,
-        contentHash: incomingObj?.contentHash || uploadedData?.contentHash,
-      });
-      if (cached?.blurDataUrl && !nextBlurUrl) setBlurDataUrlState(cached.blurDataUrl);
-      if (cached?.blurColor && nextIsFallback && blurColor === DEFAULT_BLUR_COLOR) {
-        setBlurColor(cached.blurColor);
-        setDetectedBlurColor(cached.blurColor);
-      }
-    }
-
-    if (!value) {
-      setUploadedData(null);
-      setBlurDataUrlState('');
-      setSizeInfo(null);
-      setSelectedFile(null);
-      lastAltRef.current = propInitialAltText || '';
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    } else if (incomingObj?.url) {
-      setUploadedData((prev) => (prev?.url === incomingObj.url ? prev : incomingObj));
-    }
+    syncIncomingSingleValue({
+      value, propInitialAltText, preview, altText, blurColor, blurDataUrlState,
+      hasColorOverride, uploadedData, lastAltRef, fileInputEl: fileInputRef.current, cache,
+      setPreview, setAltText, setBlurColor, setDetectedBlurColor,
+      setHasColorOverride, setBlurDataUrlState, setUploadedData, setSizeInfo, setSelectedFile,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, propInitialAltText]);
 
@@ -234,6 +192,14 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
   };
 
   const handleRemoveTile = () => {
+    triggerOptionalDelete({
+      data: uploadedData ?? objVal ?? (typeof value === 'string' && value ? value : null),
+      url: uploadedData?.url ?? objVal?.url ?? (typeof value === 'string' ? value : previewRef.current),
+      customDeleter: customDeleter ?? ctx.customDeleter,
+      deleteEndpoint: deleteEndpoint ?? ctx.deleteEndpoint,
+      headers: headers ?? ctx.headers,
+      withCredentials: withCredentials ?? ctx.withCredentials,
+    });
     handleCancelUpload();
     setAltText('');
     lastAltRef.current = '';

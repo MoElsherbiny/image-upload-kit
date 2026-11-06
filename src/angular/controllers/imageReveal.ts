@@ -1,96 +1,24 @@
-import { decodeBlurHashToDataURL } from '../../blur/blurDataUtils';
+import {
+  createFallbackBlurSvg,
+  DEFAULT_NEUTRAL_COLORS,
+  resolveBackgroundColor,
+  resolveIntrinsicPlaceholderUrl,
+  resolveMeaningfulColor,
+  resolvePlaceholderUrl,
+} from '../../core/placeholders';
 import { createSignal } from '../signals';
 import type { AngularImageRevealOptions, AngularSignal } from '../types';
 
-export const DEFAULT_NEUTRAL_COLORS = [
-  '#1a1a1a', '#121212', '#000000', '#000', '#e5e7eb', '#ffffff', '#fff',
-] as const;
+export {
+  createFallbackBlurSvg,
+  DEFAULT_NEUTRAL_COLORS,
+  resolveBackgroundColor,
+  resolveIntrinsicPlaceholderUrl,
+  resolveMeaningfulColor,
+  resolvePlaceholderUrl,
+};
 
-const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
-const FUNC_COLOR = /^(?:rgb|rgba|hsl|hsla|oklch|oklab)\([\d\s.,%/+-]+\)$/i;
-const CSS_VAR_COLOR = /^var\(--[a-zA-Z0-9_-]+(?:\s*,\s*[^;{}<>()]+)?\)$/;
 const PLACEHOLDER_UNMOUNT_BUFFER_MS = 50;
-
-function isNeutralColor(value: string, neutralColors: readonly string[]): boolean {
-  if (neutralColors.length === 0) return false;
-  const lower = value.toLowerCase();
-  return neutralColors.some((item) => item.toLowerCase() === lower);
-}
-
-export function resolveMeaningfulColor(
-  color?: string | null,
-  neutralColors: readonly string[] = DEFAULT_NEUTRAL_COLORS,
-): string | undefined {
-  const value = color?.trim();
-  if (!value || isNeutralColor(value, neutralColors)) return undefined;
-  return HEX_COLOR.test(value) || FUNC_COLOR.test(value) ? value : undefined;
-}
-
-export function resolveBackgroundColor(
-  color?: string | null,
-  neutralColors: readonly string[] = DEFAULT_NEUTRAL_COLORS,
-): string | undefined {
-  const value = color?.trim();
-  if (!value || isNeutralColor(value, neutralColors)) return undefined;
-  return HEX_COLOR.test(value) || FUNC_COLOR.test(value) || CSS_VAR_COLOR.test(value)
-    ? value
-    : undefined;
-}
-
-export function createFallbackBlurSvg(
-  color?: string | null,
-  neutralColors: readonly string[] = DEFAULT_NEUTRAL_COLORS,
-): string {
-  const meaningful = resolveMeaningfulColor(color, neutralColors);
-  const stop1 = meaningful ?? '#2c3340';
-  const stop2 = meaningful ? '#0f172a' : '#1e242d';
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="100%" height="100%">' +
-    '<defs>' +
-    '<linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">' +
-    `<stop offset="0%" stop-color="${stop1}" stop-opacity="1"/>` +
-    `<stop offset="55%" stop-color="${stop1}" stop-opacity="0.78"/>` +
-    `<stop offset="100%" stop-color="${stop2}" stop-opacity="0.96"/>` +
-    '</linearGradient>' +
-    '<radialGradient id="h" cx="24%" cy="22%" r="65%">' +
-    '<stop offset="0%" stop-color="#ffffff" stop-opacity="0.22"/>' +
-    '<stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>' +
-    '</radialGradient>' +
-    '</defs>' +
-    '<rect width="100%" height="100%" fill="url(#g)"/>' +
-    '<rect width="100%" height="100%" fill="url(#h)"/>' +
-    '</svg>';
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-}
-
-export function resolveIntrinsicPlaceholderUrl(sources: {
-  blurDataUrl?: string | null;
-  blurHash?: string | null;
-}): string | undefined {
-  const dataUrl = sources.blurDataUrl?.trim();
-  if (dataUrl) return dataUrl;
-  if (sources.blurHash && typeof document !== 'undefined') {
-    try {
-      const decoded = decodeBlurHashToDataURL(sources.blurHash, 32, 32);
-      if (decoded) return decoded;
-    } catch {
-      // Ignore invalid BlurHash
-    }
-  }
-  return undefined;
-}
-
-export function resolvePlaceholderUrl(sources: {
-  blurDataUrl?: string | null;
-  blurHash?: string | null;
-  blurColor?: string | null;
-  neutralColors?: readonly string[];
-}): string {
-  return (
-    resolveIntrinsicPlaceholderUrl(sources) ??
-    createFallbackBlurSvg(sources.blurColor, sources.neutralColors)
-  );
-}
 
 export interface AngularImageRevealController {
   state: AngularSignal<'loading' | 'loaded' | 'error'>;

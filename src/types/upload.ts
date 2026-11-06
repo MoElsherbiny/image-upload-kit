@@ -45,6 +45,8 @@ export interface ImageUploadOptions<
   isClientFilename?: boolean;
   /** Target widths (px) for responsive image variants (widths >= main output width are skipped) */
   variantWidths?: number[];
+  /** Override content-hash deduplication for this upload call */
+  deduplicate?: boolean;
   /** Optional AbortSignal to cancel queued or in-flight processing */
   signal?: AbortSignal;
 }
@@ -76,9 +78,13 @@ export interface UploadedImageData {
   metadata?: Record<string, string>;
   variants?: ImageVariant[];
   srcSet?: string;
+  /** True when content-hash deduplication reused an existing stored image */
+  deduplicated?: boolean;
   uploadedAt: string;
 }
 
 export interface ImageUploadRecord extends UploadedImageData {
   quality: number;
+  /** SHA-256 hex digest of the raw input buffer when deduplication is enabled */
+  sourceHash?: string;
 }

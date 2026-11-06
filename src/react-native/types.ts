@@ -3,6 +3,7 @@ import type {
   MultiUploadReorderApi,
   NativeUploadAsset,
   TransformAssetFn,
+  UploadMode,
 } from '../client';
 import type {
   CropStrategy,
@@ -107,8 +108,7 @@ export interface NativeAnimatedImageProps {
   reduceMotion?: boolean;
   fallbackSrc?: string;
   renderError?: (ctx: NativeAnimatedImageErrorContext) => ReactNode;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  as?: ComponentType<any>;
+  as?: ComponentType<Record<string, unknown>>;
   imageComponentProps?: Record<string, unknown>;
   style?: NativeStyleProp;
   wrapperStyle?: NativeStyleProp;
@@ -120,6 +120,7 @@ export interface NativeAnimatedImageProps {
 export interface NativeUploadBaseProps {
   endpoint?: string;
   deleteEndpoint?: string;
+  uploadMode?: UploadMode;
   headers?: Record<string, string>;
   withCredentials?: boolean;
   preset?: UploadPresetName;
@@ -142,6 +143,8 @@ export interface NativeUploadBaseProps {
   testID?: string;
   onError?: (error: Error) => void;
 }
+
+export type NativeBaseUploadProps = NativeUploadBaseProps;
 
 export interface NativeSingleImageUploadProps extends NativeUploadBaseProps {
   value?: UploadedImageData | null;

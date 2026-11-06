@@ -22,11 +22,9 @@ const PEER_EXTERNALS: (string | RegExp)[] = [
   'react-dom',
   'react/jsx-runtime',
   'react-native',
+  'vue',
   /^@angular\//,
   'sharp',
-  'lqip-modern',
-  'blurhash',
-  'commander',
 ];
 
 async function bundleModularStyles(): Promise<void> {
@@ -34,12 +32,18 @@ async function bundleModularStyles(): Promise<void> {
   const chunks = await Promise.all(
     CSS_LAYERS.map((file) => readFile(file, 'utf8')),
   );
-  const banner = '/* image-upload-kit — bundled modular styles */\n';
+  const banner = '/* image-upload-kit - bundled modular styles */\n';
+  const cssDts = 'export {};\n';
   await writeFile('dist/styles.css', banner + chunks.join('\n\n'), 'utf8');
+  await writeFile('dist/styles.css.d.cts', cssDts, 'utf8');
   await Promise.all(
-    CSS_LAYERS.map((file) =>
-      copyFile(file, path.join('dist/styles', path.basename(file))),
-    ),
+    CSS_LAYERS.flatMap((file) => {
+      const base = path.basename(file);
+      return [
+        copyFile(file, path.join('dist/styles', base)),
+        writeFile(path.join('dist/styles', `${base}.d.cts`), cssDts, 'utf8'),
+      ];
+    }),
   );
 }
 
@@ -92,7 +96,7 @@ export default defineConfig(async (options): Promise<Options[]> => {
   const pkg = JSON.parse(await readFile('package.json', 'utf8')) as {
     version?: string;
   };
-  const pkgVersion = pkg.version || '2.1.0';
+  const pkgVersion = pkg.version || '2.2.0';
 
   return [
     {
@@ -108,6 +112,7 @@ export default defineConfig(async (options): Promise<Options[]> => {
         blur: 'src/blur/index.ts',
         react: 'src/react/index.ts',
         headless: 'src/react/headless/index.ts',
+        vue: 'src/vue/index.ts',
         angular: 'src/angular/index.ts',
         'react-native': 'src/react-native/index.ts',
       },

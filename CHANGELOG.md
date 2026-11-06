@@ -5,6 +5,38 @@ All notable changes to `img-upload-kit` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-11-06
+
+### Added
+
+- **First-Class Vue 3.5+ & Nuxt 4 Subpath (`img-upload-kit/vue`)**:
+  - Added `createImageUpload` Vue plugin, `provideImageUpload`, `useImageUploadConfig`, and `IMAGE_UPLOAD_INJECTION_KEY`.
+  - Added reactive composables `useSingleUpload`, `useMultiUpload`, and `useImageReveal`.
+  - Added drop-in components `<SingleImageUpload>`, `<MultiImageUpload>` (with `v-model`, pointer-drag + keyboard reordering, and `Cover` badge), `<AnimatedImage>`, and scoped-slot headless components `<HeadlessSingleUpload>` and `<HeadlessMultiUpload>`.
+- **Client-Side Pre-Upload Resize (`createClientResizeTransform` & `composeTransforms`)**:
+  - Added SSR-safe browser downscaling transform using `createImageBitmap` (`imageOrientation: 'from-image'`) + `OffscreenCanvas` in `img-upload-kit/client`, plus `composeTransforms` with `AbortSignal` propagation.
+  - Added `createExpoManipulatorResizeTransform` in `img-upload-kit/react-native` for pre-upload mobile image resizing via `expo-image-manipulator`.
+- **Presigned Direct-to-Storage Uploads (`uploadMode: 'presigned'`)**:
+  - Added two-phase presigned upload support (`POST ?action=presign` -> direct S3/R2/storage `PUT`/`POST` -> `POST ?action=finalize` with HMAC-SHA256 signed staging tokens, magic-byte validation, Sharp AVIF/WebP optimization, LQIP, and responsive variants).
+  - Added optional `createPresignedUpload` and `download` methods to `StorageAdapter` (implemented in S3/R2, LocalFS, and Memory adapters) and `uploadAsset` / `uploadViaPresignedUrl` in `img-upload-kit/client`.
+- **Content-Hash Deduplication (`deduplicate` & `createMemoryDedupeStore`)**:
+  - Added `deduplicate` option to `createImageUploader`, `ImageDedupeStore` interface, `createMemoryDedupeStore` LRU cache, composite SHA-256 deduplication key (`computeDedupeCompositeKey` scoped across raw hash, bucket, preset, dimensions, aspect ratio, format, and variants), and `data.deduplicated?: boolean` on `UploadedImageData`.
+- **Pointer-Drag Gallery Reordering (`attachPointerReorder`)**:
+  - Added framework-agnostic pointer-events drag-and-drop gallery reorder enhancer (`src/core/pointerReorder.ts`) wired into React `<MultiImageUpload>`, Vue `<MultiImageUpload>`, and Angular `mountMultiImageUpload` alongside accessible Move/Cover buttons and `Alt+ArrowLeft/Right` keyboard shortcuts.
+- **Zoneless Angular Signals Bridge (`withAngularSignals`)**:
+  - Added `withAngularSignals(controller, { signal, destroyRef })` in `img-upload-kit/angular` to bridge `AngularSignal<T>` properties into native `@angular/core` `Signal<T>` instances for Zoneless Angular 18–21+ `OnPush` components.
+- **Opt-In Client Deletion (`deleteUploadedImage`, `deleteEndpoint`, `customDeleter`)**:
+  - Added `deleteUploadedImage` in `img-upload-kit/client` and opt-in `deleteEndpoint` / `customDeleter` support across React, Vue, Angular, and React Native single and multi-upload controllers.
+
+### Changed & Fixed
+
+- **Zero Runtime Dependencies (Supply-Chain Hardening)**:
+  - Removed all runtime `"dependencies"` (`blurhash` is now bundled into `dist/`, and `sharp` / `lqip-modern` remain optional `peerDependencies`), ensuring `npm install img-upload-kit` installs zero third-party runtime packages by default.
+- **Audit Fixes Across Platforms**:
+  - Unified bilingual (`en` / `ar`) translations under `src/i18n` and shared placeholder utilities under `src/core/placeholder.ts`.
+  - Added `resolveImageUploadConfig`, `phase()`, `canSave()`, `selectFiles()`, and top-level `.subscribe()` to Angular controllers; added localized labels and keyboard/pointer reordering to `mountSingleImageUpload` / `mountMultiImageUpload`.
+  - Fixed React Native `AnimatedImage` `priority` prop forwarding to custom `as={Image}` components (`expo-image`) and ensured `revealScale <= 1` skips unnecessary bounce animations.
+
 ## [2.1.0] - 2026-11-06
 
 ### Added
@@ -21,14 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `defaultNativeTheme`, `lightNativeTheme`, and `darkNativeTheme` for React Native `StyleSheet` theming, plus `as={Image}` support for `expo-image` and `objectFit="contain"` ambient blur backdrops.
 - **Social & E-Commerce Presets + Smart Server Attention Cropping**:
   - Added `square` (`1600x1600`, `1:1`, `crop: 'attention'`, `variantWidths: [400, 800, 1200]`), `portrait` (`1080x1350`, `4:5`, `crop: 'attention'`, `variantWidths: [480, 720]`), and `story` (`1080x1920`, `9:16`, `crop: 'attention'`, `variantWidths: [540, 720]`) to `STANDARD_PRESETS`.
-  - Added `ImageAspectRatio` (`'1:1' | '4:5' | '3:4' | '4:3' | '3:2' | '16:10' | '16:9' | '9:16' | 'auto' | number`), `CropStrategy` (`'attention' | 'entropy' | 'center'`), `resolveAspectRatio`, and `aspectRatioToCss`.
-  - Enhanced `optimizeImage`, `createImageUploader`, and `createUploadHttpHandler` (`allowClientOverrides.aspectRatio` & `crop`) with Sharp `fit: 'cover'` smart cropping.
+  - Added `ImageAspectRatio`, `CropStrategy`, `resolveAspectRatio`, and `aspectRatioToCss`.
 - **E-Commerce Gallery Reordering & Primary Cover Badge**:
   - Added `reorderable`, `showCoverBadge`, `onReorder`, `move(fromIndex, toIndex)`, `setCover(index)`, and `setPrimary(index)` across `<MultiImageUpload>`, `<HeadlessMultiUpload>`, `useMultiUpload`, `createMultiUpload`, and `useNativeMultiUpload`.
-  - Added bilingual (`en` / `ar`) translations for `"Cover"`, `"Set as cover"`, `"Move earlier"`, and `"Move later"`.
 - **Pre-Upload Client `transformAsset` Hook & `<AnimatedImage aspectRatio>`**:
-  - Added `transformAsset` (`(asset, { signal, preset, index }) => Promise<asset>`) with `AbortSignal` propagation before network upload.
-  - Added `aspectRatio?: ImageAspectRatio` prop to `<AnimatedImage>` across React, Angular, and React Native.
+  - Added `transformAsset` (`(asset, { signal, preset, index }) => Promise<asset>`) with `AbortSignal` propagation before network upload, and `aspectRatio?: ImageAspectRatio` on `<AnimatedImage>`.
 
 ## [2.0.0] - 2026-11-06
 
@@ -36,49 +65,21 @@ See [`MIGRATION.md`](./MIGRATION.md) for step-by-step v1.x to v2.0.0 upgrade ins
 
 ### Breaking Changes
 
-- **Dependencies**: Moved `sharp` and `lqip-modern` to optional `peerDependencies` (loaded lazily in `img-upload-kit/server` and `img-upload-kit/cli` with actionable install errors). Removed `lucide-react` in favor of zero-dependency inlined SVG icons (`src/react/icons.tsx`).
-- **SVG Disabled by Default**: Removed `image/svg+xml` from `DEFAULT_ALLOWED_FORMATS` and all `STANDARD_PRESETS`. Enable via `allowSvg: true` on `createImageUploader`, a preset, or per-upload options.
-- **Secure-by-Default HTTP Handler**: `createUploadHttpHandler` now ignores client `FormData` overrides (`customFilename`, `folder`, `maxWidth`, `maxHeight`, `outputFormat`, `quality`) unless explicitly opted in via `allowClientOverrides`.
-- **Context-Aware `authorize(ctx)`**: `UploadHttpHandlerOptions.authorize` now receives `AuthorizeContext` (`{ action, request, path?, bucket?, preset? }`).
-- **`<AnimatedImage>` Reveal Parity & Error State**: Default `animationDuration` changed from `700` ms to `600` ms with `scale(1.02 -> 1)` settle reveal (`revealScale`, default `1.02`), `inset: 0; scale(1.1); blur(20px)` placeholder geometry, immediate `5/6` placeholder fade, and `colorPlaceholder="flat"` default for color-only placeholders. On load error, the placeholder remains visible while the broken image is hidden (`data-state="error"`).
-- **Storage, Blur & CLI Contracts**: Removed phantom `-blur.avif` / `-thumb.avif` deletes in Supabase `deleteByUrl`; made `?t=` preview cache-busting opt-in (`appendCacheBuster`); excluded 40px LQIP data URLs from `createSrcSetWithBlur`; preserved `/<bucket>/<path>` in `normalizeImagePath` for Supabase URLs; made `mirrorBufferLocally` async (`Promise<string>`); moved CLI auto-execution to `dist/bin.js`.
-- **Package `exports`**: Updated `package.json` `exports` to nested `import` / `require` conditions with `.d.ts` and `.d.cts` types.
+- **Dependencies**: Moved `sharp` and `lqip-modern` to optional `peerDependencies`. Removed `lucide-react` in favor of zero-dependency inlined SVG icons (`src/react/icons.tsx`).
+- **SVG Disabled by Default**: Removed `image/svg+xml` from `DEFAULT_ALLOWED_FORMATS` and all `STANDARD_PRESETS`. Enable via `allowSvg: true`.
+- **Secure-by-Default HTTP Handler**: `createUploadHttpHandler` ignores client `FormData` overrides unless explicitly opted in via `allowClientOverrides`.
+- **Context-Aware `authorize(ctx)`**: `UploadHttpHandlerOptions.authorize` receives `AuthorizeContext` (`{ action, request, path?, bucket?, preset? }`).
+- **`<AnimatedImage>` Reveal Parity & Error State**: Default `animationDuration` changed from `700` ms to `600` ms with `scale(1.02 -> 1)` settle reveal (`revealScale`, default `1.02`).
 
-### Security
+### Security, Added, Fixed & Performance
 
-- **Binary Magic-Byte Sniffing (`sniffImageFormat`)**: Verified binary signatures (JPEG, PNG, GIF, WebP, AVIF/HEIF `ftyp`, TIFF, SVG) against `allowedFormats` before Sharp decoding, blocking spoofed MIME types.
-- **Built-in SVG Sanitizer (`sanitizeSvg`)**: Dependency-free allowlist sanitizer when `allowSvg: true` that strips `<script>`, `<foreignObject>`, `<iframe|embed|object>`, `on*` handlers, unsafe `href`/`xlink:href` targets, and `<!ENTITY`/`DOCTYPE` declarations.
-- **HTTP Handler Guards**: Added streaming `maxBodyBytes` enforcement (HTTP `413`), `allowedOrigins` CSRF validation (HTTP `403`), `DELETE` bucket allowlist enforcement (HTTP `403`), client filename extension enforcement + non-upsert collision suffixing, generic HTTP `500` error bodies with `onError(error, ctx)`, and `limitInputPixels` (default 50 MP) decompression-bomb protection.
-- **Local Filesystem Containment**: Hardened `createLocalFsStorageAdapter` with `path.relative` traversal checks, Windows drive/colon rejection, and atomic `flag: 'wx'` writes when `upsert: false`.
-
-### Added
-
-- **Responsive Image Variants (`variantWidths`)**: Generate multi-width responsive variants (`<base>-<w>w.<ext>`) in parallel, returning `variants: ImageVariant[]` and `srcSet` on `UploadedImageData` and cleaning up all variants in `deleteImage`. `<AnimatedImage image={data} />` automatically wires `srcSet` and default `sizes="100vw"` when `fill` is set.
-- **Clipboard Paste & Mobile Camera Capture**: Added `enablePaste` (default `true`), `pasteTarget: 'dropzone' | 'document'`, and `capture?: 'user' | 'environment'` across `<SingleImageUpload>`, `<MultiImageUpload>`, and headless controllers (`useClipboardPaste`).
-- **Per-Tile Cancel & Retry**: Added per-upload `AbortController` cancellation (`cancel(id)` / tile Cancel button) and per-tile or batch retry (`retry(id)` / `retryAll()`), plus `onUploadStart`, `onUploadComplete`, and `onUploadCancel` callbacks.
-- **Form Integration (`name`, `formValue`, `ref`, `required`, `minImages`)**: Synchronized `<input type="hidden" name={name} />` (`formValue: 'url' | 'json'`), `forwardRef<ImageUploadHandle>` (`{ focus, open, clear }`), `onBlur`, and native constraint validation for `required` and `minImages`.
-- **`<AnimatedImage>` Props**: Added first-class `priority` and `quality` props (preventing Next.js `loading="lazy"` conflicts), `revealScale`, `colorPlaceholder: 'flat' | 'gradient'`, `neutralColors`, `fallbackSrc` (single automatic retry), `renderError`, and `var(--token)` support in `resolveBackgroundColor`.
-- **Edge-Safe Handler & Modular CSS Exports**: Added `img-upload-kit/server/handler` (zero Sharp/`node:fs` imports), `img-upload-kit/styles/*.css` layer exports, and `scripts/check-dist.mjs` build verification.
-
-### Fixed
-
-- **RSC `'use client'` & Shared Singletons**: Preserved `'use client'` directives at the top of all client chunks and deduplicated `ImageUploadContext` and `blurService` across `img-upload-kit/react`, `img-upload-kit/headless`, and `img-upload-kit/blur`.
-- **Server & Storage Correctness**: Fixed passthrough EXIF `.rotate()` and dimension swapping (EXIF 5–8), preserved GIF/TIFF/HEIF format labels, held `AsyncSemaphore` slots until timed-out Sharp jobs settle, rolled back uploaded storage objects when `onUploadRecord` throws, added S3 `IfNoneMatch: '*'` for `upsert: false`, and paginated S3/Supabase `list()`.
-- **React State, Memory & Accessibility**: Fixed parallel upload progress races (`uploadTracker`), stale alt text on replacement, `URL.createObjectURL` preview cleanup, modal focus trapping/restoration (`useDialog`), WAI-ARIA radio keyboard navigation in `<QualitySelector>`, `role="progressbar"` attributes, and `aria-live="polite"` upload announcements.
-
-### Performance
-
-- **Single-Decode Blur Pipeline**: `generateBlurPlaceholder` now decodes the source image once into a 128 px buffer and derives the WebP LQIP data URL, 4-edge dominant color histogram, and BlurHash from the shared buffer (reducing Sharp decodes from 3–4 to 1).
-- **Web Crypto & Object URLs**: Replaced `FileReader.readAsDataURL` client previews with zero-copy `URL.createObjectURL` and migrated server hashing to `globalThis.crypto`.
+- **Security**: Binary magic-byte sniffing (`sniffImageFormat`), allowlist SVG sanitizer (`sanitizeSvg`), streaming `maxBodyBytes` (HTTP `413`), `allowedOrigins` CSRF checks (HTTP `403`), `DELETE` bucket allowlists, and local filesystem path traversal containment.
+- **Features**: Responsive image variants (`variantWidths`), clipboard paste & camera capture, per-tile cancel/retry, native HTML / React Hook Form integration, edge-safe `img-upload-kit/server/handler`, and single-decode blur pipeline.
 
 ## [1.1.0] - 2026-10-31
 
-### Added
-
-- **AnimatedImage Component (`img-upload-kit/react`)**: Progressive blur-up display component with GPU-accelerated crossfade, `as` prop for `next/image`, `blurDataUrl` > `blurHash` > `blurColor` fallback cascade, `showShimmer`, and `useImageReveal` headless state machine.
+- Added `<AnimatedImage>` progressive blur-up display component (`img-upload-kit/react`) and `useImageReveal`.
 
 ## [1.0.0] - 2026-10-31
 
-### Added
-
-- Initial release of `img-upload-kit` with core types, Sharp AVIF/WebP optimization, 4-edge color extraction, `StorageAdapter` (Supabase, S3/R2, LocalFS, Memory), `BlurService`, React UI & Headless primitives, and CLI manifest generator.
+- Initial release of `img-upload-kit`.

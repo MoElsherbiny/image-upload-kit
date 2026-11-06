@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { isHeicAsset } from '../../client/asset';
-import { runTransformAsset } from '../../client/transform';
-import type { TransformAssetFn } from '../../client/types';
+import {
+  isHeicAsset,
+  isUploadAbortError,
+  runTransformAsset,
+  type TransformAssetFn,
+  type UploadMode,
+  uploadAsset,
+} from '../../client';
 import type {
   CropStrategy,
   ExplicitOutputFormat,
@@ -15,7 +20,6 @@ import { useImageUploadContext } from '../context';
 import { normalizeUploadLocale, resolveTranslations } from '../i18n';
 import type { CustomUploaderFn } from '../types';
 import { createUploadTracker, type UploadTracker } from './uploadTracker';
-import { buildUploadFormData, isUploadAbortError, uploadViaXhr } from './xhrUpload';
 
 export interface UploadCallOptions {
   uploadId?: string;
@@ -39,6 +43,7 @@ export interface UseImageUploadOptions {
   customFilename?: string;
   endpoint?: string;
   uploader?: CustomUploaderFn;
+  uploadMode?: UploadMode;
   headers?: Record<string, string>;
   withCredentials?: boolean;
   locale?: UploadLocale;
@@ -51,8 +56,8 @@ export function useImageUpload({
   preset, folder, bucket, metadata, altText, outputFormat, quality, maxDimensions,
   aspectRatio, crop, transformAsset,
   customFilename: defaultCustomFilename,
-  endpoint: propEndpoint, uploader: propUploader, headers: propHeaders,
-  withCredentials: propWithCredentials, locale: propLocale,
+  endpoint: propEndpoint, uploader: propUploader, uploadMode: propUploadMode,
+  headers: propHeaders, withCredentials: propWithCredentials, locale: propLocale,
   onSuccess, onError, onProgress,
 }: UseImageUploadOptions = {}) {
   const ctx = useImageUploadContext();
@@ -61,6 +66,7 @@ export function useImageUpload({
 
   const resolvedEndpoint = propEndpoint || ctx.endpoint || '/api/upload';
   const resolvedUploader = propUploader || ctx.uploader;
+  const resolvedUploadMode = propUploadMode ?? ctx.uploadMode ?? 'direct';
   const resolvedHeaders = propHeaders || ctx.headers;
   const resolvedCredentials = propWithCredentials ?? ctx.withCredentials;
 
@@ -188,7 +194,9 @@ export function useImageUpload({
               signal: controller.signal,
               onUploadProgress: reportProgress,
             })
-          : await uploadViaXhr(resolvedEndpoint, buildUploadFormData(effectiveFile, requestFields), {
+          : await uploadAsset(effectiveFile, requestFields, {
+              endpoint: resolvedEndpoint,
+              mode: resolvedUploadMode,
               headers: resolvedHeaders,
               withCredentials: resolvedCredentials,
               signal: controller.signal,
@@ -236,7 +244,7 @@ export function useImageUpload({
     [
       preset, folder, bucket, metadata, altText, outputFormat, quality, maxDimensions,
       aspectRatio, crop, transformAsset, defaultCustomFilename, resolvedEndpoint,
-      resolvedUploader, resolvedHeaders, resolvedCredentials, uploadLocale,
+      resolvedUploader, resolvedUploadMode, resolvedHeaders, resolvedCredentials, uploadLocale,
       ui.transformingFile, ui.preparingUpload, ui.heicNotSupported, ui.uploadFailed,
       ui.networkError, ui.invalidUploadResponse, ui.uploadAborted,
       onSuccess, onError, onProgress, safeSetTimeout,

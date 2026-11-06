@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { Command } from 'commander';
 import { normalizeImagePath } from '../blur/pathMapper';
 import type { BlurManifestData, BlurManifestEntry } from '../blur/types';
+import { ZeroDepCliProgram } from './argv';
 import { generateBlurManifest } from './generator';
 import {
   autoSyncCheck,
@@ -16,7 +16,7 @@ declare const __PKG_VERSION__: string | undefined;
 const CLI_VERSION =
   typeof __PKG_VERSION__ === 'string' && __PKG_VERSION__.length > 0
     ? __PKG_VERSION__
-    : '2.0.0';
+    : '2.2.0';
 
 const DEFAULT_IMAGES_DIR = 'public/images';
 const DEFAULT_MANIFEST_FILE = 'src/blur-hashes.json';
@@ -38,8 +38,8 @@ function findManifestEntry(
   return null;
 }
 
-export function createCliProgram(): Command {
-  const program = new Command();
+export function createCliProgram(): ZeroDepCliProgram {
+  const program = new ZeroDepCliProgram();
 
   program
     .name('img-upload-kit')

@@ -17,6 +17,27 @@ export interface StorageUploadResult {
   url: string;
 }
 
+export interface StoragePresignParams {
+  bucket: string;
+  path: string;
+  contentType: string;
+  maxBytes?: number;
+  expiresInSeconds?: number;
+  metadata?: Record<string, string>;
+}
+
+export interface StoragePresignResult {
+  method: 'POST' | 'PUT';
+  url: string;
+  fields?: Record<string, string>;
+  headers?: Record<string, string>;
+  expiresAt?: string;
+}
+
+export interface StorageDownloadOptions {
+  maxBytes?: number;
+}
+
 export interface StorageFileEntry {
   name: string;
   id?: string;
@@ -77,6 +98,30 @@ export interface StorageAdapter {
    * Optional: Parse a public storage URL into its bucket and relative path.
    */
   parseUrl?(url: string): { bucket?: string; path: string } | null;
+
+  /**
+   * Optional: Create a short-lived presigned upload target (`POST` or `PUT`) for direct-to-storage staging.
+   */
+  createPresignedUpload?(
+    params: StoragePresignParams,
+  ): Promise<StoragePresignResult>;
+
+  /**
+   * Optional: Retrieve object size and content-type metadata without downloading its body.
+   */
+  stat?(
+    bucket: string,
+    path: string,
+  ): Promise<{ size: number; contentType?: string } | null>;
+
+  /**
+   * Optional: Download raw object bytes from the storage backend by bucket and relative path.
+   */
+  download?(
+    bucket: string,
+    path: string,
+    options?: StorageDownloadOptions,
+  ): Promise<Uint8Array>;
 }
 
 export type UploadRecordHook = (

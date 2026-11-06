@@ -13,32 +13,15 @@ import type {
   NativeMultiUploadItem,
   NativeMultiUploadReturn,
 } from '../types';
+import {
+  createPendingNativeItems,
+  extractUploadedImages,
+  markNativeItemCompleted,
+  markNativeItemError,
+  markNativeItemRetrying,
+  toCompletedNativeItem,
+} from './nativeMultiHelpers';
 import { useNativeUpload } from './useNativeUpload';
-
-let multiItemCounter = 0;
-function nextItemId(): string {
-  multiItemCounter += 1;
-  return `rn-item-${Date.now()}-${multiItemCounter}`;
-}
-
-function toCompletedItem(data: UploadedImageData): NativeMultiUploadItem {
-  return {
-    id: nextItemId(),
-    uri: data.url,
-    isUploading: false,
-    progress: 100,
-    error: null,
-    data,
-  };
-}
-
-function extractImages(items: readonly NativeMultiUploadItem[]): UploadedImageData[] {
-  const result: UploadedImageData[] = [];
-  for (const item of items) {
-    if (item.data) result.push(item.data);
-  }
-  return result;
-}
 
 export function useNativeMultiUpload(
   props: NativeMultiImageUploadProps = {},
@@ -50,7 +33,7 @@ export function useNativeMultiUpload(
 
   const initialSeed = props.value ?? props.defaultValue ?? [];
   const [items, setItems] = useState<NativeMultiUploadItem[]>(() =>
-    initialSeed.map(toCompletedItem),
+    initialSeed.map(toCompletedNativeItem),
   );
   const itemsRef = useRef<NativeMultiUploadItem[]>(items);
   itemsRef.current = items;
@@ -59,6 +42,7 @@ export function useNativeMultiUpload(
   const { uploadAsset: rawUploadAsset, cancelUpload, deleteImage } = useNativeUpload({
     endpoint: props.endpoint,
     deleteEndpoint: props.deleteEndpoint,
+    uploadMode: props.uploadMode,
     headers: props.headers,
     withCredentials: props.withCredentials,
     defaultPreset: props.preset,
@@ -78,7 +62,7 @@ export function useNativeMultiUpload(
       itemsRef.current = next;
       setItems(next);
       if (notifyChange || notifyReorder) {
-        const imgs = extractImages(next);
+        const imgs = extractUploadedImages(next);
         if (notifyChange) props.onChange?.(imgs);
         if (notifyReorder) props.onReorder?.(imgs);
       }
@@ -105,6 +89,7 @@ export function useNativeMultiUpload(
           crop: props.crop,
           maxSizeMB: props.maxSizeMB,
           metadata: props.metadata,
+          uploadMode: props.uploadMode,
           transformAsset: props.transformAsset,
           onProgress: (pct) =>
             commitItems((prev) =>
@@ -117,35 +102,14 @@ export function useNativeMultiUpload(
           return null;
         }
 
-        commitItems(
-          (prev) =>
-            prev.map((item) =>
-              item.id === entryId
-                ? {
-                    ...item,
-                    uri: uploaded.url,
-                    isUploading: false,
-                    progress: 100,
-                    error: null,
-                    data: uploaded,
-                  }
-                : item,
-            ),
-          true,
-        );
+        commitItems((prev) => markNativeItemCompleted(prev, entryId, uploaded), true);
         return uploaded;
       } catch (err) {
         const normalized =
           err instanceof Error ? err : new Error('Image upload failed');
         setError(normalized.message);
         props.onError?.(normalized);
-        commitItems((prev) =>
-          prev.map((item) =>
-            item.id === entryId
-              ? { ...item, isUploading: false, error: normalized.message }
-              : item,
-          ),
-        );
+        commitItems((prev) => markNativeItemError(prev, entryId, normalized.message));
         return null;
       }
     },
@@ -165,14 +129,7 @@ export function useNativeMultiUpload(
 
       const accepted = assets.slice(0, remaining);
       setError(null);
-      const newEntries: NativeMultiUploadItem[] = accepted.map((asset) => ({
-        id: nextItemId(),
-        uri: asset.uri,
-        asset,
-        isUploading: true,
-        progress: 0,
-        error: null,
-      }));
+      const newEntries = createPendingNativeItems(accepted);
       commitItems((prev) => [...prev, ...newEntries]);
 
       const completedBatch: UploadedImageData[] = [];
@@ -184,7 +141,7 @@ export function useNativeMultiUpload(
       });
 
       if (completedBatch.length > 0) {
-        props.onUploadComplete?.(extractImages(itemsRef.current));
+        props.onUploadComplete?.(extractUploadedImages(itemsRef.current));
       }
       return completedBatch;
     },
@@ -250,11 +207,7 @@ export function useNativeMultiUpload(
       const target = itemsRef.current.find((item) => item.id === id);
       if (!target?.asset) return null;
       setError(null);
-      commitItems((prev) =>
-        prev.map((i) =>
-          i.id === id ? { ...i, isUploading: true, progress: 0, error: null } : i,
-        ),
-      );
+      commitItems((prev) => markNativeItemRetrying(prev, id));
       const idx = itemsRef.current.findIndex((i) => i.id === id);
       return uploadSingleEntry(id, target.asset, idx >= 0 ? idx : 0);
     },
@@ -282,7 +235,7 @@ export function useNativeMultiUpload(
 
   return {
     items,
-    images: extractImages(items),
+    images: extractUploadedImages(items),
     isUploading: items.some((i) => i.isUploading),
     error,
     canAddMore: items.length < maxImages,

@@ -1,4 +1,5 @@
 import { createContext, type ReactNode, useContext, useMemo } from 'react';
+import type { UploadMode } from '../client';
 import type { UploadLocale, UploadPresetName } from '../types';
 import type { NativeUploadTheme } from './theme';
 import type {
@@ -10,6 +11,7 @@ import type {
 export interface NativeImageUploadConfig {
   endpoint: string;
   deleteEndpoint?: string;
+  uploadMode?: UploadMode;
   headers?: Record<string, string>;
   withCredentials?: boolean;
   defaultPreset?: UploadPresetName;
@@ -32,6 +34,7 @@ export interface NativeImageUploadProviderProps {
   children: ReactNode;
   endpoint?: string;
   deleteEndpoint?: string;
+  uploadMode?: UploadMode;
   headers?: Record<string, string>;
   withCredentials?: boolean;
   defaultPreset?: UploadPresetName;
@@ -46,6 +49,7 @@ export function NativeImageUploadProvider({
   children,
   endpoint = '/api/upload',
   deleteEndpoint,
+  uploadMode,
   headers,
   withCredentials,
   defaultPreset,
@@ -59,6 +63,7 @@ export function NativeImageUploadProvider({
     () => ({
       endpoint,
       deleteEndpoint,
+      uploadMode,
       headers,
       withCredentials,
       defaultPreset,
@@ -71,6 +76,7 @@ export function NativeImageUploadProvider({
     [
       endpoint,
       deleteEndpoint,
+      uploadMode,
       headers,
       withCredentials,
       defaultPreset,

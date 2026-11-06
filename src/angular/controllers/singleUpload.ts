@@ -1,14 +1,18 @@
 import { createUploadTracker, isUploadAbortError } from '../../client';
-import type { QualityLevel, UploadedImageData, UploadPresetName } from '../../types';
+import type { UploadTranslations } from '../../i18n';
+import type {
+  QualityLevel, UploadedImageData, UploadLocale, UploadPresetName,
+} from '../../types';
 import { DEFAULT_BLUR_COLOR, normalizeColorInput } from '../../utils/color';
 import { createSuccessMessage, getStatusMessage } from '../../utils/formatters';
 import { createSignal } from '../signals';
 import type {
-  AngularSignal, AngularSingleUploadOptions, ControlValueAccessorShape, UploadVisualState,
+  AngularSignal, AngularSingleUploadOptions, ControlValueAccessorShape,
+  UploadPhase, UploadVisualState,
 } from '../types';
 import {
-  computeVisualState, createBlobPreview, executeUploadRequest,
-  prepareAndValidateAsset, resolveControllerEnv, revokeBlobUrl,
+  computeVisualState, createBlobPreview, executeDeleteRequest,
+  executeUploadRequest, prepareAndValidateAsset, resolveControllerEnv, revokeBlobUrl,
 } from './uploadHelpers';
 
 export interface AngularSingleUploadController {
@@ -23,6 +27,11 @@ export interface AngularSingleUploadController {
   blurColor: AngularSignal<string>;
   disabled: AngularSignal<boolean>;
   state: AngularSignal<UploadVisualState>;
+  phase: AngularSignal<UploadPhase>;
+  missingAltText: AngularSignal<boolean>;
+  canSave: AngularSignal<boolean>;
+  locale: UploadLocale;
+  ui: UploadTranslations;
   selectFile: (file: File) => Promise<UploadedImageData | null>;
   cancel: () => void;
   retry: () => Promise<UploadedImageData | null>;
@@ -53,14 +62,15 @@ export function createSingleUpload<TPreset extends string = UploadPresetName>(
   const uploadStatus = createSignal<string>('');
   const error = createSignal<string>(options.error ?? '');
   const quality = createSignal<QualityLevel>(env.initQualityLevel);
-  const altText = createSignal<string>(
-    initialObj?.altText ?? options.initialAltText ?? '',
-  );
-  const blurColor = createSignal<string>(
-    initialObj?.blurColor ?? DEFAULT_BLUR_COLOR,
-  );
+  const altText = createSignal<string>(initialObj?.altText ?? options.initialAltText ?? '');
+  const blurColor = createSignal<string>(initialObj?.blurColor ?? DEFAULT_BLUR_COLOR);
   const disabled = createSignal<boolean>(Boolean(options.disabled));
   const state = createSignal<UploadVisualState>('idle');
+  const phase = createSignal<UploadPhase>(
+    options.error ? 'error' : initialPreview || initialObj ? 'ready' : 'idle',
+  );
+  const missingAltText = createSignal<boolean>(false);
+  const canSave = createSignal<boolean>(false);
 
   const tracker = createUploadTracker<File>();
   let isDragging = false;
@@ -70,13 +80,20 @@ export function createSingleUpload<TPreset extends string = UploadPresetName>(
   let cvaOnTouched: (() => void) | null = null;
 
   const syncState = () => {
+    const currVal = value();
+    const requireAlt = Boolean(env.cfg.requireAltText);
+    const isMissingAlt = Boolean(
+      requireAlt && currVal !== null && !(currVal.altText ?? altText()).trim(),
+    );
+    missingAltText.set(isMissingAlt);
+    canSave.set(Boolean(currVal !== null && !isUploading() && !error() && !isMissingAlt));
     state.set(
       computeVisualState({
         disabled: disabled(),
         isDragging,
         isUploading: isUploading(),
         hasError: Boolean(error()),
-        hasContent: Boolean(previewUrl() || value()),
+        hasContent: Boolean(previewUrl() || currVal),
       }),
     );
   };
@@ -92,6 +109,7 @@ export function createSingleUpload<TPreset extends string = UploadPresetName>(
     progress.set(0);
     uploadStatus.set('');
     error.set(msg);
+    phase.set('error');
     syncState();
     options.onError?.(msg);
     return null;
@@ -103,25 +121,26 @@ export function createSingleUpload<TPreset extends string = UploadPresetName>(
     tracker.abortAll();
     error.set('');
 
-    const entry = tracker.createEntry(file, 'Preparing upload...');
+    const hasTransform = Boolean(options.transformAsset);
+    const initialMsg = hasTransform ? env.ui.transforming : env.ui.preparingUpload;
+    const entry = tracker.createEntry(file, initialMsg);
     isUploading.set(true);
     progress.set(0);
-    uploadStatus.set('Preparing upload...');
+    uploadStatus.set(initialMsg);
+    phase.set(hasTransform ? 'transforming' : 'uploading');
     syncState();
 
     try {
       const prepared = await prepareAndValidateAsset({
-        file,
-        env,
-        options,
-        signal: entry.controller.signal,
-        index: 0,
+        file, env, options, signal: entry.controller.signal, index: 0,
       });
       if (prepared.error || !prepared.file) {
         tracker.removeEntry(entry.id);
-        return failWith(prepared.error ?? 'Invalid file');
+        return failWith(prepared.error ?? env.ui.uploadFailed);
       }
       const workingFile = prepared.file;
+      phase.set('uploading');
+      uploadStatus.set(env.ui.preparingUpload);
 
       const blobUrl = createBlobPreview(workingFile);
       if (blobUrl) {
@@ -131,12 +150,8 @@ export function createSingleUpload<TPreset extends string = UploadPresetName>(
 
       options.onUploadStart?.(workingFile);
       const uploaded = await executeUploadRequest({
-        file: workingFile,
-        env,
-        options,
-        qualityLevel: quality(),
-        altText: altText(),
-        signal: entry.controller.signal,
+        file: workingFile, env, options, qualityLevel: quality(),
+        altText: altText(), signal: entry.controller.signal,
         onUploadProgress: (pct) => {
           if (destroyed || entry.controller.signal.aborted) return;
           const clamped = Math.max(progress(), Math.min(94, pct));
@@ -151,9 +166,7 @@ export function createSingleUpload<TPreset extends string = UploadPresetName>(
       const resolvedColor = uploaded.blurColor || blurColor() || DEFAULT_BLUR_COLOR;
       const resolvedAlt = altText() || uploaded.altText || '';
       const payload: UploadedImageData = {
-        ...uploaded,
-        altText: resolvedAlt,
-        blurColor: resolvedColor,
+        ...uploaded, altText: resolvedAlt, blurColor: resolvedColor,
       };
 
       revokeBlobUrl(previewUrl());
@@ -163,9 +176,8 @@ export function createSingleUpload<TPreset extends string = UploadPresetName>(
       value.set(payload);
       isUploading.set(false);
       progress.set(100);
-      uploadStatus.set(
-        createSuccessMessage(workingFile.size, payload.size, false, env.locale),
-      );
+      phase.set('ready');
+      uploadStatus.set(createSuccessMessage(workingFile.size, payload.size, false, env.locale));
       syncState();
       emitChange(payload);
       options.onUploadComplete?.(payload);
@@ -176,10 +188,11 @@ export function createSingleUpload<TPreset extends string = UploadPresetName>(
         isUploading.set(false);
         progress.set(0);
         uploadStatus.set('');
+        phase.set(value() || previewUrl() ? 'ready' : 'idle');
         syncState();
         return null;
       }
-      const msg = err instanceof Error ? err.message : 'Upload failed';
+      const msg = err instanceof Error ? err.message : env.ui.uploadFailed;
       revokeBlobUrl(previewUrl());
       previewUrl.set(value()?.url ?? null);
       return failWith(msg);
@@ -193,6 +206,7 @@ export function createSingleUpload<TPreset extends string = UploadPresetName>(
     isUploading.set(false);
     progress.set(0);
     uploadStatus.set('');
+    phase.set(value() || previewUrl() ? 'ready' : 'idle');
     syncState();
   };
 
@@ -208,20 +222,27 @@ export function createSingleUpload<TPreset extends string = UploadPresetName>(
     isUploading.set(false);
     progress.set(0);
     uploadStatus.set('');
+    phase.set('idle');
     syncState();
-    if (current && env.cfg.customDeleter) await env.cfg.customDeleter(current);
+    if (current) await executeDeleteRequest(current, env);
     emitChange(null);
   };
 
   return {
     value, previewUrl, isUploading, progress, uploadStatus, error, quality, altText, blurColor,
-    disabled, state, selectFile, cancel,
+    disabled, state, phase, missingAltText, canSave, locale: env.locale, ui: env.ui,
+    selectFile, cancel,
     retry: () => (lastSelectedFile ? selectFile(lastSelectedFile) : Promise.resolve(null)),
     clear,
     setAltText: (nextAlt: string) => {
       altText.set(nextAlt);
       const curr = value();
-      if (curr) { const updated = { ...curr, altText: nextAlt }; value.set(updated); emitChange(updated); }
+      if (curr) {
+        const updated = { ...curr, altText: nextAlt };
+        value.set(updated);
+        syncState();
+        emitChange(updated);
+      } else syncState();
     },
     setBlurColor: (nextColor: string) => {
       const normalized = normalizeColorInput(nextColor);
@@ -242,6 +263,7 @@ export function createSingleUpload<TPreset extends string = UploadPresetName>(
         altText.set(val?.altText ?? '');
         blurColor.set(val?.blurColor ?? DEFAULT_BLUR_COLOR);
         error.set('');
+        phase.set(val ? 'ready' : 'idle');
         syncState();
       },
       registerOnChange: (fn) => { cvaOnChange = fn; },

@@ -1,6 +1,16 @@
-# Roadmap — Post-v2.1 Planned Features
+# Roadmap — Post-v2.2 Planned Features
 
-This document tracks features shipped in **v2.1.0** and upcoming milestones planned for `img-upload-kit` so the core package stays lean, zero-lock-in, and well-tested. Contributions and RFC feedback are welcome.
+This document tracks features shipped in **v2.1.0** and **v2.2.0** alongside upcoming milestones planned for `img-upload-kit` so the core package stays lean, zero-lock-in, and well-tested. Contributions and RFC feedback are welcome.
+
+---
+
+## Shipped in `v2.2.0` ✅
+
+- **First-Class Vue 3.5+ & Nuxt 4 (`img-upload-kit/vue`)**: `createImageUpload` plugin, `provideImageUpload`, `useSingleUpload`, `useMultiUpload`, `useImageReveal`, `<SingleImageUpload v-model>`, `<MultiImageUpload v-model reorderable>`, `<AnimatedImage>`, and scoped-slot `<HeadlessSingleUpload>` / `<HeadlessMultiUpload>`.
+- **Client-Side Pre-Upload Resize (`img-upload-kit/client` & `img-upload-kit/react-native`)**: Browser `createClientResizeTransform({ maxWidth, maxHeight, quality, skipBelowBytes })` using `createImageBitmap` (`imageOrientation: 'from-image'`) + `OffscreenCanvas`, `composeTransforms`, and React Native `createExpoManipulatorResizeTransform`.
+- **Presigned Direct-to-Storage Uploads (`uploadMode: 'presigned'`)**: Two-phase presign (`?action=presign`) + direct storage `PUT`/`POST` + server finalize (`?action=finalize`) with HMAC-SHA256 signed staging tokens, `StorageAdapter.createPresignedUpload` & `download`, and `uploadViaPresignedUrl`.
+- **Content-Hash Deduplication (`deduplicate` & `createMemoryDedupeStore`)**: Composite SHA-256 deduplication key scoped across raw file bytes, bucket, preset, dimensions, aspect ratio, format, and variants, with `data.deduplicated` reporting and optional `storage.exists` verification.
+- **Pointer-Drag Gallery Reordering & Zoneless Angular Signals**: `attachPointerReorder` across React, Vue, and Angular grids (`[data-dragging]` / `[data-drop-target]`), plus `withAngularSignals` for Zoneless Angular 18–21+ `OnPush` components and zero runtime `"dependencies"` in `package.json`.
 
 ---
 
@@ -14,35 +24,7 @@ This document tracks features shipped in **v2.1.0** and upcoming milestones plan
 
 ---
 
-## 1. Client-Side Pre-Upload Canvas Resize (`v2.2`)
-
-- **Goal**: Downscale oversized camera photos (e.g. 48 MP mobile captures) in the browser using `createImageBitmap` + `OffscreenCanvas` (or `<canvas>`) before transmitting bytes over the network, while still running server-side Sharp AVIF/WebP optimization and LQIP generation.
-- **Proposed API**:
-  - Built-in `createClientResizeTransform({ maxWidth, maxHeight, quality })` helper plugging directly into `transformAsset`.
-  - Preserves EXIF orientation via modern browser `imageOrientation: 'from-image'`.
-
----
-
-## 2. Presigned / Direct-to-Storage Uploads (`v2.2`)
-
-- **Goal**: Bypass serverless request body limits (e.g. 4.5 MB on Vercel Functions) by uploading raw or pre-resized files directly to S3/R2/Supabase via presigned PUT/POST URLs, followed by an asynchronous or webhook-triggered processing pass.
-- **Proposed API**:
-  - `StorageAdapter.createPresignedUpload?(params)` optional method.
-  - `createPresignedUploadHandler({ uploader, authorize })` server route helper.
-  - Built-in client support in `img-upload-kit/client` for two-step presign + finalize flows.
-
----
-
-## 3. Content-Hash Deduplication (`v2.2`)
-
-- **Goal**: Avoid storing duplicate objects when the exact same image (`contentHash`) is uploaded multiple times to the same bucket/preset.
-- **Proposed API**:
-  - `deduplicateByHash?: boolean` on `UploadPresetConfig` and `ImageUploaderOptions`.
-  - Optional lookup hook `findExistingByHash?: (hash: string, ctx: { bucket: string; preset?: string }) => Promise<UploadedImageData | null>`.
-
----
-
-## 4. Animated GIF & Animated WebP Preservation (`v2.3`)
+## 1. Animated GIF & Animated WebP Preservation (`v2.3`)
 
 - **Goal**: Preserve multi-frame animations when uploading GIF or animated WebP assets instead of flattening to a single frame.
 - **Proposed API**:
@@ -51,7 +33,7 @@ This document tracks features shipped in **v2.1.0** and upcoming milestones plan
 
 ---
 
-## 5. Additional Storage Adapters (`v2.3`)
+## 2. Additional Storage Adapters (`v2.3`)
 
 - **Goal**: Expand first-party `StorageAdapter` implementations beyond AWS S3 / Cloudflare R2 / MinIO, Supabase Storage, Local Filesystem, and In-Memory:
   - **Vercel Blob** (`createVercelBlobAdapter`)
@@ -61,8 +43,8 @@ This document tracks features shipped in **v2.1.0** and upcoming milestones plan
 
 ---
 
-## 6. Interactive Crop, Rotate & Aspect-Ratio Modal (`v2.4`)
+## 3. Interactive Crop, Rotate & Aspect-Ratio Modal (`v2.4`)
 
 - **Goal**: Optional UI modal before upload (especially for `avatar`, `square`, `portrait`, and `cover` presets) allowing users to pan, zoom, rotate 90°, and lock aspect ratios (`1:1`, `4:5`, `9:16`, `16:9`, freeform).
 - **Proposed API**:
-  - Shipped as an opt-in subpath (`img-upload-kit/crop`) that plugs directly into the `transformAsset` hook introduced in `v2.1.0`.
+  - Shipped as an opt-in subpath (`img-upload-kit/crop`) that plugs directly into the `transformAsset` hook (and chains cleanly with `createClientResizeTransform` via `composeTransforms`).

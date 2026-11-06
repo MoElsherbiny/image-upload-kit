@@ -76,6 +76,8 @@ export interface UploadPresetConfig {
   mirrorDir?: string;
   /** Optional public URL prefix when `mirrorDir` is used */
   publicUrlBase?: string;
+  /** Enable or disable content-hash deduplication for this preset */
+  deduplicate?: boolean;
 }
 
 export const SVG_MIME_TYPE = 'image/svg+xml';

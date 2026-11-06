@@ -1,81 +1,25 @@
 import {
+  readS3BodyToBytes,
+  type S3ListedObject,
+  type S3ListObjectsInput,
+  type S3StorageAdapterOptions,
+  type S3TransportLike,
+} from './s3Types';
+import {
   type StorageAdapter,
+  type StorageDownloadOptions,
   type StorageFileEntry,
   type StorageListOptions,
   type StoragePaginatedListResult,
+  type StoragePresignParams,
+  type StoragePresignResult,
   type StorageUploadParams,
   type StorageUploadResult,
   toPaginatedListResult,
   validateStorageMetadata,
 } from './types';
 
-export interface S3PutObjectInput {
-  Bucket: string;
-  Key: string;
-  Body: Buffer | Uint8Array;
-  ContentType: string;
-  CacheControl?: string;
-  Metadata?: Record<string, string>;
-  IfNoneMatch?: string;
-}
-
-export interface S3DeleteObjectInput {
-  Bucket: string;
-  Key: string;
-}
-
-export interface S3HeadObjectInput {
-  Bucket: string;
-  Key: string;
-}
-
-export interface S3ListObjectsInput {
-  Bucket: string;
-  Prefix?: string;
-  MaxKeys?: number;
-  ContinuationToken?: string;
-}
-
-export interface S3ListedObject {
-  Key?: string;
-  Size?: number;
-  LastModified?: Date | string;
-}
-
-export interface S3ListObjectsOutput {
-  Contents?: S3ListedObject[];
-  NextContinuationToken?: string;
-  IsTruncated?: boolean;
-}
-
-/** Structural S3 / Cloudflare R2 / MinIO transport with zero runtime SDK dependency. */
-export interface S3TransportLike {
-  putObject(input: S3PutObjectInput): Promise<unknown>;
-  deleteObject(input: S3DeleteObjectInput): Promise<unknown>;
-  headObject?(input: S3HeadObjectInput): Promise<unknown>;
-  listObjects?(input: S3ListObjectsInput): Promise<S3ListObjectsOutput>;
-  listObjectsV2?(input: S3ListObjectsInput): Promise<S3ListObjectsOutput>;
-}
-
-export type S3PublicUrlBuilder = (bucket: string, path: string) => string;
-
-export interface S3StorageBaseOptions {
-  /** Public base URL prefix (e.g. `'https://cdn.example.com'`) or `(bucket, path) => string` builder. */
-  publicBaseUrl: string | S3PublicUrlBuilder;
-  /** Default `Cache-Control` header applied when `StorageUploadParams.cacheControl` is omitted. */
-  cacheControl?: string;
-  /** Include `bucket` segment in string-prefix URLs (`${publicBaseUrl}/${bucket}/${path}`). Defaults to `true`. */
-  includeBucketInUrl?: boolean;
-  /** Fallback bucket used by `deleteByUrl` when `includeBucketInUrl` is `false`. */
-  defaultBucket?: string;
-}
-
-export type S3StorageAdapterOptions = S3StorageBaseOptions &
-  (
-    | (S3TransportLike & { client?: never; transport?: never })
-    | { client: S3TransportLike; transport?: never; putObject?: never }
-    | { transport: S3TransportLike; client?: never; putObject?: never }
-  );
+export * from './s3Types';
 
 function normalizeS3Key(rawPath: string): string {
   const normalized = rawPath.replace(/\\/g, '/').replace(/^\/+/, '');
@@ -245,10 +189,7 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
         if (includeBucket) {
           const slashIdx = rest.indexOf('/');
           if (slashIdx <= 0 || slashIdx === rest.length - 1) return null;
-          return {
-            bucket: rest.slice(0, slashIdx),
-            path: rest.slice(slashIdx + 1),
-          };
+          return { bucket: rest.slice(0, slashIdx), path: rest.slice(slashIdx + 1) };
         }
 
         if (!options.defaultBucket) return null;
@@ -263,14 +204,35 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
       if (!parsed || !parsed.bucket) return false;
 
       try {
-        await transport.deleteObject({
-          Bucket: parsed.bucket,
-          Key: parsed.path,
-        });
+        await transport.deleteObject({ Bucket: parsed.bucket, Key: parsed.path });
         return true;
       } catch {
         return false;
       }
+    },
+
+    async createPresignedUpload(
+      params: StoragePresignParams,
+    ): Promise<StoragePresignResult> {
+      const key = normalizeS3Key(params.path);
+      validateStorageMetadata(params.metadata);
+      if (!options.presignUpload) {
+        throw new Error('S3StorageAdapter does not have presignUpload configured');
+      }
+      return options.presignUpload({ ...params, path: key });
+    },
+
+    async download(
+      bucket: string,
+      path: string,
+      downloadOptions?: StorageDownloadOptions,
+    ): Promise<Uint8Array> {
+      const key = normalizeS3Key(path);
+      if (!transport.getObject) {
+        throw new Error('S3StorageAdapter transport does not implement getObject');
+      }
+      const res = await transport.getObject({ Bucket: bucket, Key: key });
+      return readS3BodyToBytes(res?.Body, bucket, key, downloadOptions?.maxBytes);
     },
   };
 }

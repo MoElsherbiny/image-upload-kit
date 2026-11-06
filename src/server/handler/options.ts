@@ -1,4 +1,5 @@
 import type { ImageUploader } from '../uploadService';
+import type { PresignTokenStore } from './uploadToken';
 
 export interface AuthorizeContext {
   action: 'upload' | 'delete';
@@ -31,6 +32,19 @@ export interface AllowClientOverrides {
 }
 
 export type ClientOverridesConfig = AllowClientOverrides;
+
+export interface PresignedHandlerOptions {
+  /** HMAC-SHA256 secret used to sign and verify stateless presign tokens (minimum 16 characters) */
+  secret: string;
+  /** Optional bucket for temporary staging objects (defaults to resolved target bucket) */
+  stagingBucket?: string;
+  /** Prefix inside the staging bucket for temporary objects (defaults to `'_staging/'`) */
+  stagingPrefix?: string;
+  /** Token and presigned URL TTL in seconds (defaults to `300` = 5 minutes) */
+  expiresInSeconds?: number;
+  /** Optional atomic replay store (e.g. Redis SET NX PX) for multi-instance deployments */
+  tokenStore?: PresignTokenStore;
+}
 
 export interface UploadErrorContext {
   action: 'upload' | 'delete';
@@ -69,6 +83,10 @@ export interface UploadHttpHandlerOptions<TPreset extends string = string> {
    * Optional explicit allowlist of bucket names permitted for upload and delete operations.
    */
   allowedBuckets?: string[];
+  /**
+   * Optional two-phase presigned upload configuration (`?action=presign` & `?action=finalize`).
+   */
+  presigned?: PresignedHandlerOptions;
   /**
    * Hook invoked when an unexpected 500 internal error occurs. Raw error details are never sent to clients.
    */

@@ -1,4 +1,4 @@
-import { decode as decodeBlurHash, isBlurhashValid } from 'blurhash';
+import { decode as decodeBlurHash, isBlurhashValid } from './vendor/blurhash';
 import type { BlurData, BlurImageSource } from './types';
 
 export interface BlurPlaceholderStyle {

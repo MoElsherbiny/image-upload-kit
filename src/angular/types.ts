@@ -2,6 +2,7 @@ import type {
   MultiUploadReorderApi,
   TransformAssetFn,
   UploadableAsset,
+  UploadMode,
 } from '../client';
 import type {
   CropStrategy,
@@ -22,6 +23,13 @@ export type UploadVisualState =
   | 'ready'
   | 'error'
   | 'disabled';
+
+export type UploadPhase =
+  | 'idle'
+  | 'transforming'
+  | 'uploading'
+  | 'ready'
+  | 'error';
 
 export type AnimatedImageObjectFit =
   | 'cover'
@@ -90,6 +98,7 @@ export type CustomDeleterFn = (data: UploadedImageData | string) => Promise<void
 export interface ImageUploadAngularConfig {
   endpoint?: string;
   deleteEndpoint?: string;
+  uploadMode?: UploadMode;
   headers?: Record<string, string>;
   withCredentials?: boolean;
   defaultPreset?: UploadPresetName;
@@ -108,15 +117,18 @@ export interface AngularUploadStatus {
 }
 
 export interface AngularBaseUploadOptions<TPreset extends string = UploadPresetName> {
+  config?: Partial<ImageUploadAngularConfig>;
   preset?: TPreset;
   folder?: string;
   bucket?: string;
   metadata?: Record<string, string>;
   endpoint?: string;
   deleteEndpoint?: string;
+  uploadMode?: UploadMode;
   headers?: Record<string, string>;
   withCredentials?: boolean;
   locale?: UploadLocale;
+  requireAltText?: boolean;
   maxSizeMB?: number;
   maxDimensions?: ImageDimensions;
   allowedFormats?: string[];
@@ -155,6 +167,7 @@ export interface AngularMultiUploadItem {
   url: string;
   file?: File | null;
   fileName?: string;
+  queueIndex?: number;
   data?: UploadedImageData;
   altText?: string;
   blurColor?: string;
@@ -227,4 +240,4 @@ export interface AngularAnimatedImageOptions extends AngularImageRevealOptions {
   renderError?: (ctx: { src: string; retry: () => void }) => HTMLElement | string | null;
 }
 
-export type { MultiUploadReorderApi, TransformAssetFn, UploadableAsset };
+export type { MultiUploadReorderApi, TransformAssetFn, UploadableAsset, UploadMode };

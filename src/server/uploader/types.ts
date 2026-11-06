@@ -11,6 +11,19 @@ import type {
   UploadPresetConfig,
 } from '../../types';
 import type { BlurHashResult, OptimizedImageResult } from '../optimization';
+import {
+  computeDedupeKey,
+  createMemoryDedupeStore,
+  type DedupeStore,
+  type DeduplicateOptions,
+} from './dedupe';
+
+export {
+  computeDedupeKey,
+  createMemoryDedupeStore,
+  type DedupeStore,
+  type DeduplicateOptions,
+};
 
 export interface ProcessedImageBufferResult {
   optimized: OptimizedImageResult;
@@ -106,6 +119,10 @@ export interface ImageUploaderOptions<
   blurTimeoutMs?: number;
   /** Generate compact BlurHash strings by default on every upload */
   includeBlurHash?: boolean;
+  /** Enable content-hash deduplication before Sharp processing */
+  deduplicate?: DeduplicateOptions;
+  /** Alias for `deduplicate: true` */
+  deduplicateByHash?: boolean;
 }
 
 export type InferredPresetKey<
@@ -118,6 +135,8 @@ export type InferredPresetKey<
 
 export interface ImageUploader<TPreset extends string = string> {
   readonly defaultBucket?: string;
+  readonly storage?: StorageAdapter;
+  getStorage?(): StorageAdapter;
   uploadImage(
     file:
       | File
@@ -131,6 +150,12 @@ export interface ImageUploader<TPreset extends string = string> {
   deleteImage(path: string, bucket?: string): Promise<void>;
   deleteByUrl(url: string): Promise<boolean>;
   resolvePreset(presetName?: string): UploadPresetConfig | undefined;
+  resolveUploadLimits?(presetName?: string): {
+    maxSizeMB: number;
+    allowedFormats: string[];
+    allowSvg: boolean;
+    defaultFolder: string;
+  };
   getAllowedBuckets?(): string[];
   getMaxSizeMB?(allowedPresets?: string[]): number;
   parseUrl?(url: string): { bucket?: string; path: string } | null;

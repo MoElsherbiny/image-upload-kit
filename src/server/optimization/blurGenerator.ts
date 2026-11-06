@@ -1,4 +1,4 @@
-import { encode as encodeBlurHash } from 'blurhash';
+import { encode as encodeBlurHash } from '../../blur/vendor/blurhash';
 import {
   blendEdgeColors,
   computeEdgeColorSet,

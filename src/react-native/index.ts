@@ -23,6 +23,8 @@ export {
   MultiImageUpload as NativeMultiImageUpload,
 } from './components/MultiImageUpload';
 export {
+  composeTransforms,
+  deleteUploadedImage,
   isHeicAsset,
   isNativeAsset,
   moveItem,
@@ -31,4 +33,6 @@ export {
   promoteToCover,
   type ReactNativeUploadAsset,
   type TransformAssetFn,
+  type UploadMode,
+  uploadViaPresignedUrl,
 } from '../client';

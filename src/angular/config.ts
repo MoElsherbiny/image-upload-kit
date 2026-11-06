@@ -4,6 +4,8 @@ export const IMAGE_UPLOAD_CONFIG_TOKEN = Symbol.for(
   'img-upload-kit.angular.config',
 );
 
+export const IMAGE_UPLOAD_CONFIG = IMAGE_UPLOAD_CONFIG_TOKEN;
+
 export interface AngularValueProvider<T> {
   provide: typeof IMAGE_UPLOAD_CONFIG_TOKEN;
   useValue: T;
@@ -24,20 +26,33 @@ const DEFAULT_CONFIG: Required<
 
 let activeConfig: ImageUploadAngularConfig = { ...DEFAULT_CONFIG };
 
+function stripUndefined<T extends object>(obj?: T): Partial<T> {
+  if (!obj) return {};
+  const result: Partial<T> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    if (val !== undefined) {
+      (result as Record<string, unknown>)[key] = val;
+    }
+  }
+  return result;
+}
+
 function normalizeConfig(
   base: ImageUploadAngularConfig,
   overrides?: Partial<ImageUploadAngularConfig>,
 ): ImageUploadAngularConfig {
+  const cleanBase = stripUndefined(base);
+  const cleanOverrides = stripUndefined(overrides);
   const merged: ImageUploadAngularConfig = {
     ...DEFAULT_CONFIG,
-    ...base,
-    ...overrides,
+    ...cleanBase,
+    ...cleanOverrides,
   };
   const resolvedUploader =
-    overrides?.customUploader ??
-    overrides?.uploader ??
-    base.customUploader ??
-    base.uploader;
+    cleanOverrides.customUploader ??
+    cleanOverrides.uploader ??
+    cleanBase.customUploader ??
+    cleanBase.uploader;
   if (resolvedUploader) {
     merged.customUploader = resolvedUploader;
     merged.uploader = resolvedUploader;
@@ -67,6 +82,12 @@ export function injectImageUploadConfig(
 ): ImageUploadAngularConfig {
   return normalizeConfig(activeConfig, overrides);
 }
+
+/**
+ * Alias for `injectImageUploadConfig` — resolves active Angular upload configuration
+ * merged with optional per-instance overrides.
+ */
+export const resolveImageUploadConfig = injectImageUploadConfig;
 
 /**
  * Resets the active Angular configuration back to defaults.

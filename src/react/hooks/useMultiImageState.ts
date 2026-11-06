@@ -10,6 +10,7 @@ import {
   applyPreviewPatchByIdOrFile, createBatchFilePreviews, filterRemovedPreviews,
   markPreviewsForRetry, promotePreviewToCover, reorderPreviewList, toggleSelectedId,
 } from './multiStateMutations';
+import { triggerOptionalDelete } from './singleStateHelpers';
 import {
   collectUploadedData, formatMinImagesMessage, mapUploadedToPreview,
   resolveInitialQuality, runParallelUploadPool, serializeMultiFormValue, syncPreviewsWithValue,
@@ -83,7 +84,7 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
     outputFormat: options.outputFormat, quality: QUALITY_PRESETS[qualityLevel].value,
     maxDimensions: options.maxDimensions, aspectRatio: options.aspectRatio, crop: options.crop,
     transformAsset: options.transformAsset, customFilename: options.customFilename,
-    endpoint: options.endpoint, uploader: options.uploader,
+    endpoint: options.endpoint, uploader: options.uploader, uploadMode: options.uploadMode,
     headers: options.headers, withCredentials: options.withCredentials, locale,
     onSuccess: (data, file, uploadId) => {
       if (uploadId && requiresManualCommit) uncommittedIdsRef.current.add(uploadId);
@@ -141,8 +142,21 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
     await runBatchUploads(batch.items, imageFiles);
   };
 
-  const removeIds = (ids: Set<string>) =>
+  const removeIds = (ids: Set<string>) => {
+    for (const p of previewsRef.current) {
+      if (ids.has(p.id) && !p.isUploading) {
+        triggerOptionalDelete({
+          data: p.data ?? (p.url && !p.url.startsWith('blob:') ? p.url : null),
+          url: p.data?.url ?? p.url,
+          customDeleter: options.customDeleter ?? ctx.customDeleter,
+          deleteEndpoint: options.deleteEndpoint ?? ctx.deleteEndpoint,
+          headers: options.headers ?? ctx.headers,
+          withCredentials: options.withCredentials ?? ctx.withCredentials,
+        });
+      }
+    }
     commitPreviews(filterRemovedPreviews(previewsRef.current, ids, abortUpload, revokePreview, uncommittedIdsRef.current), true);
+  };
 
   const handleRemove = (id: string) => {
     removeIds(new Set([id]));

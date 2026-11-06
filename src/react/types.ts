@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react';
 import type { BlurPlaceholderType } from '../blur/types';
-import type { TransformAssetFn } from '../client/types';
+import type { TransformAssetFn, UploadMode } from '../client/types';
 import type {
   CropStrategy,
   ExplicitOutputFormat,
@@ -54,6 +54,10 @@ export type CustomUploaderFn = (
   params: ClientUploadRequestParams,
 ) => Promise<UploadedImageData>;
 
+export type CustomDeleterFn = (
+  data: UploadedImageData | string,
+) => Promise<void>;
+
 export interface ImageUploadHandle {
   /** Move keyboard focus to the upload dropzone or primary trigger */
   focus: () => void;
@@ -76,8 +80,14 @@ export interface BaseImageUploadProps<
   metadata?: Record<string, string>;
   /** Server upload endpoint URL (defaults to '/api/upload' when `uploader` is not provided) */
   endpoint?: string;
+  /** Optional server endpoint URL for opt-in `DELETE` requests when an uploaded image is removed */
+  deleteEndpoint?: string;
   /** Custom async upload function (bypasses HTTP `endpoint` when provided) */
   uploader?: CustomUploaderFn;
+  /** Custom async delete function invoked when an uploaded image is removed */
+  customDeleter?: CustomDeleterFn;
+  /** Upload transport mode (`'direct'` FormData POST or `'presigned'` direct-to-storage flow) */
+  uploadMode?: UploadMode;
   /** Additional HTTP headers sent with FormData requests to `endpoint` */
   headers?: Record<string, string>;
   /** Send cookies/credentials with FormData requests (`'same-origin' | 'include' | 'omit'`) */
@@ -158,6 +168,10 @@ export interface BaseImageUploadProps<
   /** Blur callback invoked when focus leaves the uploader (e.g. for react-hook-form `field.onBlur`) */
   onBlur?: () => void;
 }
+
+export type BaseUploadProps<
+  TPreset extends string = UploadPresetName,
+> = BaseImageUploadProps<TPreset>;
 
 export interface SingleImageUploadProps<
   TPreset extends string = UploadPresetName,

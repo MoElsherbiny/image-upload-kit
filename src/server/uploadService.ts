@@ -1,6 +1,13 @@
 export { processImageBuffer } from './uploader/bufferProcessor';
 export { createImageUploader } from './uploader/createImageUploader';
 export {
+  computeDedupeKey,
+  createMemoryDedupeStore,
+  type DedupeStore,
+  type DeduplicateOptions,
+  type ImageDedupeStore,
+} from './uploader/dedupe';
+export {
   createDefaultPathGenerator,
   formatToExtension,
   sanitizeSegment,

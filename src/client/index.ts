@@ -5,3 +5,7 @@ export * from './transform';
 export * from './xhrUpload';
 export * from './uploadTracker';
 export * from './uploadQueue';
+export * from './deleteRequest';
+export * from './resize';
+export * from './presignedUpload';
+export * from './uploadAsset';
