@@ -164,28 +164,41 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
         .filter((entry) => entry.name.length > 0);
     },
 
-    async deleteByUrl(url: string): Promise<boolean> {
-      if (typeof options.publicBaseUrl !== 'string' || !url) return false;
+    parseUrl(url: string): { bucket?: string; path: string } | null {
+      if (typeof options.publicBaseUrl !== 'string' || !url) return null;
       const prefix = `${options.publicBaseUrl.replace(/\/+$/, '')}/`;
       const cleanUrl = url.split(/[?#]/)[0];
-      if (!cleanUrl.startsWith(prefix)) return false;
+      if (!cleanUrl.startsWith(prefix)) return null;
 
       try {
         const rest = decodeURIComponent(cleanUrl.slice(prefix.length)).replace(/^\/+/, '');
-        if (!rest) return false;
+        if (!rest) return null;
 
         if (includeBucket) {
           const slashIdx = rest.indexOf('/');
-          if (slashIdx <= 0 || slashIdx === rest.length - 1) return false;
-          await transport.deleteObject({
-            Bucket: rest.slice(0, slashIdx),
-            Key: rest.slice(slashIdx + 1),
-          });
-          return true;
+          if (slashIdx <= 0 || slashIdx === rest.length - 1) return null;
+          return {
+            bucket: rest.slice(0, slashIdx),
+            path: rest.slice(slashIdx + 1),
+          };
         }
 
-        if (!options.defaultBucket) return false;
-        await transport.deleteObject({ Bucket: options.defaultBucket, Key: rest });
+        if (!options.defaultBucket) return null;
+        return { bucket: options.defaultBucket, path: rest };
+      } catch {
+        return null;
+      }
+    },
+
+    async deleteByUrl(url: string): Promise<boolean> {
+      const parsed = this.parseUrl?.(url);
+      if (!parsed || !parsed.bucket) return false;
+
+      try {
+        await transport.deleteObject({
+          Bucket: parsed.bucket,
+          Key: parsed.path,
+        });
         return true;
       } catch {
         return false;

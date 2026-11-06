@@ -137,16 +137,16 @@ describe('createLocalFsStorageAdapter', () => {
       }),
     ).rejects.toThrow('Invalid storage path');
 
-    // Relative ../secret.txt must never escape outside storageRoot into tempRoot
-    const confined = await adapter.upload({
-      bucket: 'gallery',
-      path: '../secret.txt',
-      data: Buffer.from('confined'),
-      contentType: 'text/plain',
-    });
-    expect(confined.path).toBe('secret.txt');
+    // Relative ../secret.txt must be rejected and never escape outside storageRoot into tempRoot
+    await expect(
+      adapter.upload({
+        bucket: 'gallery',
+        path: '../secret.txt',
+        data: Buffer.from('confined'),
+        contentType: 'text/plain',
+      }),
+    ).rejects.toThrow('Invalid storage path');
     await expect(fs.access(path.join(tempRoot, 'secret.txt'))).rejects.toThrow();
-    await expect(fs.access(path.join(storageRoot, 'gallery', 'secret.txt'))).resolves.toBeUndefined();
 
     await adapter.delete('gallery', '2026/photo.avif');
     expect(await adapter.list?.('gallery', '2026')).toEqual([]);
@@ -220,11 +220,7 @@ describe('createSupabaseStorageAdapter', () => {
     ]);
 
     expect(await adapter.deleteByUrl?.(res.url)).toBe(true);
-    expect(removedBatches[0]).toEqual([
-      'items/card.avif',
-      'items/card-blur.avif',
-      'items/card-thumb.avif',
-    ]);
+    expect(removedBatches[0]).toEqual(['items/card.avif']);
 
     await adapter.upload({
       bucket: 'media',

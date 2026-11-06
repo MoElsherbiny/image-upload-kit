@@ -98,15 +98,22 @@ export function createMemoryStorageAdapter(
     },
 
     async deleteByUrl(url: string): Promise<boolean> {
+      const parsed = this.parseUrl?.(url);
+      if (!parsed || !parsed.bucket) return false;
+      const key = toKey(parsed.bucket, parsed.path);
+      return store.delete(key);
+    },
+
+    parseUrl(url: string): { bucket?: string; path: string } | null {
       const prefix = `${baseUrl}/`;
-      if (!url.startsWith(prefix)) return false;
-      const rest = url.slice(prefix.length);
+      if (!url || !url.startsWith(prefix)) return null;
+      const cleanUrl = url.split(/[?#]/)[0];
+      const rest = cleanUrl.slice(prefix.length);
       const slashIdx = rest.indexOf('/');
-      if (slashIdx === -1) return false;
+      if (slashIdx <= 0 || slashIdx === rest.length - 1) return null;
       const bucket = rest.slice(0, slashIdx);
       const filePath = rest.slice(slashIdx + 1);
-      const key = toKey(bucket, filePath);
-      return store.delete(key);
+      return { bucket, path: filePath };
     },
 
     getObject(bucket: string, path: string): StoredMemoryObject | undefined {

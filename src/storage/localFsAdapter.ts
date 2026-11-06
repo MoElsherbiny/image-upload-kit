@@ -17,20 +17,41 @@ export interface LocalFsStorageOptions {
 }
 
 function sanitizeRelativePath(inputPath: string): string {
-  const normalized = inputPath.replace(/\\/g, '/').replace(/^\/+/, '');
-  const parts = normalized
-    .split('/')
-    .filter((segment) => segment && segment !== '.' && segment !== '..');
-  if (parts.length === 0) {
+  if (!inputPath || typeof inputPath !== 'string') {
     throw new Error('Invalid storage path');
   }
-  return parts.join('/');
+  if (inputPath.includes(':') || inputPath.includes('\0')) {
+    throw new Error('Path traversal blocked in LocalFsStorageAdapter');
+  }
+
+  const normalized = inputPath.replace(/\\/g, '/').replace(/^\/+/, '');
+  const rawSegments = normalized.split('/').filter(Boolean);
+
+  if (rawSegments.length === 0) {
+    throw new Error('Invalid storage path');
+  }
+
+  for (const segment of rawSegments) {
+    if (segment === '.' || segment === '..') {
+      throw new Error('Invalid storage path: path traversal blocked');
+    }
+  }
+
+  return rawSegments.join('/');
+}
+
+function assertContainedInRoot(resolvedRoot: string, targetPath: string): void {
+  const relative = path.relative(resolvedRoot, targetPath);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('Path traversal blocked in LocalFsStorageAdapter');
+  }
 }
 
 export interface LocalFsStorageAdapter extends StorageAdapter {
   getPublicUrl(bucket: string, relativePath: string): string;
   list(bucket: string, folder?: string): Promise<StorageFileEntry[]>;
   deleteByUrl(url: string): Promise<boolean>;
+  parseUrl(url: string): { bucket?: string; path: string } | null;
 }
 
 export function createLocalFsStorageAdapter(
@@ -46,9 +67,7 @@ export function createLocalFsStorageAdapter(
     const subPath = includeBucket ? `${cleanBucket}/${cleanRel}` : cleanRel;
     const diskPath = path.resolve(resolvedRoot, subPath);
 
-    if (!diskPath.startsWith(resolvedRoot)) {
-      throw new Error('Path traversal blocked in LocalFsStorageAdapter');
-    }
+    assertContainedInRoot(resolvedRoot, diskPath);
 
     return { diskPath, subPath, cleanRel };
   };
@@ -58,6 +77,65 @@ export function createLocalFsStorageAdapter(
     return `${baseUrl}/${subPath}`;
   };
 
+  const parseUrl = (url: string): { bucket?: string; path: string } | null => {
+    if (!url || typeof url !== 'string') return null;
+
+    try {
+      const cleanUrl = url.split(/[?#]/)[0];
+      const prefix = `${baseUrl}/`;
+      let subPath: string | null = null;
+
+      if (cleanUrl.startsWith(prefix)) {
+        subPath = cleanUrl.slice(prefix.length);
+      } else if (baseUrl.startsWith('/')) {
+        const parsed = new URL(cleanUrl, 'http://localhost');
+        const isLocal =
+          parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+        const isRelative =
+          !cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://');
+        if ((isLocal || isRelative) && parsed.pathname.startsWith(prefix)) {
+          subPath = parsed.pathname.slice(prefix.length);
+        }
+      }
+
+      if (!subPath) return null;
+
+      const decoded = decodeURIComponent(subPath)
+        .replace(/\\/g, '/')
+        .replace(/^\/+/, '');
+      if (!decoded || decoded.includes(':') || decoded.includes('\0')) {
+        return null;
+      }
+
+      const segments = decoded.split('/').filter(Boolean);
+      if (
+        segments.length === 0 ||
+        segments.includes('..') ||
+        segments.includes('.')
+      ) {
+        return null;
+      }
+
+      const diskPath = path.resolve(resolvedRoot, ...segments);
+      const relative = path.relative(resolvedRoot, diskPath);
+      if (relative.startsWith('..') || path.isAbsolute(relative)) {
+        return null;
+      }
+
+      if (includeBucket) {
+        if (segments.length < 2) return null;
+        return {
+          bucket: segments[0],
+          path: segments.slice(1).join('/'),
+        };
+      }
+
+      return { path: segments.join('/') };
+    } catch {
+      return null;
+    }
+  };
+
   return {
     async upload(params: StorageUploadParams): Promise<StorageUploadResult> {
       const { diskPath, cleanRel } = resolveDiskTarget(
@@ -65,24 +143,24 @@ export function createLocalFsStorageAdapter(
         params.path,
       );
 
-      if (params.upsert === false) {
-        try {
-          await fs.access(diskPath);
-          throw new Error(
-            `File already exists at ${params.bucket}/${cleanRel}`,
-          );
-        } catch (err) {
-          if (
-            err instanceof Error &&
-            err.message.includes('File already exists')
-          ) {
-            throw err;
-          }
-        }
-      }
-
       await fs.mkdir(path.dirname(diskPath), { recursive: true });
-      await fs.writeFile(diskPath, params.data);
+
+      try {
+        await fs.writeFile(
+          diskPath,
+          params.data,
+          params.upsert === false ? { flag: 'wx' } : undefined,
+        );
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+          const existsError = new Error(
+            `File already exists at ${params.bucket}/${cleanRel}`,
+          ) as NodeJS.ErrnoException;
+          existsError.code = 'EEXIST';
+          throw existsError;
+        }
+        throw err;
+      }
 
       return {
         bucket: params.bucket,
@@ -103,50 +181,18 @@ export function createLocalFsStorageAdapter(
     },
 
     getPublicUrl,
+    parseUrl,
 
     async deleteByUrl(url: string): Promise<boolean> {
-      if (!url || typeof url !== 'string') return false;
+      const parsed = parseUrl(url);
+      if (!parsed) return false;
 
       try {
-        const cleanUrl = url.split(/[?#]/)[0];
-        const prefix = `${baseUrl}/`;
-        let subPath: string | null = null;
-
-        if (cleanUrl.startsWith(prefix)) {
-          subPath = cleanUrl.slice(prefix.length);
-        } else if (baseUrl.startsWith('/')) {
-          const parsed = new URL(cleanUrl, 'http://localhost');
-          const isLocal =
-            parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
-          const isRelative =
-            !cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://');
-          if ((isLocal || isRelative) && parsed.pathname.startsWith(prefix)) {
-            subPath = parsed.pathname.slice(prefix.length);
-          }
-        }
-
-        if (!subPath) return false;
-
-        const decoded = decodeURIComponent(subPath)
-          .replace(/\\/g, '/')
-          .replace(/^\/+/, '');
-        if (!decoded) return false;
-
-        const segments = decoded.split('/').filter(Boolean);
-        if (
-          segments.length === 0 ||
-          segments.includes('..') ||
-          segments.includes('.')
-        ) {
-          return false;
-        }
-
-        const diskPath = path.resolve(resolvedRoot, ...segments);
-        const relative = path.relative(resolvedRoot, diskPath);
-        if (relative.startsWith('..') || path.isAbsolute(relative)) {
-          return false;
-        }
-
+        const subSegments = includeBucket && parsed.bucket
+          ? [parsed.bucket, ...parsed.path.split('/')]
+          : parsed.path.split('/');
+        const diskPath = path.resolve(resolvedRoot, ...subSegments);
+        assertContainedInRoot(resolvedRoot, diskPath);
         await fs.unlink(diskPath);
         return true;
       } catch {
@@ -163,9 +209,7 @@ export function createLocalFsStorageAdapter(
         cleanFolder,
       );
 
-      if (!targetDir.startsWith(resolvedRoot)) {
-        throw new Error('Path traversal blocked in LocalFsStorageAdapter');
-      }
+      assertContainedInRoot(resolvedRoot, targetDir);
 
       try {
         const dirEntries = await fs.readdir(targetDir, { withFileTypes: true });

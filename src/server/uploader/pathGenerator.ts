@@ -1,10 +1,19 @@
-import crypto from 'node:crypto';
 import type { ImageOutputFormat } from '../../types';
 import type {
   GeneratedStorageTarget,
   StoragePathContext,
   StoragePathGenerator,
 } from './types';
+
+function randomShortId(): string {
+  if (
+    typeof globalThis.crypto !== 'undefined' &&
+    typeof globalThis.crypto.randomUUID === 'function'
+  ) {
+    return globalThis.crypto.randomUUID().split('-')[0];
+  }
+  return Math.random().toString(16).slice(2, 10).padEnd(8, '0');
+}
 
 export function formatToExtension(format: ImageOutputFormat): string {
   switch (format) {
@@ -30,6 +39,16 @@ export function sanitizeSegment(value: string): string {
     .join('/');
 }
 
+export function stripFilenameExtension(rawFilename: string): string {
+  const leaf = rawFilename.replace(/^.*[\\/]/, '').trim();
+  const dotIdx = leaf.lastIndexOf('.');
+  const base = dotIdx > 0 ? leaf.slice(0, dotIdx) : leaf;
+  const cleaned = base
+    .replace(/[^a-zA-Z0-9._-]/g, '-')
+    .replace(/^[.-]+|[.-]+$/g, '');
+  return cleaned || 'image';
+}
+
 export function createDefaultPathGenerator(): StoragePathGenerator {
   let imageCounter = 0;
 
@@ -37,11 +56,8 @@ export function createDefaultPathGenerator(): StoragePathGenerator {
     const cleanFolder = ctx.folder ? sanitizeSegment(ctx.folder) : '';
 
     if (ctx.customFilename?.trim()) {
-      let cleanName = ctx.customFilename.replace(/^.*[\\/]/, '').trim();
-      if (!cleanName.includes('.')) {
-        cleanName = `${cleanName}.${ctx.extension}`;
-      }
-      cleanName = cleanName.replace(/[^a-zA-Z0-9._-]/g, '-');
+      const baseName = stripFilenameExtension(ctx.customFilename);
+      const cleanName = `${baseName}.${ctx.extension}`;
       const fullPath = cleanFolder ? `${cleanFolder}/${cleanName}` : cleanName;
       return {
         bucket: ctx.bucket,
@@ -58,7 +74,7 @@ export function createDefaultPathGenerator(): StoragePathGenerator {
     imageCounter = (imageCounter + 1) % 10000;
     const seq = String(imageCounter).padStart(4, '0');
     const timestamp = Date.now();
-    const randomSuffix = crypto.randomUUID().split('-')[0];
+    const randomSuffix = randomShortId();
 
     const prefix = sanitizeSegment(
       ctx.preset || cleanFolder.split('/')[0] || 'img',

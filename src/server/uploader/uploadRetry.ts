@@ -4,6 +4,7 @@ import type {
   StorageAdapter,
   StorageUploadResult,
 } from '../../storage/types';
+import { stripFilenameExtension } from './pathGenerator';
 import type {
   GeneratedStorageTarget,
   StoragePathContext,
@@ -24,10 +25,20 @@ export interface UploadWithCollisionRetryResult {
   storageTarget: GeneratedStorageTarget;
 }
 
+function randomRetrySuffix(): string {
+  if (
+    typeof globalThis.crypto !== 'undefined' &&
+    typeof globalThis.crypto.randomUUID === 'function'
+  ) {
+    return globalThis.crypto.randomUUID().split('-')[0];
+  }
+  return Math.random().toString(16).slice(2, 10);
+}
+
 /**
  * Determines whether a storage error represents a filename or object collision.
- * Matches `already exists` or `EEXIST`, while strictly excluding `does not exist`
- * (e.g. non-existent buckets, directories, or missing keys).
+ * Matches `already exists`, `EEXIST`, or HTTP 412 Precondition Failed, while strictly
+ * excluding `does not exist` (e.g. non-existent buckets, directories, or missing keys).
  */
 export function isCollisionError(e: unknown): boolean {
   if (!e) return false;
@@ -36,8 +47,15 @@ export function isCollisionError(e: unknown): boolean {
     typeof e === 'object' && e !== null && 'code' in e
       ? String((e as { code: unknown }).code).toUpperCase()
       : '';
+  const statusCode =
+    typeof e === 'object' && e !== null && '$metadata' in e
+      ? (e as { $metadata?: { httpStatusCode?: number } }).$metadata
+          ?.httpStatusCode
+      : typeof e === 'object' && e !== null && 'statusCode' in e
+        ? Number((e as { statusCode: unknown }).statusCode)
+        : undefined;
 
-  if (code === 'EEXIST') {
+  if (code === 'EEXIST' || code === 'PRECONDITIONFAILED' || statusCode === 412) {
     return true;
   }
   if (code === 'ENOENT') {
@@ -62,13 +80,16 @@ export function isCollisionError(e: unknown): boolean {
     msg.includes('already exists') ||
     msg.includes('already_exists') ||
     msg.includes('eexist') ||
-    msg.includes('file exists')
+    msg.includes('file exists') ||
+    msg.includes('precondition failed')
   );
 }
 
 /**
  * Uploads optimized image bytes to the storage backend with automatic filename
- * collision retries (or immediate `upsert: true` fallback when `customFilename` is set).
+ * collision retries. Server-side `customFilename` uses `upsert: true`, while
+ * client-supplied `customFilename` (`isClientFilename: true`) never upserts and
+ * appends a unique suffix on collision.
  */
 export async function uploadWithCollisionRetry(
   params: UploadWithCollisionRetryParams,
@@ -82,6 +103,9 @@ export async function uploadWithCollisionRetry(
     maxRetries = 3,
   } = params;
 
+  const isServerCustomName =
+    Boolean(pathContext.customFilename) && !pathContext.isClientFilename;
+
   let storageTarget = buildPath(pathContext);
   let uploadResult: StorageUploadResult | undefined;
 
@@ -92,14 +116,14 @@ export async function uploadWithCollisionRetry(
         path: storageTarget.path,
         data,
         contentType,
-        upsert: Boolean(pathContext.customFilename),
+        upsert: isServerCustomName,
         contentHash: pathContext.contentHash,
         metadata: pathContext.metadata,
       });
       break;
     } catch (e) {
       if (isCollisionError(e)) {
-        if (pathContext.customFilename) {
+        if (isServerCustomName) {
           uploadResult = await storage.upload({
             bucket: storageTarget.bucket,
             path: storageTarget.path,
@@ -110,6 +134,14 @@ export async function uploadWithCollisionRetry(
             metadata: pathContext.metadata,
           });
           break;
+        }
+        if (pathContext.customFilename && pathContext.isClientFilename) {
+          const base = stripFilenameExtension(pathContext.customFilename);
+          storageTarget = buildPath({
+            ...pathContext,
+            customFilename: `${base}-${randomRetrySuffix()}`,
+          });
+          continue;
         }
         storageTarget = buildPath({
           ...pathContext,
@@ -131,6 +163,7 @@ export async function uploadWithCollisionRetry(
 export interface MirrorBufferLocallyOptions {
   buffer: Buffer | Uint8Array;
   filename: string;
+  storagePath?: string;
   fallbackUrl: string;
   mirrorDir?: string;
   publicUrlBase?: string;
@@ -144,18 +177,29 @@ export interface MirrorBufferLocallyOptions {
 export function mirrorBufferLocally(
   options: MirrorBufferLocallyOptions,
 ): string {
-  const { buffer, filename, fallbackUrl, mirrorDir, publicUrlBase } = options;
+  const {
+    buffer,
+    filename,
+    storagePath,
+    fallbackUrl,
+    mirrorDir,
+    publicUrlBase,
+  } = options;
   if (!mirrorDir) {
     return fallbackUrl;
   }
 
+  const relativeTarget = (storagePath || filename).replace(/^\/+/, '');
+
   try {
-    if (!fs.existsSync(mirrorDir)) {
-      fs.mkdirSync(mirrorDir, { recursive: true });
+    const destPath = path.join(mirrorDir, relativeTarget);
+    const destDir = path.dirname(destPath);
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
     }
-    fs.writeFileSync(path.join(mirrorDir, filename), buffer);
+    fs.writeFileSync(destPath, buffer);
     if (publicUrlBase) {
-      return `${publicUrlBase.replace(/\/+$/, '')}/${filename}`;
+      return `${publicUrlBase.replace(/\/+$/, '')}/${relativeTarget}`;
     }
   } catch {
     // Safely ignored on read-only serverless filesystems

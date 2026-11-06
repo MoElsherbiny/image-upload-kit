@@ -59,6 +59,7 @@ describe('createImageUploader', () => {
         folder: 'banners',
         quality: 91,
         includeBlurHash: true,
+        allowSvg: true,
       },
     });
 
@@ -120,6 +121,7 @@ describe('createImageUploader', () => {
     let attempts = 0;
     const uploader = createImageUploader({
       storage,
+      allowSvg: true,
       pathGenerator: (ctx) => {
         attempts += 1;
         const name = attempts === 1 ? 'colliding.svg' : 'retried-unique.svg';
@@ -144,13 +146,13 @@ describe('createUploadHttpHandler', () => {
       storage,
       defaultBucket: 'media',
       presets: defineUploadPresets({
-        featureCard: { folder: 'cards', quality: 86 },
+        featureCard: { folder: 'cards', quality: 86, allowSvg: true },
       }),
     });
 
     const handler = createUploadHttpHandler({
       uploader,
-      authorize: (req) => req.headers.get('x-api-key') === 'valid-key',
+      authorize: ({ request }) => request.headers.get('x-api-key') === 'valid-key',
       allowedPresets: ['featureCard'],
     });
 

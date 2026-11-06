@@ -1,5 +1,8 @@
 import { DEFAULT_IMAGE_DIMENSIONS } from '../../types';
+import { UploadValidationError } from '../handler/responses';
+import { sanitizeSvg } from '../security/sanitizeSvg';
 import {
+  DEFAULT_LIMIT_INPUT_PIXELS,
   type OptimizedImageResult,
   type OptimizeImageOptions,
   PRIMARY_AVIF_EFFORT,
@@ -14,21 +17,37 @@ export async function optimizeImage(
   const sharp = await loadSharp();
   const maxDimensions = options.maxDimensions || DEFAULT_IMAGE_DIMENSIONS;
   const { outputFormat, quality } = options;
+  const limitInputPixels =
+    options.limitInputPixels ?? DEFAULT_LIMIT_INPUT_PIXELS;
 
   let pipeline = sharp(buffer, {
-    failOnError: false,
-    limitInputPixels: 268402689,
+    failOn: 'error',
+    limitInputPixels,
   }).rotate();
 
-  const metadata = await pipeline.metadata();
+  let metadata;
+  try {
+    metadata = await pipeline.metadata();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (
+      msg.toLowerCase().includes('pixel limit') ||
+      msg.toLowerCase().includes('exceeds') ||
+      msg.toLowerCase().includes('unsupported image format')
+    ) {
+      throw new UploadValidationError(msg);
+    }
+    throw err;
+  }
   const originalFormat = metadata.format;
 
   if (originalFormat === 'svg') {
+    const sanitizedBuffer = sanitizeSvg(buffer);
     let width = metadata.width;
     let height = metadata.height;
 
     if (!width || !height) {
-      const svgText = buffer.toString('utf8');
+      const svgText = sanitizedBuffer.toString('utf8');
       const viewBoxMatch = svgText.match(
         /viewBox\s*=\s*["']\s*([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s+([\d.-]+)\s*["']/i,
       );
@@ -39,11 +58,11 @@ export async function optimizeImage(
     }
 
     return {
-      buffer,
+      buffer: sanitizedBuffer,
       width: width || maxDimensions.width || 600,
       height: height || maxDimensions.height || 600,
       format: 'svg',
-      size: buffer.length,
+      size: sanitizedBuffer.length,
     };
   }
 

@@ -8,9 +8,11 @@ import {
   DEFAULT_ALLOWED_FORMATS,
   DEFAULT_IMAGE_DIMENSIONS,
   STANDARD_PRESETS,
+  SVG_MIME_TYPE,
 } from '../../types';
 import { validateImageFileStrict } from '../../utils/validators';
-import { UploadValidationError } from '../handler';
+import { UploadValidationError } from '../handler/responses';
+import { assertMagicBytesAllowed, sanitizeSvg } from '../security';
 import { AsyncSemaphore } from '../semaphore';
 import { processImageBuffer } from './bufferProcessor';
 import {
@@ -25,6 +27,18 @@ import type {
   ProcessImageBufferOptions,
 } from './types';
 import { mirrorBufferLocally, uploadWithCollisionRetry } from './uploadRetry';
+
+function resolveEffectiveAllowedFormats(
+  baseFormats: string[],
+  allowSvg: boolean,
+  explicitAllowSvg: boolean,
+): string[] {
+  if (!allowSvg) return baseFormats.filter((fmt) => fmt !== SVG_MIME_TYPE);
+  if (explicitAllowSvg && !baseFormats.includes(SVG_MIME_TYPE)) {
+    return [...baseFormats, SVG_MIME_TYPE];
+  }
+  return baseFormats;
+}
 
 export function createImageUploader<
   TPresets extends Record<string, UploadPresetConfig> = Record<
@@ -41,11 +55,15 @@ export function createImageUploader<
     defaultMaxSizeMB = 10,
     defaultAllowedFormats = DEFAULT_ALLOWED_FORMATS,
     defaultMaxDimensions = DEFAULT_IMAGE_DIMENSIONS,
+    allowSvg: defaultAllowSvg = false,
+    limitInputPixels: defaultLimitInputPixels,
+    effort: defaultEffort,
     presets: customPresets,
     includeStandardPresets = true,
     pathGenerator,
     onUploadRecord,
     awaitRecordHook = false,
+    onError,
     concurrency = 2,
     optimizationTimeoutMs = 60000,
     blurTimeoutMs = 30000,
@@ -60,13 +78,36 @@ export function createImageUploader<
   const semaphore = new AsyncSemaphore(concurrency);
   const buildPath = pathGenerator || createDefaultPathGenerator();
 
-  const resolvePreset = (
-    presetName?: string,
-  ): UploadPresetConfig | undefined =>
-    presetName ? mergedPresets[presetName] : undefined;
+  const resolvePreset = (name?: string): UploadPresetConfig | undefined =>
+    name ? mergedPresets[name] : undefined;
+
+  const getAllowedBuckets = (): string[] => {
+    const buckets = new Set<string>([defaultBucket]);
+    for (const preset of Object.values(mergedPresets)) {
+      if (preset?.bucket) buckets.add(preset.bucket);
+    }
+    return [...buckets];
+  };
+
+  const getMaxSizeMB = (allowedPresets?: string[]): number => {
+    let maxMB = defaultMaxSizeMB;
+    const keys =
+      allowedPresets && allowedPresets.length > 0
+        ? allowedPresets
+        : Object.keys(mergedPresets);
+    for (const key of keys) {
+      const p = mergedPresets[key];
+      if (p?.maxSizeMB && p.maxSizeMB > maxMB) maxMB = p.maxSizeMB;
+    }
+    return maxMB;
+  };
 
   return {
+    defaultBucket,
     resolvePreset,
+    getAllowedBuckets,
+    getMaxSizeMB,
+    parseUrl: (url: string) => (storage.parseUrl ? storage.parseUrl(url) : null),
 
     async processBuffer(
       buffer: Buffer,
@@ -78,6 +119,8 @@ export function createImageUploader<
           optimizationTimeoutMs,
           blurTimeoutMs,
           includeBlurHash: defaultIncludeBlurHash,
+          limitInputPixels: defaultLimitInputPixels,
+          effort: defaultEffort,
           ...procOptions,
         }),
       );
@@ -88,70 +131,78 @@ export function createImageUploader<
       uploadOptions: ImageUploadOptions<InferredPresetKey<TPresets>> = {},
     ): Promise<UploadedImageData> {
       const presetConfig = resolvePreset(uploadOptions.preset);
+      if (uploadOptions.preset && !presetConfig) {
+        throw new UploadValidationError(`Invalid preset "${uploadOptions.preset}".`);
+      }
 
-      const bucket =
-        uploadOptions.bucket || presetConfig?.bucket || defaultBucket;
-      const folder =
-        uploadOptions.folder ?? presetConfig?.folder ?? defaultFolder;
-      const maxSizeMB =
-        uploadOptions.maxSizeMB ??
-        presetConfig?.maxSizeMB ??
-        defaultMaxSizeMB;
-      const allowedFormats =
-        uploadOptions.allowedFormats ??
-        presetConfig?.allowedFormats ??
-        defaultAllowedFormats;
+      const bucket = uploadOptions.bucket || presetConfig?.bucket || defaultBucket;
+      const folder = uploadOptions.folder ?? presetConfig?.folder ?? defaultFolder;
+      const maxSizeMB = uploadOptions.maxSizeMB ?? presetConfig?.maxSizeMB ?? defaultMaxSizeMB;
+      const allowSvg = uploadOptions.allowSvg ?? presetConfig?.allowSvg ?? defaultAllowSvg;
+      const explicitAllowSvg = Boolean(
+        uploadOptions.allowSvg ??
+          presetConfig?.allowSvg ??
+          (defaultAllowSvg && !uploadOptions.allowedFormats && !presetConfig?.allowedFormats),
+      );
+      const allowedFormats = resolveEffectiveAllowedFormats(
+        uploadOptions.allowedFormats ?? presetConfig?.allowedFormats ?? defaultAllowedFormats,
+        allowSvg,
+        explicitAllowSvg,
+      );
       const maxDimensions =
-        uploadOptions.maxDimensions ??
-        presetConfig?.maxDimensions ??
-        defaultMaxDimensions;
-      const outputFormat =
-        uploadOptions.outputFormat ?? presetConfig?.outputFormat;
+        uploadOptions.maxDimensions ?? presetConfig?.maxDimensions ?? defaultMaxDimensions;
+      const outputFormat = uploadOptions.outputFormat ?? presetConfig?.outputFormat;
       const quality = uploadOptions.quality ?? presetConfig?.quality;
       const includeBlurHash =
-        uploadOptions.includeBlurHash ??
-        presetConfig?.includeBlurHash ??
-        defaultIncludeBlurHash;
+        uploadOptions.includeBlurHash ?? presetConfig?.includeBlurHash ?? defaultIncludeBlurHash;
+      const limitInputPixels =
+        uploadOptions.limitInputPixels ?? presetConfig?.limitInputPixels ?? defaultLimitInputPixels;
 
       const isWebFile = typeof (input as File).arrayBuffer === 'function';
-      const fileType = input.type;
-      const originalName = input.name;
-      const fileSize = isWebFile
-        ? (input as File).size
-        : ((input as { size?: number; buffer: Buffer }).size ??
-          (input as { buffer: Buffer }).buffer.length);
-
-      const validation = validateImageFileStrict(
-        { size: fileSize, type: fileType },
-        maxSizeMB,
-        allowedFormats,
-      );
-      if (!validation.valid) {
-        throw new UploadValidationError(validation.error!);
+      if (isWebFile) {
+        const pre = validateImageFileStrict(
+          { size: (input as File).size, type: input.type },
+          maxSizeMB,
+          allowedFormats,
+        );
+        if (!pre.valid) throw new UploadValidationError(pre.error!);
       }
 
       try {
-        const originalBuffer = isWebFile
+        let originalBuffer = isWebFile
           ? Buffer.from(await (input as File).arrayBuffer())
           : (input as { buffer: Buffer }).buffer;
+        if (!originalBuffer || originalBuffer.length === 0) {
+          throw new UploadValidationError('File is empty');
+        }
 
-        const { optimized, blurData, contentHash, originalSize } =
-          await semaphore.run(() =>
-            processImageBuffer(originalBuffer, {
-              maxDimensions,
-              outputFormat,
-              quality,
-              includeBlurHash,
-              optimizationTimeoutMs,
-              blurTimeoutMs,
-            }),
-          );
+        const validation = validateImageFileStrict(
+          { size: originalBuffer.length, type: input.type },
+          maxSizeMB,
+          allowedFormats,
+        );
+        if (!validation.valid) throw new UploadValidationError(validation.error!);
+
+        const sniffed = assertMagicBytesAllowed(originalBuffer, allowedFormats, allowSvg);
+        if (sniffed.format === 'svg') {
+          originalBuffer = sanitizeSvg(originalBuffer);
+        }
+
+        const { optimized, blurData, contentHash, originalSize } = await semaphore.run(() =>
+          processImageBuffer(originalBuffer, {
+            maxDimensions,
+            outputFormat,
+            quality,
+            includeBlurHash,
+            optimizationTimeoutMs,
+            blurTimeoutMs,
+            limitInputPixels,
+            effort: defaultEffort,
+            allowSvg,
+          }),
+        );
 
         const mainFormat = optimized.format;
-        const extension = formatToExtension(mainFormat);
-        const mainContentType =
-          mainFormat === 'svg' ? 'image/svg+xml' : `image/${mainFormat}`;
-
         const { uploadResult, storageTarget } = await uploadWithCollisionRetry({
           storage,
           buildPath,
@@ -160,25 +211,26 @@ export function createImageUploader<
             folder,
             preset: uploadOptions.preset,
             format: mainFormat,
-            extension,
+            extension: formatToExtension(mainFormat),
             customFilename: uploadOptions.customFilename,
+            isClientFilename: uploadOptions.isClientFilename,
             contentHash,
-            originalName,
+            originalName: input.name,
             metadata: uploadOptions.metadata,
           },
           data: optimized.buffer,
-          contentType: mainContentType,
+          contentType: mainFormat === 'svg' ? SVG_MIME_TYPE : `image/${mainFormat}`,
         });
 
         const resolvedUrl = mirrorBufferLocally({
           buffer: optimized.buffer,
           filename: storageTarget.filename,
+          storagePath: uploadResult.path,
           fallbackUrl: uploadResult.url,
           mirrorDir: presetConfig?.mirrorDir,
           publicUrlBase: presetConfig?.publicUrlBase,
         });
 
-        const resolvedQuality = quality ?? 85;
         const result: UploadedImageData = {
           url: resolvedUrl,
           blurDataUrl: blurData.dataURL,
@@ -202,27 +254,27 @@ export function createImageUploader<
         if (onUploadRecord) {
           const record: ImageUploadRecord = {
             ...result,
-            quality: resolvedQuality,
+            quality: optimized.quality ?? quality ?? 85,
           };
-
           if (awaitRecordHook) {
-            await onUploadRecord(record);
+            try {
+              await onUploadRecord(record);
+            } catch (hookError) {
+              await storage.delete(storageTarget.bucket, uploadResult.path).catch(() => {});
+              throw hookError;
+            }
           } else {
-            Promise.resolve(onUploadRecord(record)).catch(() => {
-              // Non-blocking best-effort persistence
+            Promise.resolve(onUploadRecord(record)).catch((err: unknown) => {
+              onError?.(err, { action: 'recordHook' });
             });
           }
         }
 
         return result;
       } catch (error) {
-        if (error instanceof UploadValidationError) {
-          throw error;
-        }
+        if (error instanceof UploadValidationError) throw error;
         throw new Error(
-          `Image upload failed: ${
-            error instanceof Error ? error.message : 'Unknown error'
-          }`,
+          `Image upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         );
       }
     },
@@ -232,18 +284,13 @@ export function createImageUploader<
         await storage.delete(bucket || defaultBucket, targetPath);
       } catch (error) {
         throw new Error(
-          `Image deletion failed: ${
-            error instanceof Error ? error.message : 'Unknown error'
-          }`,
+          `Image deletion failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         );
       }
     },
 
     async deleteByUrl(url: string): Promise<boolean> {
-      if (storage.deleteByUrl) {
-        return storage.deleteByUrl(url);
-      }
-      return false;
+      return storage.deleteByUrl ? storage.deleteByUrl(url) : false;
     },
   };
 }

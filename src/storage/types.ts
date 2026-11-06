@@ -53,6 +53,11 @@ export interface StorageAdapter {
    * Optional: Delete an asset directly from its public URL.
    */
   deleteByUrl?(url: string): Promise<boolean>;
+
+  /**
+   * Optional: Parse a public storage URL into its bucket and relative path.
+   */
+  parseUrl?(url: string): { bucket?: string; path: string } | null;
 }
 
 export type UploadRecordHook = (

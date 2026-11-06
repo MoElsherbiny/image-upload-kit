@@ -32,6 +32,14 @@ export interface ImageUploadOptions<
   metadata?: Record<string, string>;
   /** Generate compact BlurHash string alongside WebP LQIP data URL */
   includeBlurHash?: boolean;
+  /** Opt-in to allow SVG uploads (sanitized before storage). Defaults to `false`. */
+  allowSvg?: boolean;
+  /** Maximum input pixel count allowed by Sharp (defaults to 50 MP = 50,000,000) */
+  limitInputPixels?: number;
+  /** Marks `customFilename` as client-supplied (disables upsert and retries with a suffix on collision) */
+  isClientFilename?: boolean;
+  /** Optional AbortSignal to cancel queued or in-flight processing */
+  signal?: AbortSignal;
 }
 
 export interface UploadedImageData {

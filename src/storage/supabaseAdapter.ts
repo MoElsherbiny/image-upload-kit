@@ -147,20 +147,20 @@ export function createSupabaseStorageAdapter(
         }));
     },
 
+    parseUrl(url: string): { bucket?: string; path: string } | null {
+      const info = parsePublicStorageUrl(url, publicPrefix);
+      if (!info) return null;
+      return { bucket: info.bucket, path: info.path };
+    },
+
     async deleteByUrl(url: string): Promise<boolean> {
       const info = parsePublicStorageUrl(url, publicPrefix);
       if (!info) return false;
 
       try {
-        const targets = new Set<string>([info.path]);
-        if (info.extension?.toLowerCase() === '.avif') {
-          const basePath = info.path.slice(0, -info.extension.length);
-          targets.add(`${basePath}-blur${info.extension}`);
-          targets.add(`${basePath}-thumb${info.extension}`);
-        }
         const { error } = await client.storage
           .from(info.bucket)
-          .remove([...targets]);
+          .remove([info.path]);
         return !error;
       } catch {
         return false;

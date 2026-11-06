@@ -23,6 +23,8 @@ export async function processImageBuffer(
       maxDimensions: options.maxDimensions,
       outputFormat: options.outputFormat,
       quality: options.quality,
+      limitInputPixels: options.limitInputPixels,
+      effort: options.effort,
     }),
     optTimeout,
     'Image optimization',

@@ -58,18 +58,23 @@ export interface UploadPresetConfig {
   recommendationNote?: { en: string; ar?: string };
   /** Generate compact BlurHash string alongside WebP LQIP data URL */
   includeBlurHash?: boolean;
+  /** Opt-in to allow SVG uploads for this preset (sanitized before storage). Defaults to `false`. */
+  allowSvg?: boolean;
+  /** Maximum input pixel count allowed by Sharp (defaults to 50 MP = 50,000,000) */
+  limitInputPixels?: number;
   /** Optional local directory to mirror uploaded files into */
   mirrorDir?: string;
   /** Optional public URL prefix when `mirrorDir` is used */
   publicUrlBase?: string;
 }
 
+export const SVG_MIME_TYPE = 'image/svg+xml';
+
 export const DEFAULT_ALLOWED_FORMATS: string[] = [
   'image/jpeg',
   'image/png',
   'image/webp',
   'image/avif',
-  'image/svg+xml',
 ];
 
 export const RASTER_ALLOWED_FORMATS: string[] = [

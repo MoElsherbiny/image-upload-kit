@@ -10,6 +10,7 @@ export interface OptimizedImageResult {
   height: number;
   format: ImageOutputFormat;
   size: number;
+  quality?: number;
 }
 
 export interface BlurHashResult {
@@ -25,7 +26,13 @@ export interface OptimizeImageOptions {
   outputFormat?: ExplicitOutputFormat;
   /** 1–100 compression quality. Defaults to smart photo/graphic heuristic (85–88). */
   quality?: number;
+  /** Maximum input pixel count allowed by Sharp (defaults to 50 MP = 50,000,000) */
+  limitInputPixels?: number;
+  /** AVIF/WebP encoding effort (defaults to 6) */
+  effort?: number;
 }
+
+export const DEFAULT_LIMIT_INPUT_PIXELS = 50_000_000;
 
 export interface GenerateBlurOptions {
   width?: number;
