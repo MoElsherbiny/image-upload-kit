@@ -218,7 +218,7 @@ describe('Phase 6: AnimatedImage — Imagine-Global Parity (jsdom)', () => {
     expect(wrappers[2]).toHaveClass('iuk-animated-image--contain');
   });
 
-  it('keeps the generated blur placeholder mounted with objectFit=cover behind objectFit=contain images after load', () => {
+  it('keeps the generated blur placeholder mounted with objectFit=cover behind objectFit=contain images after load', async () => {
     vi.useFakeTimers();
     const { container } = render(
       <AnimatedImage
@@ -240,7 +240,9 @@ describe('Phase 6: AnimatedImage — Imagine-Global Parity (jsdom)', () => {
     expect(placeholder.style.objectFit).toBe('cover');
     expect(mainImg.style.objectFit).toBe('contain');
 
-    fireEvent.load(mainImg);
+    await act(async () => {
+      fireEvent.load(mainImg);
+    });
     act(() => {
       vi.advanceTimersByTime(1000);
     });
