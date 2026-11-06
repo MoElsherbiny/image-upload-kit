@@ -12,9 +12,11 @@ import {
 import type { ImagePreview, MultiImageUploadProps } from '../types';
 import {
   collectUploadedData,
+  formatMinImagesMessage,
   mapUploadedToPreview,
   resolveInitialQuality,
   runParallelUploadPool,
+  serializeMultiFormValue,
   syncPreviewsWithValue,
 } from './uploadQueue';
 import { useFilePreview } from './useFilePreview';
@@ -32,7 +34,7 @@ let tempIdCounter = 0;
 export function useMultiImageState<TPreset extends string = UploadPresetName>(
   options: UseMultiImageStateOptions<TPreset>,
 ) {
-  const { onChange, preset, isOpen, onClose } = options;
+  const { onChange, preset, isOpen, onClose, minImages, required, formValue } = options;
   const value = options.value ?? EMPTY_IMAGES;
   const maxImages = options.maxImages ?? 999;
   const maxParallelUploads = options.maxParallelUploads ?? 2;
@@ -64,9 +66,7 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
   const { createPreview, revokePreview } = useFilePreview({ errorLabel: ui.failedCreatePreview });
   const infoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => () => {
-    if (infoTimeoutRef.current) clearTimeout(infoTimeoutRef.current);
-  }, []);
+  useEffect(() => () => { if (infoTimeoutRef.current) clearTimeout(infoTimeoutRef.current); }, []);
 
   useEffect(() => {
     setPreviews((current) => {
@@ -80,15 +80,9 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
     if (!requiresManualCommit) onChange(collectUploadedData(nextPreviews, true));
   };
 
-  const patchByIdOrFile = (
-    uploadId: string | undefined,
-    file: File | undefined,
-    patch: Partial<ImagePreview>,
-    emit = false,
-  ) => {
+  const patchByIdOrFile = (uploadId: string | undefined, file: File | undefined, patch: Partial<ImagePreview>, emit = false) => {
     const next = previewsRef.current.map((p) => {
-      const matched = uploadId ? p.id === uploadId : p.file === file;
-      if (!matched) return p;
+      if (!(uploadId ? p.id === uploadId : p.file === file)) return p;
       if (patch.url && p.url && p.url !== patch.url) revokePreview(p.url);
       return { ...p, ...patch };
     });
@@ -129,34 +123,35 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
   });
 
   useEffect(() => {
-    if (isOpen === false) {
-      abortAll();
-      uncommittedIdsRef.current.clear();
-    }
+    if (isOpen === false) { abortAll(); uncommittedIdsRef.current.clear(); }
   }, [isOpen, abortAll]);
+
+  const runBatchUploads = async (items: ImagePreview[], files: File[]) => {
+    options.onUploadStart?.(files);
+    const completedBatch: UploadedImageData[] = [];
+    await runParallelUploadPool(items, maxParallelUploads, async (item) => {
+      if (!previewsRef.current.some((p) => p.id === item.id) || !item.file) return;
+      const uploaded = await uploadImage(item.file, item.altText, undefined, { uploadId: item.id });
+      if (uploaded) completedBatch.push(uploaded);
+    });
+    if (completedBatch.length > 0) options.onUploadComplete?.(completedBatch);
+  };
 
   const handleFileSelect = async (files: FileList) => {
     setValidationError('');
     setInfoMessage('');
     const allFiles = Array.from(files);
     const imageFiles = allFiles.filter((file) => file.type.startsWith('image/'));
-    if (imageFiles.length === 0) {
-      setValidationError(ui.noValidImageFiles);
-      return;
-    }
+    if (imageFiles.length === 0) { setValidationError(ui.noValidImageFiles); return; }
     if (allFiles.length > imageFiles.length) {
-      const skipped = allFiles.length - imageFiles.length;
-      setInfoMessage(formatSkippedImagesMessage(ui, imageFiles.length, skipped, locale));
+      setInfoMessage(formatSkippedImagesMessage(ui, imageFiles.length, allFiles.length - imageFiles.length, locale));
       if (infoTimeoutRef.current) clearTimeout(infoTimeoutRef.current);
       infoTimeoutRef.current = setTimeout(() => setInfoMessage(''), 5000);
     }
 
     const activeCount = previewsRef.current.filter((p) => !p.error).length;
     const validationResult = validateMultipleFiles(imageFiles, maxSizeMB, activeCount, maxImages, locale);
-    if (validationResult) {
-      setValidationError(validationResult);
-      return;
-    }
+    if (validationResult) { setValidationError(validationResult); return; }
 
     setUploadStats({ total: imageFiles.length, completed: 0, failed: 0 });
     const newPreviews: ImagePreview[] = [];
@@ -177,11 +172,7 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
     const nextBatch = [...previewsRef.current, ...newPreviews];
     previewsRef.current = nextBatch;
     setPreviews(nextBatch);
-
-    await runParallelUploadPool(newPreviews, maxParallelUploads, async (item) => {
-      if (!previewsRef.current.some((p) => p.id === item.id)) return;
-      if (item.file) await uploadImage(item.file, item.altText, undefined, { uploadId: item.id });
-    });
+    await runBatchUploads(newPreviews, imageFiles);
   };
 
   const removeIds = (ids: Set<string>) => {
@@ -209,41 +200,49 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
     });
   };
 
-  const handleRemoveSelected = () => {
-    removeIds(new Set(selectedPreviews));
-    setSelectedPreviews(new Set());
+  const handleCancelUpload = (id: string) => {
+    if (!previewsRef.current.some((p) => p.id === id)) return;
+    handleRemove(id);
+    options.onUploadCancel?.(id);
   };
+
+  const handleRemoveSelected = () => { removeIds(new Set(selectedPreviews)); setSelectedPreviews(new Set()); };
+  const handleClearAll = () => { removeIds(new Set(previewsRef.current.map((p) => p.id))); setSelectedPreviews(new Set()); setValidationError(''); };
 
   const toggleSelect = (id: string) => {
     setSelectedPreviews((prev) => {
       const copy = new Set(prev);
-      if (copy.has(id)) copy.delete(id);
-      else copy.add(id);
+      if (copy.has(id)) copy.delete(id); else copy.add(id);
       return copy;
     });
+  };
+
+  const handleRetryUpload = async (id: string) => {
+    const target = previewsRef.current.find((p) => p.id === id && p.error && p.file);
+    if (!target || !target.file) return;
+    setUploadStats({ total: 1, completed: 0, failed: 0 });
+    const updated = previewsRef.current.map((p) =>
+      p.id === id ? { ...p, error: undefined, isUploading: true, progress: 0, uploadMessage: ui.retrying } : p,
+    );
+    previewsRef.current = updated;
+    setPreviews(updated);
+    await runBatchUploads([target], [target.file]);
   };
 
   const handleRetryFailed = async () => {
     if (isRetryingRef.current) return;
     const failedItems = previewsRef.current.filter((p) => p.error && p.file);
     if (failedItems.length === 0) return;
-
     isRetryingRef.current = true;
     try {
       setUploadStats({ total: failedItems.length, completed: 0, failed: 0 });
       const failedIds = new Set(failedItems.map((p) => p.id));
       const updated = previewsRef.current.map((p) =>
-        failedIds.has(p.id)
-          ? { ...p, error: undefined, isUploading: true, progress: 0, uploadMessage: ui.retrying }
-          : p,
+        failedIds.has(p.id) ? { ...p, error: undefined, isUploading: true, progress: 0, uploadMessage: ui.retrying } : p,
       );
       previewsRef.current = updated;
       setPreviews(updated);
-
-      await runParallelUploadPool(failedItems, maxParallelUploads, async (item) => {
-        if (!previewsRef.current.some((p) => p.id === item.id)) return;
-        if (item.file) await uploadImage(item.file, item.altText, undefined, { uploadId: item.id });
-      });
+      await runBatchUploads(failedItems, failedItems.map((p) => p.file!).filter(Boolean));
     } finally {
       isRetryingRef.current = false;
     }
@@ -265,8 +264,16 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
   const completedPreviews = previews.filter((p) => Boolean(p.data) && !p.isUploading);
   const imagesWithoutAlt = completedPreviews.filter((p) => !p.altText || !p.altText.trim());
   const editingTarget = editingAltTextId ? (previews.find((p) => p.id === editingAltTextId) ?? null) : null;
+  const minImagesWarning = !isUploading && minImages && previews.length > 0 && completedPreviews.length < minImages
+    ? formatMinImagesMessage(ui.minImagesError, minImages) : '';
+  const serializedFormValue = serializeMultiFormValue(previews, formValue ?? 'json');
 
   const handleSaveImages = () => {
+    if (required && completedPreviews.length === 0) { setValidationError(ui.requiredFieldError); return; }
+    if (minImages && completedPreviews.length < minImages) {
+      setValidationError(formatMinImagesMessage(ui.minImagesError, minImages));
+      return;
+    }
     if (requireAltText && imagesWithoutAlt.length > 0) {
       setShowMissingAltWarning(true);
       setValidationError(formatNeedsAltMessage(ui, imagesWithoutAlt.length, locale));
@@ -280,15 +287,14 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
   };
 
   return {
-    locale, ui, requireAltText, maxSizeMB,
-    previews, validationError, infoMessage,
+    locale, ui, requireAltText, maxSizeMB, previews,
+    validationError: validationError || minImagesWarning, infoMessage,
     selectedPreviews, setSelectedPreviews, uploadStats,
     editingAltTextId, setEditingAltTextId, showMissingAltWarning,
-    qualityLevel, setQualityLevel,
-    isUploading, hasFailedUploads, uploadingPreviews,
-    completedPreviews, imagesWithoutAlt, editingTarget,
-    handleFileSelect, handleRemove, handleRemoveSelected,
-    toggleSelect, handleRetryFailed, handleAltTextSave,
+    qualityLevel, setQualityLevel, isUploading, hasFailedUploads, uploadingPreviews,
+    completedPreviews, imagesWithoutAlt, editingTarget, serializedFormValue,
+    handleFileSelect, handleRemove, handleCancelUpload, handleRemoveSelected, handleClearAll,
+    toggleSelect, handleRetryUpload, handleRetryFailed, handleAltTextSave,
     handleColorChange, handleSaveImages,
   };
 }

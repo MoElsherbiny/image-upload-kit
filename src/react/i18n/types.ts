@@ -98,5 +98,10 @@ export interface UploadTranslations {
   adjustBlurColorAria: string;
   adjustBlurColorTitle: string;
   removeImageAria: string;
+  pasteHint: string;
+  cancelUpload: string;
+  retryUpload: string;
+  minImagesError: string;
+  requiredFieldError: string;
   blurModal: BlurModalTranslations;
 }

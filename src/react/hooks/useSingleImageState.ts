@@ -11,12 +11,13 @@ import {
   buildSingleImagePayload,
   resolveInitialQualityLevel,
   resolveLiveAnnouncement,
+  serializeSingleFormValue,
   stripUrlCacheQuery,
 } from './singleStateHelpers';
 import { useFilePreview } from './useFilePreview';
 import { useImageUpload } from './useImageUpload';
 
-export { resolveLiveAnnouncement };
+export { resolveLiveAnnouncement, serializeSingleFormValue };
 
 export function useSingleImageState<TPreset extends string = UploadPresetName>(
   props: SingleImageUploadProps<TPreset>,
@@ -25,8 +26,8 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
     value, onChange, preset, folder, bucket, metadata, endpoint, uploader,
     headers, withCredentials, locale: propLocale, translations,
     initialAltText: propInitialAltText, maxSizeMB: propMaxSizeMB,
-    maxDimensions, requireAltText: propRequireAltText, isOpen, onClose,
-    outputFormat, quality: initialQualityProp, customFilename,
+    maxDimensions, requireAltText: propRequireAltText, required, isOpen, onClose,
+    outputFormat, quality: initialQualityProp, customFilename, formValue,
   } = props;
 
   const ctx = useImageUploadContext();
@@ -220,19 +221,24 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
     await uploadImage(file, '', customFilename, { uploadId });
   };
 
-  const handleRemoveTile = () => {
+  const handleCancelUpload = () => {
     activeUploadIdRef.current = null;
+    abortAll();
     revokePreview(previewRef.current);
     setPreview(null);
+    setSelectedFile(null);
+    reset();
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleRemoveTile = () => {
+    handleCancelUpload();
     setAltText('');
     lastAltRef.current = '';
     setBlurDataUrlState('');
     setSizeInfo(null);
     setUploadedData(null);
-    setSelectedFile(null);
     resetColorAndErrorState();
-    reset();
-    if (fileInputRef.current) fileInputRef.current.value = '';
     if (!requiresManualCommit) onChange(null);
   };
 
@@ -246,6 +252,10 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
   };
 
   const handleSaveImage = () => {
+    if (required && !preview) {
+      setValidationError(ui.requiredFieldError);
+      return;
+    }
     if (requireAltText && preview && !altText?.trim()) {
       setShowMissingAltWarning(true);
       setValidationError(ui.addAltBeforeSaving);
@@ -262,12 +272,18 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
     onClose?.();
   };
 
-  const downloadUrl = uploadedData?.url ?? (typeof value === 'string' ? value : objVal?.url) ?? null;
+  const currentImageData = preview ? (uploadedData ?? objVal) : null;
+  const downloadUrl = preview
+    ? (uploadedData?.url ?? (typeof value === 'string' ? value : objVal?.url) ?? null)
+    : null;
   const handleDownload = useCallback(async () => {
     if (downloadUrl) await downloadImageWithFallback(downloadUrl, uploadedData?.format);
   }, [downloadUrl, uploadedData?.format]);
 
   const liveAnnouncement = resolveLiveAnnouncement(isUploading, progress, Boolean(sizeInfo && !isUploading), ui);
+  const serializedFormValue = serializeSingleFormValue({
+    formValue, currentImageData, preview, altText, blurColor, blurDataUrlState, isUploading,
+  });
 
   return {
     locale, ui, requireAltText, maxSizeMB, fileInputRef,
@@ -275,8 +291,8 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
     validationError, showMissingAltWarning, editingAltText, setEditingAltText,
     sizeInfo, uploadedData, isBlurModalOpen, setIsBlurModalOpen,
     selectedFile, qualityLevel, setQualityLevel, isUploading, progress, uploadMessage, liveAnnouncement,
-    currentImageData: uploadedData ?? objVal, canDownload: Boolean(downloadUrl),
-    applyBlurColor, handleResetColor, handleFileSelect, handleRemoveTile,
+    currentImageData, canDownload: Boolean(downloadUrl), serializedFormValue,
+    applyBlurColor, handleResetColor, handleFileSelect, handleCancelUpload, handleRemoveTile,
     handleAltTextSave, handleSaveImage, handleDownload,
   };
 }

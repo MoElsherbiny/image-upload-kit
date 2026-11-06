@@ -3,7 +3,7 @@ import {
   ChevronUpIcon as ChevronUp,
   LoaderIcon as Loader2,
 } from '../icons';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { UploadLocale } from '../../types';
 import { useImageUploadContext } from '../context';
 import {
@@ -12,9 +12,11 @@ import {
   resolveTranslations,
   type UploadTranslations,
 } from '../i18n';
-import type { CustomImageRenderer } from '../types';
+import type { CustomImageRenderer, ImagePreview } from '../types';
 import { cx, resolveSlotClass } from '../utils/slotStyles';
 import { BlurImage } from './BlurImage';
+
+const PROGRESS_PANEL_DISMISS_DELAY_MS = 2500;
 
 export interface UploadItem {
   id: string;
@@ -22,6 +24,67 @@ export interface UploadItem {
   fileName?: string;
   message?: string;
   progress?: number;
+}
+
+export function useRetainedProgressItems(
+  uploadingPreviews: ImagePreview[],
+  previews: ImagePreview[],
+): UploadItem[] {
+  const [retainedItems, setRetainedItems] = useState<UploadItem[] | null>(null);
+  const activeBatchRef = useRef<Map<string, UploadItem>>(new Map());
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevUploadingCountRef = useRef(0);
+  const isUploading = uploadingPreviews.length > 0;
+
+  useEffect(() => {
+    if (isUploading) {
+      if (dismissTimerRef.current) {
+        clearTimeout(dismissTimerRef.current);
+        dismissTimerRef.current = null;
+        activeBatchRef.current.clear();
+      }
+      setRetainedItems(null);
+      for (const p of uploadingPreviews) {
+        activeBatchRef.current.set(p.id, {
+          id: p.id,
+          url: p.url,
+          fileName: p.fileName || p.file?.name,
+          message: p.uploadMessage || undefined,
+          progress: p.progress,
+        });
+      }
+    } else if (prevUploadingCountRef.current > 0 && activeBatchRef.current.size > 0) {
+      const completed: UploadItem[] = Array.from(activeBatchRef.current.values()).map((it) => {
+        const found = previews.find((p) => p.id === it.id);
+        return {
+          ...it,
+          progress: found?.progress ?? 100,
+          message: found?.error ? found.error : (found?.uploadMessage || undefined),
+        };
+      });
+      setRetainedItems(completed);
+      dismissTimerRef.current = setTimeout(() => {
+        setRetainedItems(null);
+        activeBatchRef.current.clear();
+        dismissTimerRef.current = null;
+      }, PROGRESS_PANEL_DISMISS_DELAY_MS);
+    }
+    prevUploadingCountRef.current = uploadingPreviews.length;
+  }, [isUploading, uploadingPreviews, previews]);
+
+  useEffect(() => () => {
+    if (dismissTimerRef.current) clearTimeout(dismissTimerRef.current);
+  }, []);
+
+  return isUploading
+    ? uploadingPreviews.map((p) => ({
+        id: p.id,
+        url: p.url,
+        fileName: p.fileName || p.file?.name,
+        message: p.uploadMessage || undefined,
+        progress: p.progress,
+      }))
+    : (retainedItems ?? []);
 }
 
 export interface UploadProgressPanelProps {

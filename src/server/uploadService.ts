@@ -24,6 +24,12 @@ export {
   type UploadWithCollisionRetryResult,
 } from './uploader/uploadRetry';
 export {
+  buildVariantStoragePath,
+  generateImageVariants,
+  type GeneratedVariantsResult,
+  type GenerateImageVariantsParams,
+} from './uploader/variantGenerator';
+export {
   isClientValidationError,
   UploadValidationError,
 } from './handler';

@@ -1,5 +1,6 @@
 import { type HTMLAttributes, type InputHTMLAttributes, type RefObject, useRef } from 'react';
 import type { UploadPresetName } from '../../types';
+import { useClipboardPaste } from '../hooks/useClipboardPaste';
 import { useDragAndDrop } from '../hooks/useDragAndDrop';
 import { useMultiImageState } from '../hooks/useMultiImageState';
 import { HIDDEN_INPUT_STYLE, resolveUploadDataState } from '../utils/slotStyles';
@@ -20,6 +21,11 @@ export function useMultiUpload<TPreset extends string = UploadPresetName>(
     disabled = false,
     error: externalError,
     maxImages = 999,
+    capture,
+    enablePaste = true,
+    pasteTarget = 'dropzone',
+    required = false,
+    onBlur,
   } = options;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -29,14 +35,22 @@ export function useMultiUpload<TPreset extends string = UploadPresetName>(
     locale, ui, maxSizeMB, previews, validationError, infoMessage,
     selectedPreviews, setSelectedPreviews, uploadStats, qualityLevel,
     setQualityLevel, isUploading, hasFailedUploads, uploadingPreviews,
-    completedPreviews, handleFileSelect, handleRemove, handleRemoveSelected,
-    toggleSelect, handleRetryFailed, handleAltTextSave, handleColorChange,
-    handleSaveImages,
+    completedPreviews, handleFileSelect, handleRemove, handleCancelUpload,
+    handleRemoveSelected, handleClearAll, toggleSelect, handleRetryUpload,
+    handleRetryFailed, handleAltTextSave, handleColorChange, handleSaveImages,
   } = useMultiImageState(options);
 
   const { isDragging, dragHandlers } = useDragAndDrop({
     disabled,
     onDrop: (files) => { void handleFileSelect(files); },
+  });
+
+  const { onPaste } = useClipboardPaste({
+    enabled: enablePaste,
+    pasteTarget,
+    disabled,
+    multiple: true,
+    onPasteFiles: (files) => { void handleFileSelect(files); },
   });
 
   const displayError = externalError || validationError || '';
@@ -61,6 +75,8 @@ export function useMultiUpload<TPreset extends string = UploadPresetName>(
     tabIndex: overrides?.tabIndex ?? (disabled ? -1 : 0),
     'aria-label': overrides?.['aria-label'] ?? ui.selectFilesAria,
     'aria-disabled': disabled || undefined,
+    'aria-required': required || undefined,
+    'aria-invalid': Boolean(displayError) || undefined,
     'data-state': state,
     'data-dragging': isDragging || undefined,
     'data-uploading': isUploading || undefined,
@@ -83,6 +99,16 @@ export function useMultiUpload<TPreset extends string = UploadPresetName>(
         openFileDialog();
       }
     },
+    onBlur: (event) => {
+      overrides?.onBlur?.(event);
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+        onBlur?.();
+      }
+    },
+    onPaste: (event) => {
+      overrides?.onPaste?.(event);
+      if (!event.defaultPrevented) onPaste(event);
+    },
     onDragEnter: (event) => { overrides?.onDragEnter?.(event); dragHandlers.onDragEnter(event); },
     onDragLeave: (event) => { overrides?.onDragLeave?.(event); dragHandlers.onDragLeave(event); },
     onDragOver: (event) => { overrides?.onDragOver?.(event); dragHandlers.onDragOver(event); },
@@ -96,7 +122,11 @@ export function useMultiUpload<TPreset extends string = UploadPresetName>(
     overrides?: InputHTMLAttributes<HTMLInputElement>,
   ): HeadlessFileInputProps => ({
     ...overrides,
-    ...(isFolder ? { webkitdirectory: '', directory: '' } : {}),
+    ...(isFolder
+      ? { webkitdirectory: '', directory: '' }
+      : capture !== undefined && overrides?.capture === undefined
+        ? { capture }
+        : {}),
     ref,
     type: 'file',
     multiple: overrides?.multiple ?? true,
@@ -132,6 +162,12 @@ export function useMultiUpload<TPreset extends string = UploadPresetName>(
     selectFiles: handleFileSelect,
     remove: handleRemove,
     removeSelected: handleRemoveSelected,
+    clear: handleClearAll,
+    cancel: handleCancelUpload,
+    cancelUpload: handleCancelUpload,
+    retry: handleRetryUpload,
+    retryUpload: handleRetryUpload,
+    retryAll: handleRetryFailed,
     toggleSelect,
     selectAll: () => setSelectedPreviews(new Set(previews.map((p) => p.id))),
     clearSelection: () => setSelectedPreviews(new Set()),

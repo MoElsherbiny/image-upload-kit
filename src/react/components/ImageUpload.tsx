@@ -4,13 +4,21 @@ import {
   MinusIcon as Minus,
   XIcon as X,
 } from '../icons';
-import { useEffect, useState } from 'react';
+import {
+  type ForwardedRef,
+  forwardRef,
+  type ReactElement,
+  type Ref,
+  useEffect,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import type { UploadPresetName } from '../../types';
 import { useImageUploadContext } from '../context';
 import { useDialog } from '../hooks/useDialog';
 import { normalizeUploadLocale, resolveTranslations } from '../i18n';
 import type {
+  ImageUploadHandle,
   ImageUploadProps,
   MultiImageUploadProps,
   SingleImageUploadProps,
@@ -19,8 +27,9 @@ import { resolveSlotClass } from '../utils/slotStyles';
 import { MultiImageUpload } from './MultiImageUpload';
 import { SingleImageUpload } from './SingleImageUpload';
 
-export function ImageUpload<TPreset extends string = UploadPresetName>(
+function ImageUploadInner<TPreset extends string = UploadPresetName>(
   props: ImageUploadProps<TPreset>,
+  ref: ForwardedRef<ImageUploadHandle>,
 ) {
   const ctx = useImageUploadContext();
   const isUnstyled = props.unstyled ?? ctx.unstyled;
@@ -72,9 +81,9 @@ export function ImageUpload<TPreset extends string = UploadPresetName>(
 
   const content =
     props.mode === 'multiple' ? (
-      <MultiImageUpload {...(props as MultiImageUploadProps<TPreset>)} />
+      <MultiImageUpload ref={ref} {...(props as MultiImageUploadProps<TPreset>)} />
     ) : (
-      <SingleImageUpload {...(props as SingleImageUploadProps<TPreset>)} />
+      <SingleImageUpload ref={ref} {...(props as SingleImageUploadProps<TPreset>)} />
     );
 
   if (isOpen === undefined) {
@@ -185,6 +194,12 @@ export function ImageUpload<TPreset extends string = UploadPresetName>(
     </>
   );
 }
+
+export const ImageUpload = forwardRef(ImageUploadInner) as <
+  TPreset extends string = UploadPresetName,
+>(
+  props: ImageUploadProps<TPreset> & { ref?: Ref<ImageUploadHandle> },
+) => ReactElement | null;
 
 export const UnifiedImageUpload = ImageUpload;
 export default ImageUpload;

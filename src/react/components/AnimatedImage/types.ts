@@ -6,6 +6,7 @@ import type {
   ReactNode,
   SyntheticEvent,
 } from 'react';
+import type { ImageVariant } from '../../../types';
 
 export type AnimatedImageObjectFit = 'cover' | 'contain' | 'fill' | 'none' | 'scale-down';
 
@@ -19,6 +20,8 @@ export interface AnimatedImageSource {
   blurColor?: string | null;
   width?: number;
   height?: number;
+  variants?: ImageVariant[];
+  srcSet?: string;
 }
 
 export interface AnimatedImageErrorContext {

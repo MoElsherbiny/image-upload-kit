@@ -114,3 +114,24 @@ export async function runParallelUploadPool<T>(
     }),
   );
 }
+
+export function serializeMultiFormValue(
+  previews: ImagePreview[],
+  formValue: 'url' | 'json' = 'json',
+): string {
+  const uploaded = collectUploadedData(previews, true);
+  if (uploaded.length === 0) return '';
+  if (formValue === 'url') {
+    return uploaded.map((img) => img.url).join(',');
+  }
+  return JSON.stringify(uploaded);
+}
+
+export function formatMinImagesMessage(
+  template: string,
+  minImages: number,
+): string {
+  return template
+    .replace('{min}', String(minImages))
+    .replace('{suffix}', minImages === 1 ? '' : 's');
+}

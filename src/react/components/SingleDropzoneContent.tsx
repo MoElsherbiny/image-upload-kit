@@ -72,11 +72,12 @@ export interface SingleDropzoneEmptyPromptProps extends SingleSlotStylingProps {
   showProgress: boolean;
   progress: number;
   maxSizeMB: number;
+  enablePaste?: boolean;
   ui: UploadTranslations;
 }
 
 export function SingleDropzoneEmptyPrompt({
-  isUploading, uploadMessage, showProgress, progress, maxSizeMB, ui,
+  isUploading, uploadMessage, showProgress, progress, maxSizeMB, enablePaste = true, ui,
   unstyled, providerClassNames, classNames, providerStyles, styles,
 }: SingleDropzoneEmptyPromptProps) {
   const slotClass = (slot: SingleUploadSlot, defaultClass?: string) =>
@@ -130,6 +131,7 @@ export function SingleDropzoneEmptyPrompt({
             style={slotStyle('dropzoneHint')}
           >
             {ui.upToSizeMB.replace('{size}', String(maxSizeMB))}
+            {enablePaste ? ` • ${ui.pasteHint}` : ''}
           </p>
           <span
             data-slot="browse-button"

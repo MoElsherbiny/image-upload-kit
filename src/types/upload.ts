@@ -38,8 +38,18 @@ export interface ImageUploadOptions<
   limitInputPixels?: number;
   /** Marks `customFilename` as client-supplied (disables upsert and retries with a suffix on collision) */
   isClientFilename?: boolean;
+  /** Target widths (px) for responsive image variants (widths >= main output width are skipped) */
+  variantWidths?: number[];
   /** Optional AbortSignal to cancel queued or in-flight processing */
   signal?: AbortSignal;
+}
+
+export interface ImageVariant {
+  width: number;
+  height: number;
+  url: string;
+  size: number;
+  storagePath?: string;
 }
 
 export interface UploadedImageData {
@@ -59,6 +69,8 @@ export interface UploadedImageData {
   preset?: string;
   folder?: string;
   metadata?: Record<string, string>;
+  variants?: ImageVariant[];
+  srcSet?: string;
   uploadedAt: string;
 }
 

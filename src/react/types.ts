@@ -49,6 +49,15 @@ export type CustomUploaderFn = (
   params: ClientUploadRequestParams,
 ) => Promise<UploadedImageData>;
 
+export interface ImageUploadHandle {
+  /** Move keyboard focus to the upload dropzone or primary trigger */
+  focus: () => void;
+  /** Programmatically open the native file picker dialog */
+  open: () => void;
+  /** Clear the currently selected / uploaded image(s) */
+  clear: () => void;
+}
+
 export interface BaseImageUploadProps<
   TPreset extends string = UploadPresetName,
 > {
@@ -125,6 +134,18 @@ export interface BaseImageUploadProps<
   quality?: number;
   /** Custom filename target in storage */
   customFilename?: string;
+  /** Camera capture attribute forwarded to `<input type="file" capture={...} />` on mobile devices */
+  capture?: 'user' | 'environment';
+  /** Enable pasting images from the clipboard (defaults to `true`) */
+  enablePaste?: boolean;
+  /** Scope for clipboard paste events: focused `'dropzone'` (default) or global `'document'` */
+  pasteTarget?: 'dropzone' | 'document';
+  /** Form field name; when set, renders a synchronized `<input type="hidden" name={name} />` */
+  name?: string;
+  /** Serialization format for the hidden form input (`'url'` default for single, `'json'` default for multi) */
+  formValue?: 'url' | 'json';
+  /** Blur callback invoked when focus leaves the uploader (e.g. for react-hook-form `field.onBlur`) */
+  onBlur?: () => void;
 }
 
 export interface SingleImageUploadProps<
@@ -149,8 +170,16 @@ export interface MultiImageUploadProps<
   value?: UploadedImageData[];
   onChange: (images: UploadedImageData[]) => void;
   maxImages?: number;
+  /** Minimum required uploaded images before form submission / modal save */
+  minImages?: number;
   allowFolder?: boolean;
   maxParallelUploads?: number;
+  /** Invoked when a batch or retry upload begins */
+  onUploadStart?: (files: File[]) => void;
+  /** Invoked when a batch or retry upload finishes with the newly uploaded items */
+  onUploadComplete?: (results: UploadedImageData[]) => void;
+  /** Invoked when an in-flight tile upload is cancelled */
+  onUploadCancel?: (id: string) => void;
   /** Per-slot custom CSS classes (Tailwind, CSS Modules, BEM) for MultiImageUpload */
   classNames?: MultiUploadClassNames;
   /** Per-slot inline CSS styles for MultiImageUpload */

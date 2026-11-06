@@ -1,10 +1,14 @@
-import { type ChangeEvent, type HTMLAttributes, useId } from 'react';
+import {
+  type ChangeEvent, type ForwardedRef, forwardRef, type HTMLAttributes,
+  type ReactElement, type Ref, useId, useImperativeHandle, useRef,
+} from 'react';
 import type { UploadPresetName } from '../../types';
 import { useImageUploadContext } from '../context';
+import { useClipboardPaste } from '../hooks/useClipboardPaste';
 import { useDragAndDrop } from '../hooks/useDragAndDrop';
 import { useSingleImageState } from '../hooks/useSingleImageState';
 import type { SingleUploadSlot } from '../styling';
-import type { SingleImageUploadProps } from '../types';
+import type { ImageUploadHandle, SingleImageUploadProps } from '../types';
 import {
   HIDDEN_INPUT_STYLE, resolveSlotClass, resolveSlotStyle, resolveUploadDataState,
 } from '../utils/slotStyles';
@@ -16,8 +20,9 @@ import {
   resolveSingleDropzoneSlot, SingleDropzoneEmptyPrompt, SingleStatusFooter,
 } from './SingleDropzoneContent';
 
-export function SingleImageUpload<TPreset extends string = UploadPresetName>(
+function SingleImageUploadInner<TPreset extends string = UploadPresetName>(
   props: SingleImageUploadProps<TPreset>,
+  ref: ForwardedRef<ImageUploadHandle>,
 ) {
   const {
     preset, translations, renderImage, label, error, helperText, className, style,
@@ -25,6 +30,7 @@ export function SingleImageUpload<TPreset extends string = UploadPresetName>(
     disabled = false, required = false, blurType = 'card',
     showProgress = false, showQualitySelector = true,
     recommendedQuality, qualityNote, isOpen,
+    capture, enablePaste = true, pasteTarget = 'dropzone', name, onBlur,
     classNames: cCls, styles: cSty, renderDropzone, renderPreview,
   } = props;
 
@@ -40,9 +46,23 @@ export function SingleImageUpload<TPreset extends string = UploadPresetName>(
 
   const state = useSingleImageState(props);
   const { isDragging, dragHandlers } = useDragAndDrop({ disabled, onDrop: state.handleFileSelect });
+  const { onPaste } = useClipboardPaste({
+    enabled: enablePaste, pasteTarget, disabled, multiple: false,
+    onPasteFiles: (files) => { void state.handleFileSelect(files); },
+  });
+
+  const dropzoneRef = useRef<HTMLDivElement>(null);
   const labelId = useId();
   const inputId = useId();
   const statusTextId = useId();
+
+  const openFileDialog = () => { if (!disabled) state.fileInputRef.current?.click(); };
+
+  useImperativeHandle(ref, () => ({
+    focus: () => { dropzoneRef.current?.focus(); },
+    open: openFileDialog,
+    clear: () => state.handleRemoveTile(),
+  }));
 
   const handleInputChange = (event: ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -50,7 +70,6 @@ export function SingleImageUpload<TPreset extends string = UploadPresetName>(
     event.target.value = '';
   };
 
-  const openFileDialog = () => { if (!disabled) state.fileInputRef.current?.click(); };
   const displayError = error || state.validationError;
   const hasPreview = Boolean(state.preview);
   const hasError = Boolean(displayError);
@@ -61,12 +80,9 @@ export function SingleImageUpload<TPreset extends string = UploadPresetName>(
   });
 
   const dropzoneProps: HTMLAttributes<HTMLElement> = hasPreview
-    ? {
-        ...dragHandlers,
-        'aria-disabled': disabled || undefined,
-      }
+    ? { ...dragHandlers, onPaste, 'aria-disabled': disabled || undefined }
     : {
-        ...dragHandlers,
+        ...dragHandlers, onPaste,
         onClick: () => { if (!disabled) openFileDialog(); },
         onKeyDown: (event) => {
           if (!disabled && (event.key === 'Enter' || event.key === ' ')) {
@@ -74,10 +90,10 @@ export function SingleImageUpload<TPreset extends string = UploadPresetName>(
             openFileDialog();
           }
         },
-        role: 'button',
-        tabIndex: disabled ? -1 : 0,
+        role: 'button', tabIndex: disabled ? -1 : 0,
         'aria-label': state.ui.uploadImageAria,
         'aria-labelledby': hasLabel ? labelId : undefined,
+        'aria-required': required || undefined,
         'aria-invalid': hasError || undefined,
         'aria-describedby': hasStatusText ? statusTextId : undefined,
         'aria-disabled': disabled || undefined,
@@ -92,25 +108,22 @@ export function SingleImageUpload<TPreset extends string = UploadPresetName>(
 
   return (
     <div
-      data-slot="single-root"
-      data-state={visualState}
-      data-unstyled={isUnstyled || undefined}
+      data-slot="single-root" data-state={visualState} data-unstyled={isUnstyled || undefined}
       className={resolveSlotClass('iuk-single', isUnstyled, pCls?.root, cCls?.root, className)}
       style={resolveSlotStyle(pSty?.root, cSty?.root, style)}
       dir={state.locale === 'ar' ? 'rtl' : 'ltr'}
+      onBlur={onBlur ? (e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) onBlur(); } : undefined}
     >
       <div role="status" aria-live="polite" aria-atomic="true" style={HIDDEN_INPUT_STYLE}>
         {state.liveAnnouncement}
       </div>
 
+      {name && (
+        <input type="hidden" name={name} value={state.serializedFormValue} required={required} data-slot="form-input" />
+      )}
+
       {hasLabel && (
-        <label
-          id={labelId}
-          htmlFor={inputId}
-          data-slot="label"
-          className={slotClass('label', 'iuk-label')}
-          style={slotStyle('label')}
-        >
+        <label id={labelId} htmlFor={inputId} data-slot="label" className={slotClass('label', 'iuk-label')} style={slotStyle('label')}>
           <span>{label || state.ui.uploadImage}</span>
           {required && <span className={resolveSlotClass('iuk-required', isUnstyled)}>*</span>}
         </label>
@@ -128,8 +141,8 @@ export function SingleImageUpload<TPreset extends string = UploadPresetName>(
       )}
 
       <input
-        id={inputId}
-        ref={state.fileInputRef} type="file" accept={accept} onChange={handleInputChange}
+        id={inputId} ref={state.fileInputRef} type="file" accept={accept} capture={capture}
+        onChange={handleInputChange}
         className={resolveSlotClass('iuk-hidden-input', isUnstyled)}
         style={isUnstyled ? HIDDEN_INPUT_STYLE : undefined}
         disabled={disabled} aria-label={state.ui.fileInputAria}
@@ -147,42 +160,28 @@ export function SingleImageUpload<TPreset extends string = UploadPresetName>(
         })
       ) : (
         <div
-          data-slot="dropzone"
-          data-state={visualState}
-          data-dragging={isDragging || undefined}
-          data-uploading={state.isUploading || undefined}
-          data-disabled={disabled || undefined}
-          data-error={hasError || undefined}
-          className={dropzoneSlot.className}
-          style={dropzoneSlot.style}
-          {...dropzoneProps}
+          ref={dropzoneRef} data-slot="dropzone" data-state={visualState}
+          data-dragging={isDragging || undefined} data-uploading={state.isUploading || undefined}
+          data-disabled={disabled || undefined} data-error={hasError || undefined}
+          className={dropzoneSlot.className} style={dropzoneSlot.style} {...dropzoneProps}
         >
           {state.preview ? (
             <div
-              data-slot="preview-wrap"
-              className={slotClass('previewWrap', 'iuk-single__preview-wrap')}
-              style={slotStyle('previewWrap')}
-              onClick={(event) => event.stopPropagation()}
+              data-slot="preview-wrap" className={slotClass('previewWrap', 'iuk-single__preview-wrap')}
+              style={slotStyle('previewWrap')} onClick={(event) => event.stopPropagation()}
             >
               {renderPreview ? (
                 renderPreview({
-                  previewUrl: state.preview,
-                  uploadedData: state.uploadedData,
-                  altText: state.altText,
+                  previewUrl: state.preview, uploadedData: state.uploadedData, altText: state.altText,
                   blurColor: state.uploadedData?.blurColor ?? state.blurColor,
                   blurDataUrl: state.blurDataUrlState || state.currentImageData?.blurDataUrl || '',
-                  isUploading: state.isUploading,
-                  progress: state.progress,
-                  uploadMessage: state.uploadMessage,
-                  sizeInfo: state.sizeInfo,
-                  disabled,
-                  openFileDialog,
-                  remove: () => state.handleRemoveTile(),
+                  isUploading: state.isUploading, progress: state.progress,
+                  uploadMessage: state.uploadMessage, sizeInfo: state.sizeInfo, disabled,
+                  openFileDialog, remove: () => state.handleRemoveTile(),
+                  cancel: () => state.handleCancelUpload(),
                   openAltTextModal: () => state.setEditingAltText(true),
                   openBlurInspector: () => state.setIsBlurModalOpen(true),
-                  download: state.handleDownload,
-                  locale: state.locale,
-                  ui: state.ui,
+                  download: state.handleDownload, locale: state.locale, ui: state.ui,
                 })
               ) : (
                 <PreviewTile
@@ -195,7 +194,7 @@ export function SingleImageUpload<TPreset extends string = UploadPresetName>(
                     data: state.uploadedData ?? undefined,
                     blurColor: state.uploadedData?.blurColor ?? state.blurColor,
                   }}
-                  onRemove={() => state.handleRemoveTile()}
+                  onRemove={() => state.handleRemoveTile()} onCancel={() => state.handleCancelUpload()}
                   disabled={disabled} blurType={blurType} showCheckbox={false}
                   onEditAltText={() => state.setEditingAltText(true)}
                   onAdjustColor={() => state.setIsBlurModalOpen(true)}
@@ -208,7 +207,7 @@ export function SingleImageUpload<TPreset extends string = UploadPresetName>(
             <SingleDropzoneEmptyPrompt
               isUploading={state.isUploading} uploadMessage={state.uploadMessage}
               showProgress={showProgress} progress={state.progress}
-              maxSizeMB={state.maxSizeMB} ui={state.ui} {...slotStylingProps}
+              maxSizeMB={state.maxSizeMB} enablePaste={enablePaste} ui={state.ui} {...slotStylingProps}
             />
           )}
         </div>
@@ -229,16 +228,14 @@ export function SingleImageUpload<TPreset extends string = UploadPresetName>(
       {state.editingAltText && state.preview && (
         <AltTextModal
           imageUrl={state.preview} initialAltText={state.altText}
-          onSave={state.handleAltTextSave}
-          onClose={() => state.setEditingAltText(false)}
+          onSave={state.handleAltTextSave} onClose={() => state.setEditingAltText(false)}
           locale={state.locale} translations={translations} renderImage={renderImage}
         />
       )}
 
       {state.preview && (
         <BlurVisualizationModal
-          isOpen={state.isBlurModalOpen}
-          onClose={() => state.setIsBlurModalOpen(false)}
+          isOpen={state.isBlurModalOpen} onClose={() => state.setIsBlurModalOpen(false)}
           imageUrl={state.preview}
           blurDataUrl={state.blurDataUrlState || state.currentImageData?.blurDataUrl}
           blurColor={state.blurColor} altText={state.altText}
@@ -254,5 +251,11 @@ export function SingleImageUpload<TPreset extends string = UploadPresetName>(
     </div>
   );
 }
+
+export const SingleImageUpload = forwardRef(SingleImageUploadInner) as <
+  TPreset extends string = UploadPresetName,
+>(
+  props: SingleImageUploadProps<TPreset> & { ref?: Ref<ImageUploadHandle> },
+) => ReactElement | null;
 
 export default SingleImageUpload;

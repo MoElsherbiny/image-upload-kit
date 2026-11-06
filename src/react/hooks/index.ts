@@ -6,6 +6,13 @@ import {
 } from './useBlurService';
 
 export * from './useBlurService';
+export {
+  extractClipboardImageFiles,
+  type PasteTargetMode,
+  toFileListLike,
+  useClipboardPaste,
+  type UseClipboardPasteOptions,
+} from './useClipboardPaste';
 export { useDialog, type UseDialogOptions } from './useDialog';
 export {
   useDragAndDrop,

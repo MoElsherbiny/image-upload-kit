@@ -62,6 +62,8 @@ export interface UploadPresetConfig {
   allowSvg?: boolean;
   /** Maximum input pixel count allowed by Sharp (defaults to 50 MP = 50,000,000) */
   limitInputPixels?: number;
+  /** Responsive variant widths in pixels (e.g. [640, 1024, 1920]); widths >= main image width are skipped */
+  variantWidths?: number[];
   /** Optional local directory to mirror uploaded files into */
   mirrorDir?: string;
   /** Optional public URL prefix when `mirrorDir` is used */

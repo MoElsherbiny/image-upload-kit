@@ -15,11 +15,12 @@ import type { UploadTranslations } from '../i18n';
 import type { UploadVisualState } from '../styling';
 import type {
   ImagePreview,
+  ImageUploadHandle,
   MultiImageUploadProps,
   SingleImageUploadProps,
 } from '../types';
 
-export type { MultiUploadStats };
+export type { ImageUploadHandle, MultiUploadStats };
 
 export interface HeadlessDropzoneProps extends HTMLAttributes<HTMLElement> {
   [key: `data-${string}`]: unknown;
@@ -59,6 +60,8 @@ export interface SingleUploadController {
   openFileDialog: () => void;
   selectFiles: (files: FileList) => Promise<void>;
   remove: () => void;
+  cancel: () => void;
+  cancelUpload: () => void;
   save: () => void;
   download: () => Promise<void>;
   setQualityLevel: (level: QualityLevel) => void;
@@ -100,6 +103,12 @@ export interface MultiUploadController {
   selectFiles: (files: FileList) => Promise<void>;
   remove: (id: string) => void;
   removeSelected: () => void;
+  clear: () => void;
+  cancel: (id: string) => void;
+  cancelUpload: (id: string) => void;
+  retry: (id: string) => Promise<void>;
+  retryUpload: (id: string) => Promise<void>;
+  retryAll: () => Promise<void>;
   toggleSelect: (id: string) => void;
   selectAll: () => void;
   clearSelection: () => void;

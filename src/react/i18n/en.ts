@@ -82,6 +82,11 @@ export const enTranslations: UploadTranslations = {
   adjustBlurColorAria: 'Adjust blur and color',
   adjustBlurColorTitle: 'Visualize blur data and adjust colors',
   removeImageAria: 'Remove image',
+  pasteHint: 'or paste from clipboard',
+  cancelUpload: 'Cancel upload',
+  retryUpload: 'Retry upload',
+  minImagesError: 'Please upload at least {min} image{suffix}.',
+  requiredFieldError: 'This field is required.',
   blurModal: {
     title: 'Blur & Dominant Color Inspector',
     closeModal: 'Close inspector',

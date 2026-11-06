@@ -37,11 +37,14 @@ export interface MultiEmptyDropzoneProps extends MultiDropzoneSlotProps {
   isDragging: boolean;
   disabled?: boolean;
   hasError?: boolean;
+  required?: boolean;
+  enablePaste?: boolean;
   visualState?: UploadVisualState;
   allowFolder?: boolean;
   maxSizeMB: number;
   ui: UploadTranslations;
   dragHandlers: DropzoneDragHandlers;
+  onPaste?: (e: React.ClipboardEvent<HTMLElement>) => void;
   onSelectFiles: () => void;
   onSelectFolder: () => void;
 }
@@ -50,11 +53,14 @@ export function MultiEmptyDropzone({
   isDragging,
   disabled = false,
   hasError = false,
+  required = false,
+  enablePaste = true,
   visualState: propVisualState,
   allowFolder = true,
   maxSizeMB,
   ui,
   dragHandlers,
+  onPaste,
   onSelectFiles,
   onSelectFolder,
   unstyled,
@@ -102,8 +108,12 @@ export function MultiEmptyDropzone({
       data-dragging={isDragging || undefined}
       data-disabled={disabled || undefined}
       data-error={hasError || undefined}
+      tabIndex={disabled ? -1 : 0}
+      aria-required={required || undefined}
+      aria-invalid={hasError || undefined}
       className={rootClassName}
       style={rootStyle}
+      onPaste={onPaste}
       {...dragHandlers}
     >
       <div className={resolveSlotClass('iuk-dropzone__prompt', unstyled)}>
@@ -122,7 +132,9 @@ export function MultiEmptyDropzone({
           className={slotClass('emptyHint', 'iuk-dropzone__hint')}
           style={slotStyle('emptyHint')}
         >
-          {isDragging ? ui.releaseToUpload : ui.dragDropOrChoose}
+          {isDragging
+            ? ui.releaseToUpload
+            : `${ui.dragDropOrChoose}${enablePaste ? ` (${ui.pasteHint})` : ''}`}
         </p>
 
         {!isDragging && (

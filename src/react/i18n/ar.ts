@@ -82,6 +82,11 @@ export const arTranslations: UploadTranslations = {
   adjustBlurColorAria: 'ضبط التمويه واللون',
   adjustBlurColorTitle: 'معاينة بيانات التمويه وضبط الألوان',
   removeImageAria: 'حذف الصورة',
+  pasteHint: 'أو الصق من الحافظة',
+  cancelUpload: 'إلغاء الرفع',
+  retryUpload: 'إعادة رفع الصورة',
+  minImagesError: 'يرجى رفع {min} صورة على الأقل.',
+  requiredFieldError: 'هذا الحقل مطلوب.',
   blurModal: {
     title: 'معاينة التمويه واللون السائد',
     closeModal: 'إغلاق المعاينة',

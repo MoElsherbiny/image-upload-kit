@@ -25,6 +25,8 @@ import { BlurVisualizationModal } from './BlurVisualizationModal';
 export interface PreviewTileProps {
   preview: ImagePreview;
   onRemove: (id: string) => void;
+  onCancel?: (id: string) => void;
+  onRetry?: (id: string) => void;
   disabled?: boolean;
   blurType?: BlurPlaceholderType;
   isSelected?: boolean;
@@ -44,7 +46,7 @@ export interface PreviewTileProps {
 }
 
 export function PreviewTile({
-  preview, onRemove, disabled = false, blurType = 'card', isSelected = false,
+  preview, onRemove, onCancel, onRetry, disabled = false, blurType = 'card', isSelected = false,
   onToggleSelect, onEditAltText, showCheckbox = true, onAdjustColor,
   onChangeColor, onChangeAltText, appendCacheBuster: appendBuster = false,
   locale: propLocale, translations, renderImage,
@@ -211,6 +213,21 @@ export function PreviewTile({
                 />
               </div>
             )}
+            {!disabled && (
+              <button
+                type="button"
+                data-slot="tile-cancel"
+                className={cls('iuk-btn iuk-btn--secondary iuk-btn--sm iuk-tile__cancel-btn')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  (onCancel ?? onRemove)(preview.id);
+                }}
+                aria-label={ui.cancelUpload}
+              >
+                <X size={13} />
+                <span>{ui.cancelUpload}</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -236,6 +253,20 @@ export function PreviewTile({
           >
             <XCircle size={22} />
             <p>{preview.error}</p>
+            {!disabled && onRetry && (
+              <button
+                type="button"
+                data-slot="tile-retry"
+                className={cls('iuk-btn iuk-btn--secondary iuk-btn--sm iuk-tile__retry-btn')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRetry(preview.id);
+                }}
+                aria-label={ui.retryUpload}
+              >
+                <span>{ui.retryUpload}</span>
+              </button>
+            )}
           </div>
         )}
       </div>

@@ -140,9 +140,29 @@ export function AnimatedImage({
       ? { fetchPriority: 'high' as const }
       : {};
 
+  const derivedImageSrcSet =
+    !isCustom && activeSrc === src
+      ? (image?.srcSet ??
+        (image?.variants?.length
+          ? [
+              ...[...image.variants]
+                .sort((a, b) => a.width - b.width)
+                .map((v) => `${v.url} ${v.width}w`),
+              ...(image.width ? [`${src} ${image.width}w`] : []),
+            ].join(', ')
+          : undefined))
+      : undefined;
+  const resolvedSrcSet = imgProps.srcSet ?? derivedImageSrcSet;
+  const resolvedSizes =
+    !isCustom && resolvedSrcSet && fill && imgProps.sizes === undefined
+      ? '100vw'
+      : imgProps.sizes;
+
   const sharedImgProps = {
     ...priorityProps,
     ...imgProps,
+    ...(resolvedSrcSet !== undefined ? { srcSet: resolvedSrcSet } : {}),
+    ...(resolvedSizes !== undefined ? { sizes: resolvedSizes } : {}),
     ...(width !== undefined ? { width } : {}),
     ...(height !== undefined ? { height } : {}),
     ...(loadingAttr !== undefined ? { loading: loadingAttr } : {}),

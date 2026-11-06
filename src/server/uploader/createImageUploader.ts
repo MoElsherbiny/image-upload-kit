@@ -28,18 +28,13 @@ import {
   mirrorBufferLocally,
   uploadWithCollisionRetry,
 } from './uploadRetry';
-
-function resolveEffectiveAllowedFormats(
-  baseFormats: string[],
-  allowSvg: boolean,
-  explicitAllowSvg: boolean,
-): string[] {
-  if (!allowSvg) return baseFormats.filter((fmt) => fmt !== SVG_MIME_TYPE);
-  if (explicitAllowSvg && !baseFormats.includes(SVG_MIME_TYPE)) {
-    return [...baseFormats, SVG_MIME_TYPE];
-  }
-  return baseFormats;
-}
+import {
+  collectCandidateVariantWidths,
+  deleteStoredVariants,
+  generateImageVariants,
+  invokeRecordHookWithRollback,
+  resolveEffectiveAllowedFormats,
+} from './variantGenerator';
 
 export function createImageUploader<
   TPresets extends Record<string, UploadPresetConfig> = Record<string, UploadPresetConfig>,
@@ -76,6 +71,9 @@ export function createImageUploader<
 
   const semaphore = new AsyncSemaphore(concurrency, { maxQueue });
   const buildPath = pathGenerator || createDefaultPathGenerator();
+  const trackedVariants = new Map<string, string[]>();
+  const observedWidths = new Set<number>();
+
   const resolvePreset = (name?: string): UploadPresetConfig | undefined =>
     name ? mergedPresets[name] : undefined;
 
@@ -100,6 +98,16 @@ export function createImageUploader<
     return maxMB;
   };
 
+  const cleanupVariantsFor = async (bucket: string, basePath: string): Promise<void> => {
+    const key = `${bucket}:${basePath}`;
+    const knownVariantPaths = trackedVariants.get(key);
+    trackedVariants.delete(key);
+    await deleteStoredVariants({
+      storage, bucket, basePath, mirrorDirs: getMirrorDirs(), knownVariantPaths,
+      candidateWidths: collectCandidateVariantWidths(mergedPresets, observedWidths),
+    });
+  };
+
   return {
     defaultBucket,
     resolvePreset,
@@ -114,13 +122,9 @@ export function createImageUploader<
       return semaphore.run(
         () =>
           processImageBuffer(buffer, {
-            maxDimensions: defaultMaxDimensions,
-            optimizationTimeoutMs,
-            blurTimeoutMs,
-            includeBlurHash: defaultIncludeBlurHash,
-            limitInputPixels: defaultLimitInputPixels,
-            effort: defaultEffort,
-            ...procOptions,
+            maxDimensions: defaultMaxDimensions, optimizationTimeoutMs, blurTimeoutMs,
+            includeBlurHash: defaultIncludeBlurHash, limitInputPixels: defaultLimitInputPixels,
+            effort: defaultEffort, ...procOptions,
           }),
         { signal: procOptions.signal },
       );
@@ -146,17 +150,14 @@ export function createImageUploader<
       );
       const allowedFormats = resolveEffectiveAllowedFormats(
         uploadOptions.allowedFormats ?? presetConfig?.allowedFormats ?? defaultAllowedFormats,
-        allowSvg,
-        explicitAllowSvg,
+        allowSvg, explicitAllowSvg,
       );
-      const maxDimensions =
-        uploadOptions.maxDimensions ?? presetConfig?.maxDimensions ?? defaultMaxDimensions;
+      const maxDimensions = uploadOptions.maxDimensions ?? presetConfig?.maxDimensions ?? defaultMaxDimensions;
       const outputFormat = uploadOptions.outputFormat ?? presetConfig?.outputFormat;
       const quality = uploadOptions.quality ?? presetConfig?.quality;
-      const includeBlurHash =
-        uploadOptions.includeBlurHash ?? presetConfig?.includeBlurHash ?? defaultIncludeBlurHash;
-      const limitInputPixels =
-        uploadOptions.limitInputPixels ?? presetConfig?.limitInputPixels ?? defaultLimitInputPixels;
+      const includeBlurHash = uploadOptions.includeBlurHash ?? presetConfig?.includeBlurHash ?? defaultIncludeBlurHash;
+      const limitInputPixels = uploadOptions.limitInputPixels ?? presetConfig?.limitInputPixels ?? defaultLimitInputPixels;
+      const variantWidths = uploadOptions.variantWidths ?? presetConfig?.variantWidths;
 
       const isWebFile = typeof (input as File).arrayBuffer === 'function';
       if (isWebFile) {
@@ -188,91 +189,85 @@ export function createImageUploader<
 
         const mainFormat = optimized.format;
         const { uploadResult, storageTarget } = await uploadWithCollisionRetry({
-          storage,
-          buildPath,
+          storage, buildPath,
           pathContext: {
-            bucket,
-            folder,
-            preset: uploadOptions.preset,
-            format: mainFormat,
+            bucket, folder, preset: uploadOptions.preset, format: mainFormat,
             extension: formatToExtension(mainFormat),
             customFilename: uploadOptions.customFilename,
             isClientFilename: uploadOptions.isClientFilename,
-            contentHash,
-            originalName: input.name,
-            metadata: uploadOptions.metadata,
+            contentHash, originalName: input.name, metadata: uploadOptions.metadata,
           },
           data: optimized.buffer,
           contentType: mainFormat === 'svg' ? SVG_MIME_TYPE : `image/${mainFormat}`,
         });
 
         const resolvedUrl = await mirrorBufferLocally({
-          buffer: optimized.buffer,
-          filename: storageTarget.filename,
-          storagePath: uploadResult.path,
-          fallbackUrl: uploadResult.url,
-          mirrorDir: presetConfig?.mirrorDir,
-          publicUrlBase: presetConfig?.publicUrlBase,
+          buffer: optimized.buffer, filename: storageTarget.filename,
+          storagePath: uploadResult.path, fallbackUrl: uploadResult.url,
+          mirrorDir: presetConfig?.mirrorDir, publicUrlBase: presetConfig?.publicUrlBase,
         });
 
+        const { variants, srcSet } =
+          variantWidths?.length && mainFormat !== 'svg'
+            ? await semaphore.run(
+                () =>
+                  generateImageVariants({
+                    sourceBuffer: originalBuffer, format: mainFormat,
+                    quality: optimized.quality ?? quality, effort: defaultEffort, limitInputPixels,
+                    mainWidth: optimized.width, mainHeight: optimized.height, mainUrl: resolvedUrl,
+                    baseStoragePath: uploadResult.path, baseFilename: storageTarget.filename,
+                    bucket: storageTarget.bucket, storage, variantWidths,
+                    upsert: Boolean(uploadOptions.customFilename) && !uploadOptions.isClientFilename,
+                    contentHash, metadata: uploadOptions.metadata,
+                    mirrorDir: presetConfig?.mirrorDir, publicUrlBase: presetConfig?.publicUrlBase,
+                  }),
+                { signal: uploadOptions.signal },
+              )
+            : { variants: [], srcSet: undefined };
+
+        const variantPaths = variants.map((v) => v.storagePath).filter(Boolean) as string[];
+        if (variantPaths.length > 0) {
+          trackedVariants.set(`${storageTarget.bucket}:${uploadResult.path}`, variantPaths);
+          variants.forEach((v) => observedWidths.add(v.width));
+        }
+
         const result: UploadedImageData = {
-          url: resolvedUrl,
-          blurDataUrl: blurData.dataURL,
-          blurColor: blurData.color,
+          url: resolvedUrl, blurDataUrl: blurData.dataURL, blurColor: blurData.color,
           ...(blurData.blurHash && { blurHash: blurData.blurHash }),
           altText: uploadOptions.altText || '',
-          width: optimized.width,
-          height: optimized.height,
-          format: optimized.format,
-          size: optimized.size,
-          originalSize,
-          contentHash,
-          storagePath: uploadResult.path,
-          bucket: storageTarget.bucket,
+          width: optimized.width, height: optimized.height, format: optimized.format,
+          size: optimized.size, originalSize, contentHash,
+          storagePath: uploadResult.path, bucket: storageTarget.bucket,
           ...(uploadOptions.preset && { preset: uploadOptions.preset }),
           ...(folder && { folder }),
           ...(uploadOptions.metadata && { metadata: uploadOptions.metadata }),
+          ...(variants.length > 0 && { variants }),
+          ...(srcSet && { srcSet }),
           uploadedAt: new Date().toISOString(),
         };
 
-        if (onUploadRecord) {
-          const record: ImageUploadRecord = {
-            ...result,
-            quality: optimized.quality ?? quality ?? 85,
-          };
-          if (awaitRecordHook) {
-            try {
-              await onUploadRecord(record);
-            } catch (hookError) {
-              await storage.delete(storageTarget.bucket, uploadResult.path).catch(() => {});
-              throw hookError;
-            }
-          } else {
-            Promise.resolve(onUploadRecord(record)).catch((err: unknown) => {
-              onError?.(err, { action: 'recordHook' });
-            });
-          }
-        }
-
+        const record: ImageUploadRecord = { ...result, quality: optimized.quality ?? quality ?? 85 };
+        await invokeRecordHookWithRollback({
+          onUploadRecord, awaitRecordHook, record, storage, bucket: storageTarget.bucket,
+          mainPath: uploadResult.path, variantPaths, mirrorDirs: getMirrorDirs(), onError,
+        });
         return result;
       } catch (error) {
         if (error instanceof UploadValidationError || error instanceof SemaphoreQueueFullError) {
           throw error;
         }
-        throw new Error(
-          `Image upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        );
+        throw new Error(`Image upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     },
 
     async deleteImage(targetPath: string, bucket?: string): Promise<void> {
+      const targetBucket = bucket || defaultBucket;
       try {
-        await storage.delete(bucket || defaultBucket, targetPath);
+        await storage.delete(targetBucket, targetPath);
         await deleteMirroredFiles(getMirrorDirs(), targetPath);
+        await cleanupVariantsFor(targetBucket, targetPath);
       } catch (error) {
-        throw new Error(
-          `Image deletion failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        );
+        throw new Error(`Image deletion failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     },
 
@@ -281,6 +276,7 @@ export function createImageUploader<
       const deleted = storage.deleteByUrl ? await storage.deleteByUrl(url) : false;
       if (deleted && parsed?.path) {
         await deleteMirroredFiles(getMirrorDirs(), parsed.path);
+        await cleanupVariantsFor(parsed.bucket || defaultBucket, parsed.path);
       }
       return deleted;
     },

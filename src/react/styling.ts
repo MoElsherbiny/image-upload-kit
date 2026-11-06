@@ -102,6 +102,7 @@ export interface SinglePreviewRenderContext {
   disabled: boolean;
   openFileDialog: () => void;
   remove: () => void;
+  cancel: () => void;
   openAltTextModal: () => void;
   openBlurInspector: () => void;
   download: () => Promise<void>;
@@ -148,6 +149,8 @@ export interface MultiTileRenderContext {
   disabled: boolean;
   toggleSelect: () => void;
   remove: () => void;
+  cancel: () => void;
+  retry: () => void;
   openAltTextModal: () => void;
   setAltText: (altText: string) => void;
   setBlurColor: (hex: string) => void;

@@ -90,3 +90,44 @@ export function buildSingleImagePayload(
       overrides.blurDataUrl ?? base.blurDataUrl ?? blurDataUrlState ?? '',
   };
 }
+
+export function serializeSingleFormValue(params: {
+  formValue?: 'url' | 'json';
+  currentImageData: UploadedImageData | null;
+  preview: string | null;
+  altText: string;
+  blurColor: string;
+  blurDataUrlState: string;
+  isUploading: boolean;
+}): string {
+  const {
+    formValue = 'url',
+    currentImageData,
+    preview,
+    altText,
+    blurColor,
+    blurDataUrlState,
+    isUploading,
+  } = params;
+  if (!preview || (isUploading && !currentImageData)) return '';
+  const nonBlobPreview =
+    preview && !preview.startsWith('blob:') ? preview : null;
+  const resolvedUrl = currentImageData?.url || nonBlobPreview || '';
+  if (!resolvedUrl) return '';
+  if (formValue === 'json') {
+    const payload = currentImageData
+      ? {
+          ...currentImageData,
+          altText: altText || currentImageData.altText || '',
+          blurColor: blurColor || currentImageData.blurColor || DEFAULT_BLUR_COLOR,
+        }
+      : {
+          url: resolvedUrl,
+          altText,
+          blurColor: blurColor || DEFAULT_BLUR_COLOR,
+          blurDataUrl: blurDataUrlState,
+        };
+    return JSON.stringify(payload);
+  }
+  return resolvedUrl;
+}
