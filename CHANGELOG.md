@@ -5,6 +5,15 @@ All notable changes to `img-upload-kit` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-11-07
+
+### Changed
+
+- **Developer-First npm & GitHub `README.md`**:
+  - Streamlined `README.md` with a 3-step Quick Start (`Install` -> `Add an upload route` -> `Drop in the component`), Use Cases table, collapsible Framework Examples (React, Vue 3 / Nuxt 4, Angular 17+, React Native / Expo, S3/R2/Supabase), real `v2.2` studio screenshots, and canonical GitHub documentation links for `npmjs.com`.
+- **Dual-Package Type Resolution & Strict Zero-`any`**:
+  - Added `.css.d.cts` sidecars and `typesVersions` in `package.json` for 100% green `publint` and `@arethetypeswrong/cli` (`node10`, `node16 (CJS)`, `node16 (ESM)`, `bundler`).
+
 ## [2.2.0] - 2026-11-06
 
 ### Added

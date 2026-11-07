@@ -1,6 +1,6 @@
 {
   "name": "img-upload-kit",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "publishConfig": {
     "access": "public"
   },
@@ -54,24 +54,60 @@
   "types": "./dist/index.d.ts",
   "typesVersions": {
     "*": {
-      "client": ["./dist/client.d.ts"],
-      "server": ["./dist/server.d.ts"],
-      "server/handler": ["./dist/server-handler.d.ts"],
-      "storage": ["./dist/storage.d.ts"],
-      "blur": ["./dist/blur.d.ts"],
-      "react": ["./dist/react.d.ts"],
-      "headless": ["./dist/headless.d.ts"],
-      "vue": ["./dist/vue.d.ts"],
-      "angular": ["./dist/angular.d.ts"],
-      "react-native": ["./dist/react-native.d.ts"],
-      "cli": ["./dist/cli.d.ts"],
-      "styles.css": ["./dist/styles.css.d.cts"],
-      "styles/tokens.css": ["./dist/styles/tokens.css.d.cts"],
-      "styles/primitives.css": ["./dist/styles/primitives.css.d.cts"],
-      "styles/quality-and-inputs.css": ["./dist/styles/quality-and-inputs.css.d.cts"],
-      "styles/dropzone-and-tiles.css": ["./dist/styles/dropzone-and-tiles.css.d.cts"],
-      "styles/modals-and-dock.css": ["./dist/styles/modals-and-dock.css.d.cts"],
-      "styles/animated-image.css": ["./dist/styles/animated-image.css.d.cts"]
+      "client": [
+        "./dist/client.d.ts"
+      ],
+      "server": [
+        "./dist/server.d.ts"
+      ],
+      "server/handler": [
+        "./dist/server-handler.d.ts"
+      ],
+      "storage": [
+        "./dist/storage.d.ts"
+      ],
+      "blur": [
+        "./dist/blur.d.ts"
+      ],
+      "react": [
+        "./dist/react.d.ts"
+      ],
+      "headless": [
+        "./dist/headless.d.ts"
+      ],
+      "vue": [
+        "./dist/vue.d.ts"
+      ],
+      "angular": [
+        "./dist/angular.d.ts"
+      ],
+      "react-native": [
+        "./dist/react-native.d.ts"
+      ],
+      "cli": [
+        "./dist/cli.d.ts"
+      ],
+      "styles.css": [
+        "./dist/styles.css.d.cts"
+      ],
+      "styles/tokens.css": [
+        "./dist/styles/tokens.css.d.cts"
+      ],
+      "styles/primitives.css": [
+        "./dist/styles/primitives.css.d.cts"
+      ],
+      "styles/quality-and-inputs.css": [
+        "./dist/styles/quality-and-inputs.css.d.cts"
+      ],
+      "styles/dropzone-and-tiles.css": [
+        "./dist/styles/dropzone-and-tiles.css.d.cts"
+      ],
+      "styles/modals-and-dock.css": [
+        "./dist/styles/modals-and-dock.css.d.cts"
+      ],
+      "styles/animated-image.css": [
+        "./dist/styles/animated-image.css.d.cts"
+      ]
     }
   },
   "bin": {
@@ -260,12 +296,24 @@
     "vue": ">=3.5.0"
   },
   "peerDependenciesMeta": {
-    "@angular/core": { "optional": true },
-    "react": { "optional": true },
-    "react-dom": { "optional": true },
-    "react-native": { "optional": true },
-    "sharp": { "optional": true },
-    "vue": { "optional": true }
+    "@angular/core": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    },
+    "react-native": {
+      "optional": true
+    },
+    "sharp": {
+      "optional": true
+    },
+    "vue": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@eslint/js": "^9.26.0",

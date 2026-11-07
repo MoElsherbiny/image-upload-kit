@@ -9,8 +9,8 @@ Upload, crop, compress to AVIF/WebP and show a blur-up placeholder in React, Vue
 [![npm downloads](https://img.shields.io/npm/dm/img-upload-kit?color=0284c7)](https://www.npmjs.com/package/img-upload-kit)
 [![CI](https://github.com/MoElsherbiny/image-upload-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/MoElsherbiny/image-upload-kit/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/types-included-3178c6)](https://www.npmjs.com/package/img-upload-kit)
-[![Zero dependencies](https://img.shields.io/badge/dependencies-0-16a34a)](./package.json)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+[![Zero dependencies](https://img.shields.io/badge/dependencies-0-16a34a)](https://github.com/MoElsherbiny/image-upload-kit/blob/main/package.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MoElsherbiny/image-upload-kit/blob/main/LICENSE)
 
 [**Live demo**](https://upload-kit.buildwithsherbo.com) · [Quick start](#quick-start) · [Use cases](#use-cases) · [Docs](#documentation)
 
@@ -34,16 +34,15 @@ Most upload libraries stop at "the file reached the server". This one handles ev
 ### 1. Install
 
 ```bash
-npm install img-upload-kit
-# On the server (where images are processed):
-npm install sharp
+npm i img-upload-kit          # or: pnpm add / yarn add / bun add img-upload-kit
+npm i sharp                   # on the server (where images are processed)
 ```
 
 > Requires Node.js 20+ on the server. `sharp` is an optional peer dependency and is never bundled into client code.
 
 ### 2. Add an upload route
 
-This example uses Next.js App Router and saves files to `public/uploads`. Any framework that speaks the Web `Request`/`Response` API works the same way (Nuxt, Remix, Hono, SvelteKit; Express [via a bridge](./docs/FRAMEWORK_RECIPES.md)).
+This example uses Next.js App Router and saves files to `public/uploads`. Any framework that speaks the Web `Request`/`Response` API works the same way (Nuxt, Remix, Hono, SvelteKit; Express [via a bridge](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/FRAMEWORK_RECIPES.md)).
 
 ```ts
 // app/api/upload/route.ts
@@ -82,13 +81,13 @@ export function AvatarField() {
 
 That's it. Every upload returns an `UploadedImageData` you can store in your database:
 
-```jsonc
+```ts
 {
-  "url": "/uploads/images/…/avatar.avif",
-  "width": 512, "height": 512, "format": "avif", "size": 18342,
-  "blurDataUrl": "data:image/webp;base64,UklGR…", // tiny placeholder
-  "blurColor": "#a3b1c2",                         // dominant edge color
-  "contentHash": "3f9c1a…"
+  url: "/uploads/images/…/avatar.avif",
+  width: 512, height: 512, format: "avif", size: 18342,
+  blurDataUrl: "data:image/webp;base64,UklGR…", // tiny inline WebP placeholder
+  blurColor: "#a3b1c2",                         // dominant 4-edge ambient color
+  contentHash: "3f9c1a…"                        // SHA-256 content hash
 }
 ```
 
@@ -98,16 +97,16 @@ That's it. Every upload returns an `UploadedImageData` you can store in your dat
 
 | I want to… | Use | Guide |
 | --- | --- | --- |
-| Let users upload a profile picture | `<SingleImageUpload preset="avatar">` | [React](./docs/CUSTOM_STYLING.md) · [Vue](./docs/vue.md) |
-| Build a product gallery with drag-to-reorder and a cover photo | `<MultiImageUpload mode="multiple" preset="square" reorderable showCoverBadge>` | [E-commerce & social](./docs/ecommerce-social.md) |
-| Crop for Instagram feed (`4:5`) or Stories/Reels (`9:16`) | `preset="portrait"` / `preset="story"` | [E-commerce & social](./docs/ecommerce-social.md) |
-| Show images with a smooth blur-up instead of layout jumps | `<AnimatedImage>` | [AnimatedImage](./docs/ANIMATED_IMAGE.md) |
-| Upload large files on Vercel/Lambda (body size limits) | `uploadMode="presigned"` (direct to S3/R2/Supabase) | [Presigned & dedupe](./docs/presigned-and-dedupe.md) |
-| Shrink photos in the browser before they upload | `createClientResizeTransform()` | [Presigned & dedupe](./docs/presigned-and-dedupe.md) |
-| Avoid storing the same image twice | `deduplicate: { store }` | [Presigned & dedupe](./docs/presigned-and-dedupe.md) |
-| Pick from camera or gallery on mobile | `img-upload-kit/react-native` + Expo picker | [React Native](./docs/react-native.md) |
-| Use my own design system | `unstyled`, slot `classNames`, or headless hooks | [Custom styling](./docs/CUSTOM_STYLING.md) |
-| Store files in S3, R2, Supabase or on disk | Storage adapters | [Recipes](./docs/FRAMEWORK_RECIPES.md) |
+| Let users upload a profile picture | `<SingleImageUpload preset="avatar">` | [React](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/CUSTOM_STYLING.md) · [Vue](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/vue.md) |
+| Build a product gallery with drag-to-reorder and a cover photo | `<MultiImageUpload mode="multiple" preset="square" reorderable showCoverBadge>` | [E-commerce & social](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ecommerce-social.md) |
+| Crop for Instagram feed (`4:5`) or Stories/Reels (`9:16`) | `preset="portrait"` / `preset="story"` | [E-commerce & social](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ecommerce-social.md) |
+| Show images with a smooth blur-up instead of layout jumps | `<AnimatedImage>` | [AnimatedImage](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ANIMATED_IMAGE.md) |
+| Upload large files on Vercel/Lambda (body size limits) | `uploadMode="presigned"` (direct to S3/R2/Supabase) | [Presigned & dedupe](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/presigned-and-dedupe.md) |
+| Shrink photos in the browser before they upload | `createClientResizeTransform()` | [Presigned & dedupe](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/presigned-and-dedupe.md) |
+| Avoid storing the same image twice | `deduplicate: { store }` | [Presigned & dedupe](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/presigned-and-dedupe.md) |
+| Pick from camera or gallery on mobile | `img-upload-kit/react-native` + Expo picker | [React Native](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/react-native.md) |
+| Use my own design system | `unstyled`, slot `classNames`, or headless hooks | [Custom styling](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/CUSTOM_STYLING.md) |
+| Store files in S3, R2, Supabase or on disk | Storage adapters | [Recipes](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/FRAMEWORK_RECIPES.md) |
 
 ## Framework examples
 
@@ -162,7 +161,7 @@ const gallery = ref<UploadedImageData[]>([]);
 </template>
 ```
 
-Full guide: [docs/vue.md](./docs/vue.md)
+Full guide: [docs/vue.md](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/vue.md)
 </details>
 
 <details>
@@ -201,7 +200,7 @@ export class CoverUploadComponent {
 }
 ```
 
-Full guide: [docs/angular.md](./docs/angular.md)
+Full guide: [docs/angular.md](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/angular.md)
 </details>
 
 <details>
@@ -225,7 +224,7 @@ export function ProfileScreen() {
 }
 ```
 
-Full guide: [docs/react-native.md](./docs/react-native.md)
+Full guide: [docs/react-native.md](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/react-native.md)
 </details>
 
 <details>
@@ -248,12 +247,12 @@ const storage = createS3StorageAdapter({
 });
 ```
 
-Supabase, presigned uploads and database persistence: [docs/FRAMEWORK_RECIPES.md](./docs/FRAMEWORK_RECIPES.md)
+Supabase, presigned uploads and database persistence: [docs/FRAMEWORK_RECIPES.md](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/FRAMEWORK_RECIPES.md)
 </details>
 
 ## Built-in presets
 
-Pick a visual role and the kit applies sensible size, crop and quality limits. You can also [define your own](./docs/ARCHITECTURE.md) with `defineUploadPresets`.
+Pick a visual role and the kit applies sensible size, crop and quality limits. You can also [define your own](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ARCHITECTURE.md) with `defineUploadPresets`.
 
 | Preset | Output | Crop | Best for |
 | --- | --- | --- | --- |
@@ -288,10 +287,10 @@ Import only what you need. Each entry point is tree-shakeable and ships ESM + CJ
 
 ## Documentation
 
-- **Frameworks & Guides:** [Vue & Nuxt](./docs/vue.md) · [Angular](./docs/angular.md) · [React Native & Expo](./docs/react-native.md) · [E-commerce & social cropping](./docs/ecommerce-social.md) · [Presigned uploads, resize & dedupe](./docs/presigned-and-dedupe.md) · [AnimatedImage](./docs/ANIMATED_IMAGE.md)
-- **Customizing & Project:** [Styling & headless tiers](./docs/CUSTOM_STYLING.md) · [Framework & storage recipes](./docs/FRAMEWORK_RECIPES.md) · [Architecture](./docs/ARCHITECTURE.md) · [Changelog](./CHANGELOG.md) · [Migration from v1](./MIGRATION.md) · [Roadmap](./ROADMAP.md) · [Security policy](./SECURITY.md)
+- **Frameworks & Guides:** [Vue & Nuxt](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/vue.md) · [Angular](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/angular.md) · [React Native & Expo](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/react-native.md) · [E-commerce & social cropping](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ecommerce-social.md) · [Presigned uploads, resize & dedupe](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/presigned-and-dedupe.md) · [AnimatedImage](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ANIMATED_IMAGE.md)
+- **Customizing & Project:** [Styling & headless tiers](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/CUSTOM_STYLING.md) · [Framework & storage recipes](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/FRAMEWORK_RECIPES.md) · [Architecture](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ARCHITECTURE.md) · [Changelog](https://github.com/MoElsherbiny/image-upload-kit/blob/main/CHANGELOG.md) · [Migration from v1](https://github.com/MoElsherbiny/image-upload-kit/blob/main/MIGRATION.md) · [Roadmap](https://github.com/MoElsherbiny/image-upload-kit/blob/main/ROADMAP.md) · [Security policy](https://github.com/MoElsherbiny/image-upload-kit/blob/main/SECURITY.md)
 
 ## Contributing & License
 
-Issues and pull requests are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) and [SECURITY.md](./SECURITY.md).
-[MIT](./LICENSE) © [Mohamed Elsherbiny](https://www.buildwithsherbo.com/) · [@MoElsherbiny](https://github.com/MoElsherbiny)
+Issues and pull requests are welcome — see [CONTRIBUTING.md](https://github.com/MoElsherbiny/image-upload-kit/blob/main/CONTRIBUTING.md) and [SECURITY.md](https://github.com/MoElsherbiny/image-upload-kit/blob/main/SECURITY.md).
+[MIT](https://github.com/MoElsherbiny/image-upload-kit/blob/main/LICENSE) © [Mohamed Elsherbiny](https://www.buildwithsherbo.com/) · [@MoElsherbiny](https://github.com/MoElsherbiny)
