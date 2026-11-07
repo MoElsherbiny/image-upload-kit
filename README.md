@@ -1,96 +1,243 @@
+<div align="center">
+
 # img-upload-kit
 
-Production-grade, **zero-runtime-dependency** image upload and processing framework for **React, Next.js, Vue 3 / Nuxt 4, Angular 17–21+, and React Native / Expo** with **Sharp AVIF/WebP optimization**, **client-side pre-upload resize**, **presigned direct-to-storage uploads**, **content-hash deduplication**, **smart size-guarding**, **responsive `srcSet` variants**, **social & e-commerce aspect cropping (`1:1`, `4:5`, `9:16`)**, **WebP LQIP & BlurHash placeholders**, **4-edge dominant color extraction**, **pluggable storage adapters**, and the **`<AnimatedImage />` blur-up display component**.
+**Drop-in image uploads that arrive optimized.**
+Upload, crop, compress to AVIF/WebP and show a blur-up placeholder in React, Vue, Angular and React Native, with one server route.
 
-[![Live Interactive Demo](https://img.shields.io/badge/Live%20Demo-upload--kit.buildwithsherbo.com-0284c7?style=for-the-badge)](https://upload-kit.buildwithsherbo.com)
-[![npm version](https://img.shields.io/npm/v/img-upload-kit?color=38bdf8&style=for-the-badge)](https://www.npmjs.com/package/img-upload-kit)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](./LICENSE)
-[![Studio Repo](https://img.shields.io/badge/Studio%20Code-image--upload--kit--studio-1e293b?style=for-the-badge&logo=github)](https://github.com/MoElsherbiny/image-upload-kit-studio)
+[![npm version](https://img.shields.io/npm/v/img-upload-kit?color=0284c7)](https://www.npmjs.com/package/img-upload-kit)
+[![npm downloads](https://img.shields.io/npm/dm/img-upload-kit?color=0284c7)](https://www.npmjs.com/package/img-upload-kit)
+[![CI](https://github.com/MoElsherbiny/image-upload-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/MoElsherbiny/image-upload-kit/actions/workflows/ci.yml)
+[![TypeScript](https://img.shields.io/badge/types-included-3178c6)](https://www.npmjs.com/package/img-upload-kit)
+[![Zero dependencies](https://img.shields.io/badge/dependencies-0-16a34a)](./package.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
----
+[**Live demo**](https://upload-kit.buildwithsherbo.com) · [Quick start](#quick-start) · [Use cases](#use-cases) · [Docs](#documentation)
 
-## Interactive Studio & Live Demo
+<img src="https://raw.githubusercontent.com/MoElsherbiny/image-upload-kit/main/docs/assets/demo-code-studio.png" alt="img-upload-kit interactive studio showing upload UI and synced code" width="820" />
 
-Experience the full multi-platform pipeline live in your browser: 👉 **[upload-kit.buildwithsherbo.com](https://upload-kit.buildwithsherbo.com)**
+</div>
 
-- **Live Framework Switcher (`React` | `Vue` | `Angular` | `React Native`)**: Watch synchronized Shiki IDE code stream live across React, Vue 3.5+, Angular 17–21+, and React Native / Expo while the 60 FPS preview updates in real time.
-- **Social Aspect Framing & Pointer-Drag Reordering**: Test `16:10`, `1:1` Square, `4:5` Portrait, and `9:16` Story aspect ratios alongside pointer drag-and-drop and keyboard product gallery reordering (`Cover` badge + `move` / `setCover`).
-- **4-Layer Placeholder Lab & Sharp Size-Guard Sandbox**: Compare **4-Edge Ambient Color** (0 B runtime), **Client BlurHash** (~28 chars), **WebP LQIP Data URL** (<1 KB), and final **Sharp AVIF/WebP** assets.
-- **Upgrading from v1.x?** Read the [**v2.0 Migration Guide (`MIGRATION.md`)**](./MIGRATION.md).
+## Why img-upload-kit?
 
----
+Most upload libraries stop at "the file reached the server". This one handles everything after that:
 
-## Multi-Platform Matrix & Subpath Reference
+- 🖼️ **Optimized output**: Sharp resizes and re-encodes each upload (AVIF by default, keeping the original only when it's already smaller), with optional responsive `srcSet` variants.
+- ✨ **Instant placeholders**: each upload returns a blur preview (LQIP), a BlurHash and a dominant color, so pages never show an empty box.
+- ✂️ **Smart cropping**: ready-made `1:1`, `4:5` and `9:16` presets crop around the subject for product photos, feeds and stories.
+- 🧩 **One API, every framework**: React/Next.js, Vue 3/Nuxt, Angular 17+, React Native/Expo, or headless hooks for your own UI.
+- 🔒 **Secure by default**: file-type checks by magic bytes, SVG sanitizing, size limits, origin checks and an `authorize` hook.
+- 🪶 **Zero runtime dependencies**: install only the framework you use; `sharp` is needed on the server only.
 
-| Subpath | Target Platform | Key Exports | Guide |
-| --- | --- | --- | --- |
-| `img-upload-kit` | Universal | `STANDARD_PRESETS`, `defineUploadPresets`, `resolveAspectRatio`, validators, color utils, `decodeBlurHashToDataURL` | [Architecture](./docs/ARCHITECTURE.md) |
-| `img-upload-kit/client` | Web / Vue / Angular / RN | `uploadAsset`, `uploadViaPresignedUrl`, `deleteUploadedImage`, `createClientResizeTransform`, `composeTransforms`, `xhrUpload`, `createUploadTracker`, `runUploadQueue`, `moveItem`, `promoteToCover` | [**Presigned & Dedupe**](./docs/presigned-and-dedupe.md) |
-| `img-upload-kit/react` | React & Next.js | `<ImageUploadProvider>`, `<SingleImageUpload>`, `<MultiImageUpload>`, `<AnimatedImage>`, `<BlurImage>` | [Styling](./docs/CUSTOM_STYLING.md) |
-| `img-upload-kit/headless` | React Headless | `<HeadlessSingleUpload>`, `<HeadlessMultiUpload>`, `useSingleUpload`, `useMultiUpload`, `useDropzone` | [Styling](./docs/CUSTOM_STYLING.md) |
-| `img-upload-kit/vue` | Vue 3.5+ & Nuxt 4 | `createImageUpload`, `provideImageUploadConfig` (`provideImageUpload`), `<SingleImageUpload>`, `<MultiImageUpload>`, `<AnimatedImage>`, `useSingleUpload`, `useMultiUpload`, `<HeadlessSingleUpload>`, `<HeadlessMultiUpload>` | [**Vue & Nuxt Guide**](./docs/vue.md) |
-| `img-upload-kit/angular` | Angular 17–21+ | `provideImageUploadConfig`, `resolveImageUploadConfig`, `withAngularSignals`, `createSingleUpload`, `createMultiUpload`, `createImageReveal`, `mountAnimatedImage`, `mountSingleImageUpload`, `mountMultiImageUpload` | [**Angular Guide**](./docs/angular.md) |
-| `img-upload-kit/react-native` | Expo & Bare RN | `<NativeImageUploadProvider>`, `useNativeSingleUpload`, `useNativeMultiUpload`, `<AnimatedImage>`, `createExpoImagePickerAdapter`, `createRnImagePickerAdapter`, `createExpoManipulatorResizeTransform` | [**React Native Guide**](./docs/react-native.md) |
-| `img-upload-kit/server` | Node.js (`>=20`) | `createImageUploader`, `createUploadHttpHandler`, `createMemoryDedupeStore`, `sweepStagedUploads`, `optimizeImage`, `generateBlurPlaceholder`, `sniffImageFormat`, `sanitizeSvg` | [Server Recipes](./docs/FRAMEWORK_RECIPES.md) |
-| `img-upload-kit/server/handler` | Node / Edge | Edge-safe `createUploadHttpHandler` (zero Sharp or `node:fs` imports at module load) | [Server Recipes](./docs/FRAMEWORK_RECIPES.md) |
-| `img-upload-kit/storage` | Node / Edge | `createStorageAdapter`, `createS3StorageAdapter`, `createSupabaseStorageAdapter`, `createLocalFsStorageAdapter` | [Server Recipes](./docs/FRAMEWORK_RECIPES.md) |
-| `img-upload-kit/blur` | Universal | `BlurService`, `createBlurService`, `decodeBlurHashToDataURL`, `LRUCache` | [AnimatedImage](./docs/ANIMATED_IMAGE.md) |
-| `img-upload-kit/cli` | Node CLI | CLI binaries (`img-upload-kit` / `blur-cli`) for build-time manifest generation | [Architecture](./docs/ARCHITECTURE.md) |
-| `img-upload-kit/styles.css` | CSS (React/Vue/Angular) | Complete stylesheet (`--iuk-*` tokens, dark mode, RTL) + per-layer `img-upload-kit/styles/*.css` | [Styling](./docs/CUSTOM_STYLING.md) |
+## Quick start
 
----
-
-## Installation
-
-`img-upload-kit` ships with **zero runtime `"dependencies"`** in `package.json` for a minimal, supply-chain-hardened footprint:
+### 1. Install
 
 ```bash
-# Client UI (React, Vue 3, Angular, or React Native — zero native dependencies):
 npm install img-upload-kit
-
-# Server / Full-Stack (Next.js, Nuxt, Remix, Hono, SvelteKit, Express, Node) or CLI:
-npm install img-upload-kit sharp lqip-modern
+# On the server (where images are processed):
+npm install sharp
 ```
 
----
+> Requires Node.js 20+ on the server. `sharp` is an optional peer dependency and is never bundled into client code.
 
-## Universal Presets, Social Aspect Cropping & Variants (`variantWidths`)
+### 2. Add an upload route
 
-Built-in visual role presets balance dimension constraints, smart aspect cropping (`crop: 'attention'`), compression quality, and responsive `variantWidths`. Only raster formats (`JPEG, PNG, WebP, AVIF`) are accepted by default via binary magic-byte sniffing; opt into sanitized SVG support with `allowSvg: true`.
-
-| Preset | Max Dimensions | Aspect / Crop | Variants | Max Size | Quality | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
-| `thumbnail` | `600x600` | Fit inside | — | 5 MB | Q78 | Compact grid thumbnails |
-| `avatar` | `512x512` | Fit inside | — | 5 MB | Q80 | User profile pictures |
-| `card` | `1200x900` | Fit inside | — | 8 MB | Q85 | Content & article cards |
-| `cover` | `1920x1080` | Fit inside | — | 10 MB | Q88 | Wide section banners |
-| `hero` | `2560x1440` | Fit inside | — | 15 MB | Q92 | Full-bleed hero headers |
-| `logo` | `800x800` | Fit inside | — | 5 MB | Q90 | Set `allowSvg: true` for sanitized vector SVGs |
-| `original` | `4096x4096` | Fit inside | — | 25 MB | Q95 | Master archival fidelity |
-| `square` | `1600x1600` | `1:1` (`attention`) | `[400, 800, 1200]` | 12 MB | Q88 | E-commerce product galleries & square posts |
-| `portrait` | `1080x1350` | `4:5` (`attention`) | `[480, 720]` | 12 MB | Q86 | Instagram vertical feed posts & lookbooks |
-| `story` | `1080x1920` | `9:16` (`attention`) | `[540, 720]` | 15 MB | Q86 | Stories, Reels & full-screen mobile covers |
-
----
-
-## Server Uploader, Content-Hash Deduplication & Presigned Uploads
-
-`createUploadHttpHandler` enforces binary magic-byte sniffing, streaming `maxBodyBytes` limits (HTTP `413`), `allowedOrigins` CSRF checks (HTTP `403`), bucket allowlists on `DELETE`, content-hash deduplication (`deduplicate`), and two-phase presigned direct-to-storage uploads (`presigned`):
+This example uses Next.js App Router and saves files to `public/uploads`. Any framework that speaks the Web `Request`/`Response` API works the same way (Nuxt, Remix, Hono, SvelteKit; Express [via a bridge](./docs/FRAMEWORK_RECIPES.md)).
 
 ```ts
-// app/api/upload/route.ts (Next.js App Router, Nuxt, Remix, Hono, SvelteKit)
-import {
-  DeleteObjectCommand,
-  GetObjectCommand,
-  PutObjectCommand,
-} from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import {
-  createImageUploader,
-  createMemoryDedupeStore,
-  createUploadHttpHandler,
-} from 'img-upload-kit/server';
+// app/api/upload/route.ts
+import { createImageUploader, createUploadHttpHandler } from 'img-upload-kit/server';
+import { createLocalFsStorageAdapter } from 'img-upload-kit/storage';
+
+const uploader = createImageUploader({
+  storage: createLocalFsStorageAdapter({ rootDir: './public/uploads', baseUrl: '/uploads' }),
+});
+
+export const { POST, DELETE } = createUploadHttpHandler({
+  uploader,
+  authorize: async ({ request }) => Boolean(request.headers.get('cookie')), // plug in your auth
+});
+```
+
+### 3. Drop in the component
+
+```tsx
+'use client';
+import { useState } from 'react';
+import { SingleImageUpload, AnimatedImage } from 'img-upload-kit/react';
+import type { UploadedImageData } from 'img-upload-kit';
+import 'img-upload-kit/styles.css';
+
+export function AvatarField() {
+  const [avatar, setAvatar] = useState<UploadedImageData | null>(null);
+  return (
+    <>
+      <SingleImageUpload endpoint="/api/upload" preset="avatar" value={avatar} onChange={setAvatar} />
+      {avatar && <AnimatedImage image={avatar} alt="Avatar" width={128} height={128} />}
+    </>
+  );
+}
+```
+
+That's it. Every upload returns an `UploadedImageData` you can store in your database:
+
+```jsonc
+{
+  "url": "/uploads/images/…/avatar.avif",
+  "width": 512, "height": 512, "format": "avif", "size": 18342,
+  "blurDataUrl": "data:image/webp;base64,UklGR…", // tiny placeholder
+  "blurColor": "#a3b1c2",                         // dominant edge color
+  "contentHash": "3f9c1a…"
+}
+```
+
+<img src="https://raw.githubusercontent.com/MoElsherbiny/image-upload-kit/main/docs/assets/demo-blur-lab.png" alt="4-layer placeholder lab: ambient edge color, BlurHash, WebP LQIP, and final AVIF" width="820" />
+
+## Use cases
+
+| I want to… | Use | Guide |
+| --- | --- | --- |
+| Let users upload a profile picture | `<SingleImageUpload preset="avatar">` | [React](./docs/CUSTOM_STYLING.md) · [Vue](./docs/vue.md) |
+| Build a product gallery with drag-to-reorder and a cover photo | `<MultiImageUpload mode="multiple" preset="square" reorderable showCoverBadge>` | [E-commerce & social](./docs/ecommerce-social.md) |
+| Crop for Instagram feed (`4:5`) or Stories/Reels (`9:16`) | `preset="portrait"` / `preset="story"` | [E-commerce & social](./docs/ecommerce-social.md) |
+| Show images with a smooth blur-up instead of layout jumps | `<AnimatedImage>` | [AnimatedImage](./docs/ANIMATED_IMAGE.md) |
+| Upload large files on Vercel/Lambda (body size limits) | `uploadMode="presigned"` (direct to S3/R2/Supabase) | [Presigned & dedupe](./docs/presigned-and-dedupe.md) |
+| Shrink photos in the browser before they upload | `createClientResizeTransform()` | [Presigned & dedupe](./docs/presigned-and-dedupe.md) |
+| Avoid storing the same image twice | `deduplicate: { store }` | [Presigned & dedupe](./docs/presigned-and-dedupe.md) |
+| Pick from camera or gallery on mobile | `img-upload-kit/react-native` + Expo picker | [React Native](./docs/react-native.md) |
+| Use my own design system | `unstyled`, slot `classNames`, or headless hooks | [Custom styling](./docs/CUSTOM_STYLING.md) |
+| Store files in S3, R2, Supabase or on disk | Storage adapters | [Recipes](./docs/FRAMEWORK_RECIPES.md) |
+
+## Framework examples
+
+<details>
+<summary><b>React: product gallery with reordering</b></summary>
+
+```tsx
+import { useState } from 'react';
+import { ImageUploadProvider, MultiImageUpload } from 'img-upload-kit/react';
+import { createClientResizeTransform } from 'img-upload-kit/client';
+import type { UploadedImageData } from 'img-upload-kit';
+import 'img-upload-kit/styles.css';
+
+const resize = createClientResizeTransform({ maxWidth: 2048, maxHeight: 2048 });
+
+export function ProductGallery() {
+  const [images, setImages] = useState<UploadedImageData[]>([]);
+  return (
+    <ImageUploadProvider endpoint="/api/upload" deleteEndpoint="/api/upload">
+      <MultiImageUpload
+        mode="multiple" preset="square" maxImages={8} reorderable showCoverBadge
+        value={images} onChange={setImages} transformAsset={resize}
+      />
+    </ImageUploadProvider>
+  );
+}
+```
+</details>
+
+<details>
+<summary><b>Vue 3 / Nuxt</b></summary>
+
+```ts
+// main.ts (or a Nuxt plugin)
+import { createImageUpload } from 'img-upload-kit/vue';
+import 'img-upload-kit/styles.css';
+app.use(createImageUpload({ endpoint: '/api/upload' }));
+```
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue';
+import type { UploadedImageData } from 'img-upload-kit';
+import { SingleImageUpload, MultiImageUpload } from 'img-upload-kit/vue';
+const avatar = ref<UploadedImageData | null>(null);
+const gallery = ref<UploadedImageData[]>([]);
+</script>
+
+<template>
+  <SingleImageUpload v-model="avatar" preset="avatar" />
+  <MultiImageUpload v-model="gallery" preset="square" reorderable :max-images="8" />
+</template>
+```
+
+Full guide: [docs/vue.md](./docs/vue.md)
+</details>
+
+<details>
+<summary><b>Angular 17+ (signals, zoneless-ready)</b></summary>
+
+```ts
+// app.config.ts
+import { provideImageUploadConfig } from 'img-upload-kit/angular';
+export const appConfig = { providers: [provideImageUploadConfig({ endpoint: '/api/upload' })] };
+```
+
+```ts
+// cover-upload.component.ts
+import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { createSingleUpload, resolveImageUploadConfig, withAngularSignals } from 'img-upload-kit/angular';
+
+@Component({
+  selector: 'app-cover-upload',
+  standalone: true,
+  template: `
+    <input type="file" accept="image/*" (change)="pick($event)" />
+    @if (upload.isUploading()) { <progress [value]="upload.progress()" max="100"></progress> }
+    @if (upload.previewUrl(); as src) { <img [src]="src" alt="Cover preview" /> }
+  `,
+})
+export class CoverUploadComponent {
+  readonly upload = withAngularSignals(
+    createSingleUpload({ ...resolveImageUploadConfig(), preset: 'cover' }),
+    { signal, destroyRef: inject(DestroyRef) },
+  );
+
+  pick(event: Event) {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (file) void this.upload.selectFile(file);
+  }
+}
+```
+
+Full guide: [docs/angular.md](./docs/angular.md)
+</details>
+
+<details>
+<summary><b>React Native / Expo</b></summary>
+
+```tsx
+import { useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
+import type { UploadedImageData } from 'img-upload-kit';
+import { NativeImageUploadProvider, SingleImageUpload, createExpoImagePickerAdapter } from 'img-upload-kit/react-native';
+
+const picker = createExpoImagePickerAdapter(ImagePicker, { quality: 0.9 });
+
+export function ProfileScreen() {
+  const [photo, setPhoto] = useState<UploadedImageData | null>(null);
+  return (
+    <NativeImageUploadProvider endpoint="https://api.example.com/api/upload" picker={picker}>
+      <SingleImageUpload preset="portrait" value={photo} onChange={setPhoto} />
+    </NativeImageUploadProvider>
+  );
+}
+```
+
+Full guide: [docs/react-native.md](./docs/react-native.md)
+</details>
+
+<details>
+<summary><b>Production storage: S3 / Cloudflare R2 / Supabase</b></summary>
+
+Swap the local disk adapter for any storage backend. The SDK stays your own dependency, so `img-upload-kit` never pins a version.
+
+```ts
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { createS3StorageAdapter } from 'img-upload-kit/storage';
+
+const s3 = new S3Client({ region: 'auto', endpoint: process.env.S3_ENDPOINT });
 
 const storage = createS3StorageAdapter({
   publicBaseUrl: 'https://cdn.example.com',
@@ -98,103 +245,53 @@ const storage = createS3StorageAdapter({
   putObject: (input) => s3.send(new PutObjectCommand(input)),
   deleteObject: (input) => s3.send(new DeleteObjectCommand(input)),
   getObject: (input) => s3.send(new GetObjectCommand(input)),
-  presignUpload: async ({ bucket, path, contentType, expiresInSeconds }) => {
-    const url = await getSignedUrl(
-      s3,
-      new PutObjectCommand({ Bucket: bucket, Key: path, ContentType: contentType }),
-      { expiresIn: expiresInSeconds ?? 300 },
-    );
-    return { method: 'PUT', url, headers: { 'content-type': contentType } };
-  },
-});
-
-export const uploader = createImageUploader({
-  storage,
-  defaultBucket: 'media',
-  deduplicate: { store: createMemoryDedupeStore() },
-});
-
-export const { POST, DELETE } = createUploadHttpHandler({
-  uploader,
-  maxBodyBytes: 16 * 1024 * 1024,
-  allowedOrigins: ['https://app.example.com'],
-  presigned: process.env.UPLOAD_SECRET
-    ? { secret: process.env.UPLOAD_SECRET, expiresInSeconds: 300 }
-    : undefined,
-  allowClientOverrides: {
-    filename: true,
-    folder: (folder) => (folder.startsWith('users/') ? folder : null),
-    dimensions: true,
-    aspectRatio: true,
-    crop: true,
-    format: true,
-    quality: true,
-  },
 });
 ```
 
----
+Supabase, presigned uploads and database persistence: [docs/FRAMEWORK_RECIPES.md](./docs/FRAMEWORK_RECIPES.md)
+</details>
 
-## React Upload UI: Client Resize, Pointer-Drag Reordering & Forms
+## Built-in presets
 
-`<SingleImageUpload>` and `<MultiImageUpload>` support **client-side pre-upload resize** (`createClientResizeTransform`), **pointer drag-and-drop + keyboard gallery reordering** (`reorderable`, `showCoverBadge`, `onReorder`), **opt-in server deletion** (`deleteEndpoint` / `customDeleter`), **presigned uploads** (`uploadMode="presigned"`), **clipboard paste** (`Ctrl+V`), and **mobile camera capture**:
+Pick a visual role and the kit applies sensible size, crop and quality limits. You can also [define your own](./docs/ARCHITECTURE.md) with `defineUploadPresets`.
 
-```tsx
-import { useState } from 'react';
-import { createClientResizeTransform } from 'img-upload-kit/client';
-import { ImageUploadProvider, SingleImageUpload, MultiImageUpload } from 'img-upload-kit/react';
-import type { UploadedImageData } from 'img-upload-kit';
-import 'img-upload-kit/styles.css';
+| Preset | Output | Crop | Best for |
+| --- | --- | --- | --- |
+| `avatar` | ≤ 512×512 | fit | Profile pictures |
+| `thumbnail` | ≤ 600×600 | fit | Grid thumbnails |
+| `card` | ≤ 1200×900 | fit | Article & content cards |
+| `cover` | ≤ 1920×1080 | fit | Section banners |
+| `hero` | ≤ 2560×1440 | fit | Full-width headers |
+| `square` | ≤ 1600×1600 | `1:1` smart | Product photos, square posts |
+| `portrait` | ≤ 1080×1350 | `4:5` smart | Instagram feed |
+| `story` | ≤ 1080×1920 | `9:16` smart | Stories, Reels, mobile covers |
+| `logo` | ≤ 800×800 | fit | Logos (`allowSvg: true` for sanitized SVG) |
+| `original` | ≤ 4096×4096 | fit | Archival master copies |
 
-const resizeTransform = createClientResizeTransform({ maxWidth: 2048, maxHeight: 2048, quality: 0.9 });
+## Package entry points
 
-export function ProductMediaForm() {
-  const [cover, setCover] = useState<UploadedImageData | null>(null);
-  const [gallery, setGallery] = useState<UploadedImageData[]>([]);
+Import only what you need. Each entry point is tree-shakeable and ships ESM + CJS + types.
 
-  return (
-    <ImageUploadProvider endpoint="/api/upload" deleteEndpoint="/api/upload" locale="en">
-      <SingleImageUpload
-        preset="portrait"
-        aspectRatio="4:5"
-        label="Social Feed Cover (4:5)"
-        name="coverUrl"
-        value={cover}
-        onChange={setCover}
-        transformAsset={resizeTransform}
-      />
-      <MultiImageUpload
-        mode="multiple"
-        preset="square"
-        label="Product Gallery (Drag or click to reorder Cover)"
-        name="galleryJson"
-        reorderable
-        showCoverBadge
-        maxImages={8}
-        value={gallery}
-        onChange={setGallery}
-        transformAsset={resizeTransform}
-        onReorder={(ordered) => console.log('New Cover photo:', ordered[0]?.url)}
-      />
-    </ImageUploadProvider>
-  );
-}
-```
+| Import | Runs on | What's inside |
+| --- | --- | --- |
+| `img-upload-kit/react` | Browser | Ready-made components and `<AnimatedImage>` |
+| `img-upload-kit/headless` | Browser | Hooks and render props for fully custom UI |
+| `img-upload-kit/vue` | Browser / SSR | Vue plugin, components, composables |
+| `img-upload-kit/angular` | Browser | Signal controllers and DOM helpers |
+| `img-upload-kit/react-native` | iOS / Android | Native components, hooks, Expo & RN picker adapters |
+| `img-upload-kit/client` | Any JS runtime | Framework-agnostic upload engine, resize, presigned flow |
+| `img-upload-kit/server` | Node.js 20+ | Uploader, Sharp optimizer, HTTP handler, dedupe |
+| `img-upload-kit/server/handler` | Node / Edge | Edge-safe HTTP handler (no Sharp at import time) |
+| `img-upload-kit/storage` | Node / Edge | S3/R2, Supabase, local disk and in-memory adapters |
+| `img-upload-kit/blur` | Any | BlurHash decoding and placeholder helpers |
+| `img-upload-kit/styles.css` | Browser | Default theme (`--iuk-*` tokens, dark mode, RTL) |
 
----
+## Documentation
 
-## Documentation & Guides
+- **Frameworks & Guides:** [Vue & Nuxt](./docs/vue.md) · [Angular](./docs/angular.md) · [React Native & Expo](./docs/react-native.md) · [E-commerce & social cropping](./docs/ecommerce-social.md) · [Presigned uploads, resize & dedupe](./docs/presigned-and-dedupe.md) · [AnimatedImage](./docs/ANIMATED_IMAGE.md)
+- **Customizing & Project:** [Styling & headless tiers](./docs/CUSTOM_STYLING.md) · [Framework & storage recipes](./docs/FRAMEWORK_RECIPES.md) · [Architecture](./docs/ARCHITECTURE.md) · [Changelog](./CHANGELOG.md) · [Migration from v1](./MIGRATION.md) · [Roadmap](./ROADMAP.md) · [Security policy](./SECURITY.md)
 
-- [**Vue 3.5+ & Nuxt 4 Guide (`docs/vue.md`)**](./docs/vue.md) — `createImageUpload`, `provideImageUploadConfig` (`provideImageUpload`), `<SingleImageUpload v-model>`, `<MultiImageUpload reorderable>`, `<AnimatedImage>`, composables & Nuxt server routes.
-- [**Client Resize, Presigned Uploads & Deduplication (`docs/presigned-and-dedupe.md`)**](./docs/presigned-and-dedupe.md) — `createClientResizeTransform`, `createExpoManipulatorResizeTransform`, `createMemoryDedupeStore`, `uploadMode: 'presigned'`.
-- [**Angular 17–21+ Guide (`docs/angular.md`)**](./docs/angular.md) — `provideImageUploadConfig`, `withAngularSignals`, `createSingleUpload`, `createMultiUpload`, `mountAnimatedImage`, Reactive Forms `toControlValueAccessor()`.
-- [**React Native & Expo Guide (`docs/react-native.md`)**](./docs/react-native.md) — `NativeImageUploadProvider`, Expo & RN image picker adapters, HEIC normalization, `<AnimatedImage>` with `expo-image`.
-- [**E-Commerce & Social Media Guide (`docs/ecommerce-social.md`)**](./docs/ecommerce-social.md) — `square` / `portrait` / `story` presets, `reorderable` + `Cover` badge, smart attention cropping, `transformAsset`.
-- [Custom Styling & 4 Headless Tiers (`docs/CUSTOM_STYLING.md`)](./docs/CUSTOM_STYLING.md) · [AnimatedImage Guide (`docs/ANIMATED_IMAGE.md`)](./docs/ANIMATED_IMAGE.md)
-- [Architecture & Internals (`docs/ARCHITECTURE.md`)](./docs/ARCHITECTURE.md) · [Framework & Storage Recipes (`docs/FRAMEWORK_RECIPES.md`)](./docs/FRAMEWORK_RECIPES.md)
-- [v2.0 Migration Guide (`MIGRATION.md`)](./MIGRATION.md) · [Roadmap (`ROADMAP.md`)](./ROADMAP.md) · [Changelog (`CHANGELOG.md`)](./CHANGELOG.md) · [AI Agent Guide (`AGENTS.md`)](./AGENTS.md)
+## Contributing & License
 
-## License & Author
-
-**Author & Identity**: [buildwithsherbo](https://www.buildwithsherbo.com/) — Mohamed Elsherbiny ([@MoElsherbiny](https://github.com/MoElsherbiny) · [mo@buildwithsherbo.com](mailto:mo@buildwithsherbo.com))
-Distributed under the [MIT License](./LICENSE).
+Issues and pull requests are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) and [SECURITY.md](./SECURITY.md).
+[MIT](./LICENSE) © [Mohamed Elsherbiny](https://www.buildwithsherbo.com/) · [@MoElsherbiny](https://github.com/MoElsherbiny)
