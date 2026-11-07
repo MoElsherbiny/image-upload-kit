@@ -31,14 +31,15 @@ Most upload libraries stop at "the file reached the server". This one handles ev
 
 ## Quick start
 
-### 1. Install
+### 1. Install (Interactive CLI or Manual)
 
 ```bash
-npm i img-upload-kit          # or: pnpm add / yarn add / bun add img-upload-kit
-npm i sharp                   # on the server (where images are processed)
-```
+# Interactive terminal menu (choose React, Vue/Nuxt, Angular, React Native & storage with ↑/↓ arrows):
+npx img-upload-kit@latest init
 
-> Requires Node.js 20+ on the server. `sharp` is an optional peer dependency and is never bundled into client code.
+# Or install directly (sharp is needed on the Node.js 20+ server only):
+npm i img-upload-kit sharp          # or: pnpm add / yarn add / bun add
+```
 
 ### 2. Add an upload route
 

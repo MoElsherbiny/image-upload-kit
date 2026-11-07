@@ -5,6 +5,12 @@ import type { BlurManifestData, BlurManifestEntry } from '../blur/types';
 import { ZeroDepCliProgram } from './argv';
 import { generateBlurManifest } from './generator';
 import {
+  type InitFramework,
+  type InitStorageAdapter,
+  type PackageManagerName,
+  runInteractiveInit,
+} from './init';
+import {
   autoSyncCheck,
   cleanupOrphanedHashes,
   generateHealthReport,
@@ -43,8 +49,40 @@ export function createCliProgram(): ZeroDepCliProgram {
 
   program
     .name('img-upload-kit')
-    .description('LQIP, BlurHash, and dominant color manifest CLI tooling')
+    .description('Interactive framework setup + LQIP, BlurHash & dominant color CLI')
     .version(CLI_VERSION);
+
+  const registerInitCommand = (cmdName: string) => {
+    program
+      .command(cmdName)
+      .description('Interactive terminal dropdown to select framework, storage, and install packages')
+      .option('-f, --framework <fw>', 'Target framework (react|vue|angular|react-native|server|client)')
+      .option('-s, --storage <adapter>', 'Storage adapter (local|s3|supabase|memory)')
+      .option('-p, --pm <pm>', 'Package manager (npm|pnpm|yarn|bun)')
+      .option('-y, --yes', 'Accept detected defaults without interactive prompts', false)
+      .option('--no-install', 'Print install command and starter imports without running install')
+      .action(
+        async (opts: {
+          framework?: InitFramework;
+          storage?: InitStorageAdapter;
+          pm?: PackageManagerName;
+          yes?: boolean;
+          install?: boolean;
+        }) => {
+          await runInteractiveInit({
+            framework: opts.framework,
+            storage: opts.storage,
+            pm: opts.pm,
+            yes: Boolean(opts.yes),
+            install: opts.install === false ? false : undefined,
+            version: CLI_VERSION,
+          });
+        },
+      );
+  };
+
+  registerInitCommand('init');
+  registerInitCommand('setup');
 
   program
     .command('generate')
