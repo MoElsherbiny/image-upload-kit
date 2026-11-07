@@ -5,6 +5,14 @@ All notable changes to `img-upload-kit` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.2] - 2026-11-07
+
+### Added
+
+- **Interactive Terminal Setup Wizard (`npx img-upload-kit init` / `setup`)**:
+  - Added zero-dependency terminal UI (`src/cli/tui.ts`, `src/cli/detect.ts`, `src/cli/init.ts`) with arrow-key dropdown menus (`↑`/`↓`, `j`/`k`, `1–6` shortcuts, `Enter`, `Esc` cancel) to select framework (`React / Next.js`, `Vue 3.5+ / Nuxt 4`, `Angular 17–21+`, `React Native / Expo`, `Node.js Server`, `Headless Client`) and storage adapter (`LocalFS`, `S3/R2`, `Supabase`, `Memory`).
+  - Auto-detects project framework (`package.json`) and package manager (`npm`, `pnpm`, `yarn`, `bun`), installs only the required framework/storage dependencies, and outputs tailored starter imports.
+
 ## [2.2.1] - 2026-11-07
 
 ### Changed
