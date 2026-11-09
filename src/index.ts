@@ -24,9 +24,10 @@ export type {
 } from './blur/types';
 export type { BlurServiceOptions } from './blur/blurService';
 export {
+  decodeBlurHash,
+  isBlurhashValid,
   decodeBlurHashToDataURL,
   getBlurData,
   getImagePropsWithBlur,
   getBackgroundPropsWithBlur,
 } from './blur/blurDataUtils';
-

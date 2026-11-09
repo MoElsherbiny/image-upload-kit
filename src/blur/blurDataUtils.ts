@@ -1,6 +1,8 @@
 import { decode as decodeBlurHash, isBlurhashValid } from './vendor/blurhash';
 import type { BlurData, BlurImageSource } from './types';
 
+export { decodeBlurHash, isBlurhashValid };
+
 export interface BlurPlaceholderStyle {
   backgroundColor: string;
   backgroundImage?: string;

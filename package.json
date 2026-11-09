@@ -1,6 +1,6 @@
 {
   "name": "img-upload-kit",
-  "version": "2.2.4",
+  "version": "2.2.5",
   "publishConfig": {
     "access": "public"
   },
@@ -112,9 +112,7 @@
     }
   },
   "bin": {
-    "img-upload-kit": "dist/bin.js",
-    "image-upload-kit": "dist/bin.js",
-    "blur-cli": "dist/bin.js"
+    "img-upload-kit": "dist/bin.js"
   },
   "exports": {
     ".": {

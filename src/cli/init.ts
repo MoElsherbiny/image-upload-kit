@@ -1,4 +1,6 @@
 import { spawn } from 'node:child_process';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 import {
   BASE_FRAMEWORK_OPTIONS,
@@ -52,22 +54,50 @@ export interface RunInitResult {
   installed: boolean;
 }
 
+const SAFE_PKG_SPEC_RE = /^[@a-z0-9._/-]+$/i;
+
+async function ensurePackageJson(cwd: string): Promise<boolean> {
+  const pkgPath = path.join(cwd, 'package.json');
+  try {
+    await fs.access(pkgPath);
+    return false;
+  } catch {
+    const rawName = path
+      .basename(path.resolve(cwd))
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, '-')
+      .replace(/^[._-]+|[._-]+$/g, '');
+    const initialPkg = {
+      name: rawName || 'my-app',
+      version: '0.1.0',
+      private: true,
+    };
+    await fs.writeFile(pkgPath, `${JSON.stringify(initialPkg, null, 2)}\n`, 'utf8');
+    return true;
+  }
+}
+
 function defaultExecInstall(
   pm: PackageManagerName,
   packages: readonly string[],
   cwd: string,
 ): Promise<void> {
+  for (const pkg of packages) {
+    if (!SAFE_PKG_SPEC_RE.test(pkg)) {
+      return Promise.reject(new Error(`Invalid package specifier: ${pkg}`));
+    }
+  }
   const args = pm === 'npm' ? ['i', ...packages] : ['add', ...packages];
+  const fullCmd = `${pm} ${args.join(' ')}`;
   return new Promise<void>((resolve, reject) => {
-    const child = spawn(pm, args, {
-      cwd,
-      stdio: 'inherit',
-      shell: process.platform === 'win32',
-    });
+    const child =
+      process.platform === 'win32'
+        ? spawn(fullCmd, { cwd, stdio: 'inherit', shell: true })
+        : spawn(pm, args, { cwd, stdio: 'inherit', shell: false });
     child.on('error', reject);
     child.on('close', (code) => {
       if (code === 0) resolve();
-      else reject(new Error(`${pm} ${args.join(' ')} exited with code ${String(code)}`));
+      else reject(new Error(`${fullCmd} exited with code ${String(code)}`));
     });
   });
 }
@@ -85,7 +115,7 @@ export async function runInteractiveInit(
   const explicitStorage = normalizeStorageOption(opts.storage);
 
   renderCliIntro(
-    `img-upload-kit v${opts.version ?? '2.2.4'}`,
+    `img-upload-kit v${opts.version ?? '2.2.5'}`,
     'Interactive Framework & Storage Setup',
     output,
   );
@@ -199,6 +229,10 @@ export async function runInteractiveInit(
 
   let installed = false;
   if (shouldInstall) {
+    const createdPkg = await ensurePackageJson(cwd);
+    if (createdPkg) {
+      renderCliStep('Initialized project', 'created package.json', output);
+    }
     renderCliStep('Installing packages', installCommand, output);
     const runner = opts.execInstall ?? defaultExecInstall;
     await runner(pm, packages, cwd);

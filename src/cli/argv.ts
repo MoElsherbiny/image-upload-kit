@@ -97,7 +97,7 @@ export class CliCommandBuilder {
 export class ZeroDepCliProgram {
   private programName = 'img-upload-kit';
   private programDescription = '';
-  private programVersion = '2.2.4';
+  private programVersion = '2.2.5';
   private readonly commands = new Map<string, CliCommandDef>();
 
   name(): string;

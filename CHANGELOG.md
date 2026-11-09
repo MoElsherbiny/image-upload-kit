@@ -5,6 +5,16 @@ All notable changes to `img-upload-kit` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.5] - 2026-11-09
+
+### Fixed
+
+- **CLI `npx img-upload-kit@latest init` Developer Experience**:
+  - Eliminated Node.js 22+ `[DEP0190]` deprecation warning on Windows during package installation in `src/cli/init.ts`.
+  - Simplified `package.json` `"bin"` to `{"img-upload-kit": "dist/bin.js"}` so `npx img-upload-kit` always resolves `img-upload-kit` directly instead of alphabetically selecting legacy bin aliases.
+  - Automatically initializes a minimal `package.json` when running `npx img-upload-kit@latest init` in a brand-new empty directory without a `package.json`, preventing `npm i` from walking up into parent directories or `pnpm add` from failing.
+  - Exported `decodeBlurHash` and `isBlurhashValid` from `img-upload-kit/blur` and `img-upload-kit` for non-DOM / Node / SSR consumers alongside `decodeBlurHashToDataURL`.
+
 ## [2.2.4] - 2026-11-09
 
 ### Changed & Fixed

@@ -96,7 +96,7 @@ export default defineConfig(async (options): Promise<Options[]> => {
   const pkg = JSON.parse(await readFile('package.json', 'utf8')) as {
     version?: string;
   };
-  const pkgVersion = pkg.version || '2.2.4';
+  const pkgVersion = pkg.version || '2.2.5';
 
   return [
     {

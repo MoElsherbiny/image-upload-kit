@@ -197,13 +197,14 @@ describe('CLI interactive framework & storage setup (init / tui)', () => {
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('--framework'));
   });
 
-  it('auto-installs packages when --yes is passed without --no-install', async () => {
-    const dir = await makeTempProject({ dependencies: { vue: '^3.5.0' } });
+  it('auto-installs packages when --yes is passed without --no-install and initializes package.json in empty directory', async () => {
+    const emptyDir = await makeTempProject();
     const { input, output } = createMockTtyStreams();
     const execInstall = vi.fn().mockResolvedValue(undefined);
 
     const result = await runInteractiveInit({
-      cwd: dir,
+      cwd: emptyDir,
+      framework: 'vue',
       pm: 'npm',
       yes: true,
       input,
@@ -215,10 +216,13 @@ describe('CLI interactive framework & storage setup (init / tui)', () => {
     expect(result.framework).toBe('vue');
     expect(result.storage).toBe('local');
     expect(result.installed).toBe(true);
+    const createdPkgRaw = await fs.readFile(path.join(emptyDir, 'package.json'), 'utf8');
+    const createdPkg = JSON.parse(createdPkgRaw) as { name: string; private: boolean };
+    expect(createdPkg.private).toBe(true);
     expect(execInstall).toHaveBeenCalledWith(
       'npm',
-      ['img-upload-kit', 'sharp'],
-      dir,
+      ['img-upload-kit', 'vue', 'sharp'],
+      emptyDir,
     );
   });
 });
