@@ -7,6 +7,7 @@ import {
 } from '../controllers/multiUpload';
 import type { AngularMultiUploadOptions } from '../types';
 import {
+  bindDragDropZone,
   createHiddenInput,
   HIDDEN_INPUT_CSS,
   makeBtn,
@@ -149,6 +150,15 @@ export function mountMultiImageUpload(
         }
       }
       if (!isDisabled) {
+        if (item.isUploading) {
+          media.appendChild(
+            makeBtn('tile-cancel', ui.cancelUpload, () => controller.cancelItem(item.id)),
+          );
+        } else if (item.error && item.file) {
+          media.appendChild(
+            makeBtn('tile-retry', ui.retryUpload, () => void controller.retryItem(item.id)),
+          );
+        }
         media.appendChild(
           makeBtn(
             'tile-remove-btn',
@@ -168,7 +178,24 @@ export function mountMultiImageUpload(
       });
     }
     bodyContainer.appendChild(grid);
+    if (controller.canAddMore()) {
+      const addMoreBtn = makeBtn(
+        'add-more-btn',
+        ui.selectMoreFilesAria,
+        () => input.click(),
+        isDisabled,
+        c('iuk-btn iuk-btn--secondary'),
+      );
+      addMoreBtn.textContent = ui.addMore;
+      bodyContainer.appendChild(addMoreBtn);
+    }
   };
+
+  bindDragDropZone(root, {
+    isDisabled: () => controller.disabled() || !controller.canAddMore(),
+    setDragging: (d) => controller.setDragging(d),
+    onFiles: (files) => void controller.addFiles(files),
+  });
 
   root.append(liveEl, input, bodyContainer);
   host.appendChild(root);

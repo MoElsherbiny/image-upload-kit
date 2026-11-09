@@ -60,8 +60,18 @@ function isSafeSvgHref(rawValue: string): boolean {
   return false;
 }
 
-function sanitizeCssBlock(css: string): string {
+function normalizeCssObfuscation(css: string): string {
   return css
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\\([0-9a-fA-F]{1,6})\s?/g, (_, hex: string) => {
+      const cp = Number.parseInt(hex, 16);
+      return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : '';
+    })
+    .replace(/\\([^\r\n0-9a-fA-F])/g, '$1');
+}
+
+function sanitizeCssBlock(css: string): string {
+  return normalizeCssObfuscation(css)
     .replace(/@import\b[^;{}]*(?:;|$)/gi, '')
     .replace(/expression\s*\([^)]*\)/gi, '')
     .replace(/(?:javascript|vbscript|data)\s*:[^;)"']*/gi, '')

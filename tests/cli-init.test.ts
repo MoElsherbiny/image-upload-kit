@@ -115,17 +115,25 @@ describe('CLI interactive framework & storage setup (init / tui)', () => {
       { dependencies: { nuxt: '^4.0.0', vue: '^3.5.0' } },
       'pnpm-lock.yaml',
     );
-    const prevUa = process.env.npm_config_user_agent;
-    delete process.env.npm_config_user_agent;
-    try {
-      const env = await detectProjectEnvironment(nuxtDir);
-      expect(env.pm).toBe('pnpm');
-      expect(env.framework).toBe('vue');
-      expect(env.detectedFrameworkName).toBe('Nuxt / Vue');
-      expect(env.installedPackages.has('vue')).toBe(true);
-    } finally {
-      if (prevUa !== undefined) process.env.npm_config_user_agent = prevUa;
-    }
+    const env = await detectProjectEnvironment(nuxtDir);
+    expect(env.pm).toBe('pnpm');
+    expect(env.framework).toBe('vue');
+    expect(env.detectedFrameworkName).toBe('Nuxt / Vue');
+    expect(env.installedPackages.has('vue')).toBe(true);
+
+    // Corepack packageManager field & monorepo parent lockfile detection:
+    const monoRoot = await makeTempProject({ private: true }, 'yarn.lock');
+    const subApp = path.join(monoRoot, 'apps', 'web');
+    await fs.mkdir(subApp, { recursive: true });
+    await fs.writeFile(
+      path.join(subApp, 'package.json'),
+      JSON.stringify({ dependencies: { next: '15.0.0', react: '19.0.0' } }),
+      'utf8',
+    );
+    const monoEnv = await detectProjectEnvironment(subApp);
+    expect(monoEnv.pm).toBe('yarn');
+    expect(monoEnv.framework).toBe('react');
+    expect(monoEnv.detectedFrameworkName).toBe('Next.js / React');
   });
 
   it('resolves exact packages for each framework and storage choice', () => {
@@ -175,9 +183,42 @@ describe('CLI interactive framework & storage setup (init / tui)', () => {
     );
   });
 
-  it('supports CLI subcommand "init --yes --no-install"', async () => {
+  it('supports CLI subcommand "init --yes --no-install", shorthand aliases, and top-level npx flags', async () => {
     const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await runCli(['init', '--framework', 'angular', '--storage', 'supabase', '--yes', '--no-install']);
     expect(writeSpy).toHaveBeenCalled();
+
+    writeSpy.mockClear();
+    await runCli(['--framework', 'nextjs', '--storage', 'r2', '--yes', '--no-install']);
+    expect(writeSpy).toHaveBeenCalled();
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await runCli(['init', '--help']);
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('--framework'));
+  });
+
+  it('auto-installs packages when --yes is passed without --no-install', async () => {
+    const dir = await makeTempProject({ dependencies: { vue: '^3.5.0' } });
+    const { input, output } = createMockTtyStreams();
+    const execInstall = vi.fn().mockResolvedValue(undefined);
+
+    const result = await runInteractiveInit({
+      cwd: dir,
+      pm: 'npm',
+      yes: true,
+      input,
+      output,
+      execInstall,
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.framework).toBe('vue');
+    expect(result.storage).toBe('local');
+    expect(result.installed).toBe(true);
+    expect(execInstall).toHaveBeenCalledWith(
+      'npm',
+      ['img-upload-kit', 'sharp'],
+      dir,
+    );
   });
 });

@@ -188,8 +188,38 @@ export async function optimizeImage(
     else passthrough = passthrough.avif({ quality: baseQuality, effort: retryEffort });
 
     let passthroughOut = await passthrough.toBuffer({ resolveWithObject: true });
+    let passthroughQuality = baseQuality;
     if (srcFmt === 'jpeg' && passthroughOut.info.size > originalSize) {
-      passthroughOut = await pipeline.clone().jpeg({ quality: 10 }).toBuffer({ resolveWithObject: true });
+      const scaledQ = Math.max(
+        40,
+        Math.round(baseQuality * Math.sqrt(originalSize / passthroughOut.info.size)),
+      );
+      const scaledOut = await pipeline
+        .clone()
+        .jpeg({ quality: scaledQ, mozjpeg: true })
+        .toBuffer({ resolveWithObject: true });
+      if (scaledOut.info.size <= originalSize) {
+        passthroughOut = scaledOut;
+        passthroughQuality = scaledQ;
+      } else {
+        const needsExifRotation =
+          typeof metadata.orientation === 'number' && metadata.orientation > 1;
+        if (!needsExifRotation) {
+          return {
+            buffer,
+            width: orientedWidth || resizePlan.width,
+            height: orientedHeight || resizePlan.height,
+            format: 'jpeg',
+            size: originalSize,
+            quality: baseQuality,
+          };
+        }
+        passthroughOut = await pipeline
+          .clone()
+          .jpeg({ quality: 10, mozjpeg: true })
+          .toBuffer({ resolveWithObject: true });
+        passthroughQuality = 10;
+      }
     }
 
     return {
@@ -198,7 +228,7 @@ export async function optimizeImage(
       height: passthroughOut.info.height || orientedHeight || resizePlan.height,
       format: srcFmt,
       size: passthroughOut.info.size,
-      quality: baseQuality,
+      quality: passthroughQuality,
     };
   }
 

@@ -7,6 +7,9 @@ import {
   detectProjectEnvironment,
   type InitFramework,
   type InitStorageAdapter,
+  normalizeFrameworkOption,
+  normalizePmOption,
+  normalizeStorageOption,
   type PackageManagerName,
   resolvePackagesToInstall,
   STORAGE_OPTIONS,
@@ -77,10 +80,12 @@ export async function runInteractiveInit(
   const input = opts.input ?? process.stdin;
   const nonInteractive = Boolean(opts.yes);
   const env = await detectProjectEnvironment(cwd);
-  const pm = opts.pm ?? env.pm;
+  const pm = normalizePmOption(opts.pm) ?? env.pm;
+  const explicitFramework = normalizeFrameworkOption(opts.framework);
+  const explicitStorage = normalizeStorageOption(opts.storage);
 
   renderCliIntro(
-    `img-upload-kit v${opts.version ?? '2.2.1'}`,
+    `img-upload-kit v${opts.version ?? '2.2.3'}`,
     'Interactive Framework & Storage Setup',
     output,
   );
@@ -100,7 +105,7 @@ export async function runInteractiveInit(
   );
 
   const selectedFramework =
-    opts.framework ??
+    explicitFramework ??
     (await promptSelect<InitFramework>({
       message: 'Select your framework / platform:',
       options: frameworkChoices,
@@ -125,8 +130,8 @@ export async function runInteractiveInit(
   const needsStoragePrompt =
     selectedFramework !== 'react-native' && selectedFramework !== 'client';
 
-  let selectedStorage: InitStorageAdapter = opts.storage ?? 'local';
-  if (!opts.storage && needsStoragePrompt) {
+  let selectedStorage: InitStorageAdapter = explicitStorage ?? 'local';
+  if (!explicitStorage && needsStoragePrompt) {
     const chosenStorage = await promptSelect<InitStorageAdapter>({
       message: 'Select your server storage adapter:',
       options: STORAGE_OPTIONS,
@@ -158,6 +163,7 @@ export async function runInteractiveInit(
 
   let shouldInstall = opts.install;
   if (shouldInstall === undefined) {
+    const isInteractiveTty = Boolean(input.isTTY && output.isTTY);
     const mode = await promptSelect<'install' | 'print'>({
       message: `Install dependencies now? (${installCommand})`,
       options: [
@@ -172,7 +178,7 @@ export async function runInteractiveInit(
           hint: 'zero disk changes',
         },
       ],
-      initialValue: nonInteractive ? 'print' : 'install',
+      initialValue: nonInteractive || isInteractiveTty ? 'install' : 'print',
       input,
       output,
       nonInteractive,
@@ -193,6 +199,7 @@ export async function runInteractiveInit(
 
   let installed = false;
   if (shouldInstall) {
+    renderCliStep('Installing packages', installCommand, output);
     const runner = opts.execInstall ?? defaultExecInstall;
     await runner(pm, packages, cwd);
     installed = true;
@@ -211,7 +218,7 @@ export async function runInteractiveInit(
   renderCliOutro(
     installed
       ? `Installed ${packages.join(', ')} for ${selectedFramework}!`
-      : `Ready! Run "${installCommand}" to finish setup.`,
+      : `Ready! Run "npx img-upload-kit@latest init --yes" to install dependencies.`,
     output,
   );
 

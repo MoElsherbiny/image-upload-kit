@@ -218,8 +218,42 @@ export function runDistChecks(rootDir = process.cwd()) {
       check(existsSync(path.join(rootDir, target)), `export target ${target} exists`);
     }
   }
-  for (const bin of Object.values(pkg.bin ?? {})) {
-    check(existsSync(path.join(rootDir, bin)), `bin target ${bin} exists`);
+  for (const [subpath, entryVal] of Object.entries(pkg.exports ?? {})) {
+    if (entryVal && typeof entryVal === 'object') {
+      for (const [condKey, condVal] of Object.entries(entryVal)) {
+        if (condVal && typeof condVal === 'object' && 'types' in condVal) {
+          check(
+            Object.keys(condVal)[0] === 'types',
+            `exports["${subpath}"]["${condKey}"] places "types" first`,
+          );
+        }
+      }
+      if ('types' in entryVal) {
+        check(
+          Object.keys(entryVal)[0] === 'types',
+          `exports["${subpath}"] places "types" first`,
+        );
+      }
+    }
+  }
+  for (const [tvKey, tvPaths] of Object.entries(pkg.typesVersions?.['*'] ?? {})) {
+    for (const tvTarget of tvPaths) {
+      check(
+        existsSync(path.join(rootDir, tvTarget)),
+        `typesVersions["${tvKey}"] target ${tvTarget} exists`,
+      );
+    }
+  }
+  for (const [binName, bin] of Object.entries(pkg.bin ?? {})) {
+    const binPath = path.join(rootDir, bin);
+    const hasShebang =
+      existsSync(binPath) && readFileSync(binPath, 'utf8').startsWith('#!/usr/bin/env node');
+    check(hasShebang, `bin "${binName}" (${bin}) exists and starts with #!/usr/bin/env node`);
+  }
+  for (const fileEntry of pkg.files ?? []) {
+    if (!fileEntry.startsWith('!') && !fileEntry.includes('*')) {
+      check(existsSync(path.join(rootDir, fileEntry)), `pkg.files entry "${fileEntry}" exists`);
+    }
   }
 
   return { failures, passes };

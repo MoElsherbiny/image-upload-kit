@@ -9,6 +9,7 @@ import {
   type StorageUploadParams,
   type StorageUploadResult,
   toPaginatedListResult,
+  validateStorageMetadata,
 } from './types';
 
 export interface LocalFsStorageOptions {
@@ -105,6 +106,7 @@ export function createLocalFsStorageAdapter(options: LocalFsStorageOptions): Loc
 
   return {
     async upload(params: StorageUploadParams): Promise<StorageUploadResult> {
+      validateStorageMetadata(params.metadata);
       const { diskPath, cleanRel } = resolveDiskTarget(
         params.bucket,
         params.path,

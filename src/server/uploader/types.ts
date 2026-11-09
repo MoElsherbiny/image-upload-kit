@@ -44,6 +44,7 @@ export interface ProcessImageBufferOptions {
   limitInputPixels?: number;
   effort?: number;
   allowSvg?: boolean;
+  precomputedHash?: string;
   signal?: AbortSignal;
 }
 

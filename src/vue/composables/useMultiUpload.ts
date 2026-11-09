@@ -162,7 +162,7 @@ export function useMultiUpload<TPreset extends string = UploadPresetName>(
     const env = getEnv();
     error.value = '';
     const activeCount = items.value.filter((i) => !i.error).length;
-    const batchErr = validateMultipleFiles(incoming, env.maxSizeMB, activeCount, getMaxFiles(), env.locale);
+    const batchErr = validateMultipleFiles(incoming, env.maxSizeMB, activeCount, getMaxFiles(), env.locale, { skipSizeCheck: Boolean(options.transformAsset) });
     if (batchErr) { error.value = batchErr; options.onError?.(batchErr); return []; }
 
     const baseIndex = items.value.length;

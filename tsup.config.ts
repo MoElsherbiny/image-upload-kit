@@ -96,7 +96,7 @@ export default defineConfig(async (options): Promise<Options[]> => {
   const pkg = JSON.parse(await readFile('package.json', 'utf8')) as {
     version?: string;
   };
-  const pkgVersion = pkg.version || '2.2.0';
+  const pkgVersion = pkg.version || '2.2.3';
 
   return [
     {
@@ -144,22 +144,18 @@ export default defineConfig(async (options): Promise<Options[]> => {
       define: {
         __PKG_VERSION__: JSON.stringify(pkgVersion),
       },
-    },
-    {
-      entry: {
-        bin: 'src/cli/bin.ts',
-      },
-      format: ['esm'],
-      dts: false,
-      clean: false,
-      sourcemap: true,
-      splitting: false,
-      banner: {
-        js: '#!/usr/bin/env node',
-      },
-      external: PEER_EXTERNALS,
-      define: {
-        __PKG_VERSION__: JSON.stringify(pkgVersion),
+      async onSuccess() {
+        const binCode = [
+          '#!/usr/bin/env node',
+          "import { runCli } from './cli.js';",
+          '',
+          'void runCli().catch((err) => {',
+          '  console.error(err instanceof Error ? err.message : String(err));',
+          '  process.exitCode = 1;',
+          '});',
+          '',
+        ].join('\n');
+        await writeFile('dist/bin.js', binCode, 'utf8');
       },
     },
   ];

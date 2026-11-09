@@ -7,9 +7,11 @@
 ## 1. Installation & Styling
 
 ```bash
-npm install img-upload-kit
-# Optional on your Node.js server:
-npm install sharp lqip-modern
+# Interactive CLI (detects Angular 17+, your package manager & storage adapter):
+npx img-upload-kit@latest init
+
+# Or non-interactive for Angular:
+npx img-upload-kit@latest init --framework angular --yes
 ```
 
 Import the shared design-token stylesheet in `angular.json` or `styles.css`:

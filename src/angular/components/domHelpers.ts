@@ -51,3 +51,29 @@ export function createHiddenInput(
   });
   return input;
 }
+
+export function bindDragDropZone(
+  element: HTMLElement,
+  opts: {
+    isDisabled: () => boolean;
+    setDragging: (dragging: boolean) => void;
+    onFiles: (files: FileList) => void;
+  },
+): void {
+  element.addEventListener('dragenter', (e: DragEvent) => {
+    e.preventDefault();
+    if (!opts.isDisabled()) opts.setDragging(true);
+  });
+  element.addEventListener('dragover', (e: DragEvent) => {
+    e.preventDefault();
+    if (!opts.isDisabled()) opts.setDragging(true);
+  });
+  element.addEventListener('dragleave', () => opts.setDragging(false));
+  element.addEventListener('drop', (e: DragEvent) => {
+    e.preventDefault();
+    opts.setDragging(false);
+    if (!opts.isDisabled() && e.dataTransfer?.files?.length) {
+      opts.onFiles(e.dataTransfer.files);
+    }
+  });
+}

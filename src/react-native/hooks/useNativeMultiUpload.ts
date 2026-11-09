@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   moveItem,
   type NativeUploadAsset,
@@ -19,6 +19,7 @@ import {
   markNativeItemCompleted,
   markNativeItemError,
   markNativeItemRetrying,
+  syncNativeItemsWithValue,
   toCompletedNativeItem,
 } from './nativeMultiHelpers';
 import { useNativeUpload } from './useNativeUpload';
@@ -70,6 +71,12 @@ export function useNativeMultiUpload(
     },
     [props],
   );
+
+  useEffect(() => {
+    if (props.value === undefined) return;
+    commitItems((prev) => syncNativeItemsWithValue(prev, props.value!));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.value]);
 
   const uploadSingleEntry = useCallback(
     async (
@@ -229,9 +236,17 @@ export function useNativeMultiUpload(
   );
 
   const clearAll = useCallback(() => {
+    const snapshot = itemsRef.current;
     cancelUpload();
     commitItems(() => [], true);
-  }, [cancelUpload, commitItems]);
+    if (props.deleteEndpoint || props.customDeleter) {
+      for (const item of snapshot) {
+        if (!item.isUploading && item.data?.url) {
+          void deleteImage(item.data.url).catch(() => {});
+        }
+      }
+    }
+  }, [cancelUpload, commitItems, deleteImage, props.customDeleter, props.deleteEndpoint]);
 
   return {
     items,

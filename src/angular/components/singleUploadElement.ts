@@ -5,7 +5,7 @@ import {
   createSingleUpload,
 } from '../controllers/singleUpload';
 import type { AngularSingleUploadOptions } from '../types';
-import { createHiddenInput, makeBtn, slotEl } from './domHelpers';
+import { bindDragDropZone, createHiddenInput, makeBtn, slotEl } from './domHelpers';
 
 export interface MountedSingleImageUpload {
   element: HTMLDivElement;
@@ -111,6 +111,13 @@ export function mountSingleImageUpload(
 
   dropzone.addEventListener('click', () => {
     if (!controller.disabled() && !controller.previewUrl()) input.click();
+  });
+  bindDragDropZone(dropzone, {
+    isDisabled: () => controller.disabled(),
+    setDragging: (d) => controller.setDragging(d),
+    onFiles: (files) => {
+      if (files[0]) void controller.selectFile(files[0]);
+    },
   });
 
   root.append(input, dropzone);

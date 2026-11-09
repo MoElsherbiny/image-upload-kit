@@ -31,6 +31,7 @@ export interface MemoryStorageAdapter extends StorageAdapter {
     options?: StorageListOptions,
   ): Promise<StoragePaginatedListResult>;
   deleteByUrl(url: string): Promise<boolean>;
+  parseUrl(url: string): { bucket?: string; path: string } | null;
   createPresignedUpload(
     params: StoragePresignParams,
   ): Promise<StoragePresignResult>;
@@ -73,6 +74,7 @@ export function createMemoryStorageAdapter(
 
   return {
     async upload(params: StorageUploadParams): Promise<StorageUploadResult> {
+      validateStorageMetadata(params.metadata);
       const cleanPath = params.path.replace(/^\/+/, '');
       const key = toKey(params.bucket, cleanPath);
 
@@ -162,13 +164,17 @@ export function createMemoryStorageAdapter(
     parseUrl(url: string): { bucket?: string; path: string } | null {
       const prefix = `${baseUrl}/`;
       if (!url || !url.startsWith(prefix)) return null;
-      const cleanUrl = url.split(/[?#]/)[0];
-      const rest = cleanUrl.slice(prefix.length);
-      const slashIdx = rest.indexOf('/');
-      if (slashIdx <= 0 || slashIdx === rest.length - 1) return null;
-      const bucket = rest.slice(0, slashIdx);
-      const filePath = rest.slice(slashIdx + 1);
-      return { bucket, path: filePath };
+      try {
+        const cleanUrl = url.split(/[?#]/)[0];
+        const rest = decodeURIComponent(cleanUrl.slice(prefix.length));
+        const slashIdx = rest.indexOf('/');
+        if (slashIdx <= 0 || slashIdx === rest.length - 1) return null;
+        const bucket = rest.slice(0, slashIdx);
+        const filePath = rest.slice(slashIdx + 1);
+        return { bucket, path: filePath };
+      } catch {
+        return null;
+      }
     },
 
     async createPresignedUpload(

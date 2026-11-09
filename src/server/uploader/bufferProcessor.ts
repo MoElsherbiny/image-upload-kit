@@ -1,18 +1,10 @@
 import { generateBlurPlaceholder, optimizeImage } from '../optimization';
 import { withTimeout } from '../semaphore';
+import { computeSha256Hex } from './dedupe';
 import type {
   ProcessedImageBufferResult,
   ProcessImageBufferOptions,
 } from './types';
-
-async function computeSha256Hex(buffer: Uint8Array): Promise<string> {
-  const bytes = new Uint8Array(buffer.byteLength);
-  bytes.set(buffer);
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (!signal?.aborted) return;
@@ -33,7 +25,8 @@ export async function processImageBuffer(
 
   throwIfAborted(options.signal);
 
-  const contentHash = await computeSha256Hex(originalBuffer);
+  const contentHash =
+    options.precomputedHash ?? (await computeSha256Hex(originalBuffer));
 
   throwIfAborted(options.signal);
 

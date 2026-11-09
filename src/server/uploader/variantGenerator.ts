@@ -68,26 +68,9 @@ export async function generateImageVariants(
   params: GenerateImageVariantsParams,
 ): Promise<GeneratedVariantsResult> {
   const {
-    sourceBuffer,
-    format,
-    quality,
-    effort,
-    limitInputPixels,
-    aspectRatio,
-    crop,
-    mainWidth,
-    mainHeight,
-    mainUrl,
-    baseStoragePath,
-    baseFilename,
-    bucket,
-    storage,
-    variantWidths,
-    upsert = false,
-    contentHash,
-    metadata,
-    mirrorDir,
-    publicUrlBase,
+    sourceBuffer, format, quality, effort, limitInputPixels, aspectRatio, crop,
+    mainWidth, mainHeight, mainUrl, baseStoragePath, baseFilename, bucket,
+    storage, variantWidths, upsert = false, contentHash, metadata, mirrorDir, publicUrlBase,
   } = params;
 
   if (format === 'svg' || !variantWidths?.length) {
@@ -115,78 +98,95 @@ export async function generateImageVariants(
     limitInputPixels: limitInputPixels ?? DEFAULT_LIMIT_INPUT_PIXELS,
   }).rotate();
 
-  const variants = await Promise.all(
-    targetWidths.map(async (w): Promise<ImageVariant> => {
-      let branch = basePipeline
-        .clone()
-        .resize(
-          targetRatio !== undefined
-            ? {
-                width: w,
-                height: Math.max(1, Math.round(w / targetRatio)),
-                fit: 'cover',
-                position: crop || 'attention',
-                withoutEnlargement: true,
-                kernel: 'lanczos3',
-              }
-            : {
-                width: w,
-                withoutEnlargement: true,
-                kernel: 'lanczos3',
-              },
-        );
+  const uploadedVariantPaths: string[] = [];
+  let variants: ImageVariant[];
+  try {
+    variants = await Promise.all(
+      targetWidths.map(async (w): Promise<ImageVariant> => {
+        let branch = basePipeline
+          .clone()
+          .resize(
+            targetRatio !== undefined
+              ? {
+                  width: w,
+                  height: Math.max(1, Math.round(w / targetRatio)),
+                  fit: 'cover',
+                  position: crop || 'attention',
+                  withoutEnlargement: true,
+                  kernel: 'lanczos3',
+                }
+              : {
+                  width: w,
+                  withoutEnlargement: true,
+                  kernel: 'lanczos3',
+                },
+          );
 
-      if (format === 'jpeg') {
-        branch = branch.jpeg({ quality: baseQuality, mozjpeg: true });
-      } else if (format === 'png') {
-        branch = branch.png({ compressionLevel: 9 });
-      } else if (format === 'webp') {
-        branch = branch.webp({ quality: baseQuality, effort: 4 });
-      } else {
-        branch = branch.avif({
-          quality: baseQuality,
-          effort: avifEffort,
-          chromaSubsampling: '4:2:0',
-          bitdepth: 8,
+        if (format === 'jpeg') {
+          branch = branch.jpeg({ quality: baseQuality, mozjpeg: true });
+        } else if (format === 'png') {
+          branch = branch.png({ compressionLevel: 9 });
+        } else if (format === 'webp') {
+          branch = branch.webp({ quality: baseQuality, effort: 4 });
+        } else {
+          branch = branch.avif({
+            quality: baseQuality,
+            effort: avifEffort,
+            chromaSubsampling: '4:2:0',
+            bitdepth: 8,
+          });
+        }
+
+        const out = await branch.toBuffer({ resolveWithObject: true });
+        const variantPath = buildVariantStoragePath(baseStoragePath, w);
+        const variantFilename = buildVariantStoragePath(baseFilename, w);
+
+        const uploaded = await storage.upload({
+          bucket,
+          path: variantPath,
+          data: out.data,
+          contentType: `image/${format}`,
+          upsert,
+          contentHash,
+          metadata,
         });
-      }
+        uploadedVariantPaths.push(uploaded.path);
 
-      const out = await branch.toBuffer({ resolveWithObject: true });
-      const variantPath = buildVariantStoragePath(baseStoragePath, w);
-      const variantFilename = buildVariantStoragePath(baseFilename, w);
+        const resolvedUrl = await mirrorBufferLocally({
+          buffer: out.data,
+          filename: variantFilename,
+          storagePath: uploaded.path,
+          fallbackUrl: uploaded.url,
+          mirrorDir,
+          publicUrlBase,
+        });
 
-      const uploaded = await storage.upload({
-        bucket,
-        path: variantPath,
-        data: out.data,
-        contentType: `image/${format}`,
-        upsert,
-        contentHash,
-        metadata,
-      });
-
-      const resolvedUrl = await mirrorBufferLocally({
-        buffer: out.data,
-        filename: variantFilename,
-        storagePath: uploaded.path,
-        fallbackUrl: uploaded.url,
-        mirrorDir,
-        publicUrlBase,
-      });
-
-      return {
-        width: out.info.width || w,
-        height:
-          out.info.height ||
-          (targetRatio !== undefined
-            ? Math.max(1, Math.round(w / targetRatio))
-            : Math.max(1, Math.round((mainHeight / Math.max(1, mainWidth)) * w))),
-        url: resolvedUrl,
-        size: out.info.size,
-        storagePath: uploaded.path,
-      };
-    }),
-  );
+        return {
+          width: out.info.width || w,
+          height:
+            out.info.height ||
+            (targetRatio !== undefined
+              ? Math.max(1, Math.round(w / targetRatio))
+              : Math.max(1, Math.round((mainHeight / Math.max(1, mainWidth)) * w))),
+          url: resolvedUrl,
+          size: out.info.size,
+          storagePath: uploaded.path,
+        };
+      }),
+    );
+  } catch (err) {
+    const mirrorDirs = mirrorDir ? [mirrorDir] : [];
+    await storage.delete(bucket, baseStoragePath).catch(() => {});
+    await deleteMirroredFiles(mirrorDirs, baseStoragePath);
+    await deleteStoredVariants({
+      storage,
+      bucket,
+      basePath: baseStoragePath,
+      mirrorDirs,
+      knownVariantPaths: uploadedVariantPaths,
+    });
+    throw err;
+  }
 
   const srcSet = [
     ...variants.map((v) => `${v.url} ${v.width}w`),

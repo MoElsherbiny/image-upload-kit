@@ -1,5 +1,4 @@
 <div align="center">
-
 # img-upload-kit
 
 **Drop-in image uploads that arrive optimized.**
@@ -13,9 +12,14 @@ Upload, crop, compress to AVIF/WebP and show a blur-up placeholder in React, Vue
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/MoElsherbiny/image-upload-kit/blob/main/LICENSE)
 
 [**Live demo**](https://upload-kit.buildwithsherbo.com) · [Quick start](#quick-start) · [Use cases](#use-cases) · [Docs](#documentation)
+</div>
 
+```bash
+npx img-upload-kit@latest init
+```
+
+<div align="center">
 <img src="https://raw.githubusercontent.com/MoElsherbiny/image-upload-kit/main/docs/assets/demo-code-studio.png" alt="img-upload-kit interactive studio showing upload UI and synced code" width="820" />
-
 </div>
 
 ## Why img-upload-kit?
@@ -31,14 +35,13 @@ Most upload libraries stop at "the file reached the server". This one handles ev
 
 ## Quick start
 
-### 1. Install (Interactive CLI or Manual)
+### 1. Install (`npx` CLI)
 
 ```bash
 # Interactive terminal menu (choose React, Vue/Nuxt, Angular, React Native & storage with ↑/↓ arrows):
 npx img-upload-kit@latest init
-
-# Or install directly (sharp is needed on the Node.js 20+ server only):
-npm i img-upload-kit sharp          # or: pnpm add / yarn add / bun add
+# Or non-interactive setup (auto-detects your framework, package manager & installs dependencies):
+npx img-upload-kit@latest init --yes
 ```
 
 ### 2. Add an upload route
@@ -238,7 +241,6 @@ import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } fro
 import { createS3StorageAdapter } from 'img-upload-kit/storage';
 
 const s3 = new S3Client({ region: 'auto', endpoint: process.env.S3_ENDPOINT });
-
 const storage = createS3StorageAdapter({
   publicBaseUrl: 'https://cdn.example.com',
   defaultBucket: 'media',
@@ -247,7 +249,6 @@ const storage = createS3StorageAdapter({
   getObject: (input) => s3.send(new GetObjectCommand(input)),
 });
 ```
-
 Supabase, presigned uploads and database persistence: [docs/FRAMEWORK_RECIPES.md](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/FRAMEWORK_RECIPES.md)
 </details>
 
@@ -293,5 +294,4 @@ Import only what you need. Each entry point is tree-shakeable and ships ESM + CJ
 
 ## Contributing & License
 
-Issues and pull requests are welcome — see [CONTRIBUTING.md](https://github.com/MoElsherbiny/image-upload-kit/blob/main/CONTRIBUTING.md) and [SECURITY.md](https://github.com/MoElsherbiny/image-upload-kit/blob/main/SECURITY.md).
-[MIT](https://github.com/MoElsherbiny/image-upload-kit/blob/main/LICENSE) © [Mohamed Elsherbiny](https://www.buildwithsherbo.com/) · [@MoElsherbiny](https://github.com/MoElsherbiny)
+Issues and pull requests are welcome — see [CONTRIBUTING.md](https://github.com/MoElsherbiny/image-upload-kit/blob/main/CONTRIBUTING.md) and [SECURITY.md](https://github.com/MoElsherbiny/image-upload-kit/blob/main/SECURITY.md). [MIT](https://github.com/MoElsherbiny/image-upload-kit/blob/main/LICENSE) © [Mohamed Elsherbiny](https://www.buildwithsherbo.com/) · [@MoElsherbiny](https://github.com/MoElsherbiny)

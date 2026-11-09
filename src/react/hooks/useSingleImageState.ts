@@ -39,6 +39,7 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
   const requireAltText = propRequireAltText ?? ctx.requireAltText;
   const standardPreset = preset ? STANDARD_PRESETS[preset as StandardPresetName] : undefined;
   const maxSizeMB = propMaxSizeMB ?? standardPreset?.maxSizeMB ?? 10;
+  const allowedFormats = props.allowedFormats ?? standardPreset?.allowedFormats;
   const requiresManualCommit = Boolean(isOpen);
   const cache = useMemo(() => createUploadSessionCache(ctx.storageKeyPrefix || 'iuk'), [ctx.storageKeyPrefix]);
 
@@ -81,7 +82,7 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
 
   const { uploadImage, abortAll, isUploading, progress, uploadMessage, reset } = useImageUpload({
     preset, folder, bucket, metadata, outputFormat, maxDimensions, aspectRatio, crop,
-    transformAsset, customFilename, quality: QUALITY_PRESETS[qualityLevel].value,
+    maxSizeMB, allowedFormats, transformAsset, customFilename, quality: QUALITY_PRESETS[qualityLevel].value,
     endpoint, uploader, uploadMode, headers, withCredentials, locale,
     onSuccess: (data, _file, uploadId) => {
       if (uploadId && activeUploadIdRef.current && uploadId !== activeUploadIdRef.current) return;
@@ -161,7 +162,9 @@ export function useSingleImageState<TPreset extends string = UploadPresetName>(
       return;
     }
     if (!isHeicAsset(file)) {
-      const err = validateImageFile(file, maxSizeMB, locale);
+      const err = validateImageFile(file, maxSizeMB, locale, allowedFormats, {
+        skipSizeCheck: Boolean(transformAsset),
+      });
       if (err) { setValidationError(err); return; }
     }
     uploadSeqRef.current += 1;

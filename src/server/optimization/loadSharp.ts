@@ -11,7 +11,7 @@ export type SharpFactory = typeof SharpDefault;
 export type LqipFn = (input: Buffer | string) => Promise<unknown>;
 
 export const SHARP_MISSING_MESSAGE =
-  'img-upload-kit/server requires `sharp` - run `npm i sharp`';
+  'img-upload-kit/server requires `sharp` - run `npx img-upload-kit@latest init`';
 
 /**
  * @deprecated `lqip-modern` is no longer required; LQIP placeholders are generated directly with `sharp`.

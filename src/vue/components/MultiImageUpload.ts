@@ -169,6 +169,11 @@ export const MultiImageUpload = defineComponent({
             if (index > 0) mediaChildren.push(makeActionBtn('tile-set-cover', ui.setAsCover, () => ctrl.setCover(index)));
           }
           if (!isDisabled) {
+            if (item.isUploading) {
+              mediaChildren.push(makeActionBtn('tile-cancel', ui.cancelUpload, () => ctrl.cancelItem(item.id)));
+            } else if (item.error && item.file) {
+              mediaChildren.push(makeActionBtn('tile-retry', ui.retryUpload, () => void ctrl.retryItem(item.id)));
+            }
             mediaChildren.push(makeActionBtn('tile-remove-btn', ui.removeImageAria, () => void ctrl.removeItem(item.id)));
           }
           return h(
@@ -206,7 +211,28 @@ export const MultiImageUpload = defineComponent({
 
       return h(
         'div',
-        { 'data-slot': 'multi-root', 'data-state': st, dir: resolvedLocale === 'ar' ? 'rtl' : undefined, class: c('iuk-multi') },
+        {
+          'data-slot': 'multi-root',
+          'data-state': st,
+          dir: resolvedLocale === 'ar' ? 'rtl' : undefined,
+          class: c('iuk-multi'),
+          onDragenter: (e: DragEvent) => {
+            e.preventDefault();
+            if (!isDisabled && ctrl.canAddMore.value) ctrl.setDragging(true);
+          },
+          onDragover: (e: DragEvent) => {
+            e.preventDefault();
+            if (!isDisabled && ctrl.canAddMore.value) ctrl.setDragging(true);
+          },
+          onDragleave: () => ctrl.setDragging(false),
+          onDrop: (e: DragEvent) => {
+            e.preventDefault();
+            ctrl.setDragging(false);
+            if (!isDisabled && ctrl.canAddMore.value && e.dataTransfer?.files?.length) {
+              void ctrl.addFiles(e.dataTransfer.files);
+            }
+          },
+        },
         [
           h('div', {
             'data-slot': 'live-region', role: 'status', 'aria-live': 'polite',

@@ -1,7 +1,12 @@
 import type { UploadedImageData } from '../../types';
 import { normalizeColorInput } from '../../utils/color';
-import type { AngularMultiUploadItem } from '../types';
-import { createBlobPreview } from './uploadHelpers';
+import type { AngularMultiUploadItem, AngularMultiUploadOptions } from '../types';
+import {
+  createBlobPreview,
+  executeDeleteRequest,
+  type ResolvedControllerEnv,
+  revokeBlobUrl,
+} from './uploadHelpers';
 
 let multiItemSeq = 0;
 
@@ -88,4 +93,15 @@ export function applyItemBlurColor(
     blurColor: normalizedColor,
     data: item.data ? { ...item.data, blurColor: normalizedColor } : undefined,
   };
+}
+
+export function revokeAndDeleteMultiItems(
+  list: AngularMultiUploadItem[],
+  env: ResolvedControllerEnv,
+  options: AngularMultiUploadOptions,
+): void {
+  for (const item of list) {
+    revokeBlobUrl(item.url);
+    if (item.data) void executeDeleteRequest(item.data, env, options);
+  }
 }

@@ -6,22 +6,22 @@
 
 ## 1. Dependencies & Peer Dependencies (`sharp`, `lqip-modern`, `lucide-react`)
 
-- **`sharp` & `lqip-modern` are now optional peer dependencies.** Client-only or Edge consumers no longer download native Sharp binaries when installing `img-upload-kit`. Server (`img-upload-kit/server`) and CLI (`img-upload-kit/cli`) consumers must install `sharp` (and optionally `lqip-modern`).
+- **`sharp` & `lqip-modern` are now optional peer dependencies.** Client-only or Edge consumers no longer download native Sharp binaries when installing `img-upload-kit`. Server (`img-upload-kit/server`) and CLI (`img-upload-kit/cli`) consumers must install `sharp`.
 - **`lucide-react` has been removed.** All UI icons are now inlined inside `img-upload-kit/react` (`src/react/icons.tsx`) with zero external icon dependencies.
 - **Node.js `>= 20.0.0`** is recommended for development and server runtimes.
 
 ### Before (v1.x)
 ```bash
-npm install img-upload-kit
+npx img-upload-kit@1 init
 ```
 
-### After (v2.0.0)
+### After (v2.0.0+)
 ```bash
-# Client-only / React UI:
-npm install img-upload-kit react react-dom
+# Interactive CLI setup (auto-detects React, Vue/Nuxt, Angular, React Native, or Server & installs peer deps):
+npx img-upload-kit@latest init
 
-# Server / Full-Stack (Next.js, Remix, Hono, Node.js) or CLI:
-npm install img-upload-kit sharp lqip-modern
+# Or non-interactive with detected defaults:
+npx img-upload-kit@latest init --yes
 ```
 
 ---

@@ -34,6 +34,7 @@ export function validateImageFile(
   maxSizeMB: number,
   locale: UploadLocale = 'en',
   allowedFormats?: string[],
+  options?: { skipSizeCheck?: boolean },
 ): string | null {
   if (!file.type || !file.type.startsWith('image/')) {
     return locale === 'ar'
@@ -47,11 +48,13 @@ export function validateImageFile(
       : `Unsupported image format (${file.type})`;
   }
 
-  const fileSizeMB = file.size / (1024 * 1024);
-  if (fileSizeMB > maxSizeMB) {
-    return locale === 'ar'
-      ? `يجب ألا يتجاوز حجم الملف ${maxSizeMB}MB`
-      : `File size must be less than ${maxSizeMB}MB`;
+  if (!options?.skipSizeCheck) {
+    const fileSizeMB = file.size / (1024 * 1024);
+    if (fileSizeMB > maxSizeMB) {
+      return locale === 'ar'
+        ? `يجب ألا يتجاوز حجم الملف ${maxSizeMB}MB`
+        : `File size must be less than ${maxSizeMB}MB`;
+    }
   }
 
   return null;
@@ -84,11 +87,16 @@ export function validateMultipleFiles(
   currentCount: number,
   maxImages: number,
   locale: UploadLocale = 'en',
+  options?: { skipSizeCheck?: boolean },
 ): string | null {
   if (currentCount + files.length > maxImages) {
     return locale === 'ar'
       ? `يمكن رفع ${maxImages} صورة فقط. المتبقي: ${maxImages - currentCount}.`
       : `Can only upload ${maxImages} images. ${maxImages - currentCount} remaining.`;
+  }
+
+  if (options?.skipSizeCheck) {
+    return null;
   }
 
   const oversizedFiles: string[] = [];

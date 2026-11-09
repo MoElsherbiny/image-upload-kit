@@ -6,8 +6,8 @@ import type {
   ImageUploadOptions,
 } from '../../types';
 import { resolveAspectRatio } from '../../types/aspectRatio';
+import { normalizeOverrides, sanitizeFolderSegment } from './guards';
 import type {
-  AllowClientOverrides,
   AuthorizeContext,
   UploadHttpHandlerOptions,
 } from './options';
@@ -15,18 +15,6 @@ import { jsonResponse } from './responses';
 
 const ALLOWED_OUTPUT_FORMATS = new Set(['jpeg', 'png', 'webp', 'avif']);
 const ALLOWED_CROP_STRATEGIES = new Set<CropStrategy>(['attention', 'entropy', 'center']);
-
-function normalizeOverrides(
-  overrides?: AllowClientOverrides | boolean,
-): AllowClientOverrides | undefined {
-  if (overrides === true) {
-    return {
-      filename: true, folder: true, dimensions: true, format: true,
-      quality: true, aspectRatio: true, crop: true,
-    };
-  }
-  return overrides || undefined;
-}
 
 function parseJsonRecord(raw: string | null): Record<string, string> | undefined {
   if (!raw) return undefined;
@@ -63,8 +51,9 @@ export function peekUploadAuthContext<TPreset extends string>(
     ? rawBucket || presetConfig?.bucket || options.uploader.defaultBucket
     : presetConfig?.bucket || options.uploader.defaultBucket;
 
+  const sanitizedRawFolder = rawFolder ? sanitizeFolderSegment(rawFolder) : undefined;
   const folder = overrides?.folder
-    ? rawFolder || presetConfig?.folder
+    ? sanitizedRawFolder || presetConfig?.folder
     : presetConfig?.folder;
 
   return {
@@ -136,13 +125,13 @@ export function parseUploadForm<TPreset extends string>(
   const rawFolder = (formData.get('folder') as string | null) || undefined;
   if (rawFolder !== undefined) {
     if (overrides?.folder === true) {
-      folder = rawFolder;
+      folder = sanitizeFolderSegment(rawFolder) || undefined;
     } else if (typeof overrides?.folder === 'function') {
       const scoped = overrides.folder(rawFolder, authCtx);
       if (scoped === null) {
         return { errorResponse: jsonResponse({ error: 'Invalid or disallowed folder' }, 400) };
       }
-      folder = scoped || undefined;
+      folder = scoped ? sanitizeFolderSegment(scoped) : undefined;
     }
   }
 

@@ -190,10 +190,12 @@ export async function lookupDedupeCache(params: {
     bucket,
     altText,
   } = params;
-  const [sourceHash, dedupeKey] = await Promise.all([
-    computeSha256Hex(originalBuffer),
-    computeDedupeKey(originalBuffer, dedupeSettings),
-  ]);
+  const sourceHash = await computeSha256Hex(originalBuffer);
+  const dedupeKey = await computeDedupeKey(
+    originalBuffer,
+    dedupeSettings,
+    sourceHash,
+  );
   const cached = await dedupeStore.get(dedupeKey);
   if (cached) {
     const existsOk =
@@ -267,4 +269,29 @@ export function computeMaxSizeMB(
     if (p?.maxSizeMB && p.maxSizeMB > maxMB) maxMB = p.maxSizeMB;
   }
   return maxMB;
+}
+
+export function createVariantTracker(maxEntries = 1000, maxWidths = 64) {
+  const variants = new Map<string, string[]>();
+  const widths = new Set<number>();
+  return {
+    widths,
+    track(key: string, paths: string[], variantList: { width: number }[]): void {
+      if (!paths.length) return;
+      if (variants.has(key)) variants.delete(key);
+      else if (variants.size >= maxEntries) {
+        const oldest = variants.keys().next().value;
+        if (oldest !== undefined) variants.delete(oldest);
+      }
+      variants.set(key, paths);
+      for (const v of variantList) {
+        if (widths.size < maxWidths) widths.add(v.width);
+      }
+    },
+    pop(key: string): string[] | undefined {
+      const paths = variants.get(key);
+      variants.delete(key);
+      return paths;
+    },
+  };
 }

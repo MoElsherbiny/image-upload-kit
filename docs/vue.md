@@ -7,9 +7,11 @@
 ## 1. Installation & Styling
 
 ```bash
-npm install img-upload-kit
-# Optional on your Node.js / Nuxt server:
-npm install sharp lqip-modern
+# Interactive CLI (detects Vue 3 / Nuxt 4, your package manager & storage adapter):
+npx img-upload-kit@latest init
+
+# Or non-interactive for Vue 3 / Nuxt 4:
+npx img-upload-kit@latest init --framework vue --yes
 ```
 
 Import the shared design-token stylesheet in your root `main.ts`, `app.vue`, or `nuxt.config.ts`:

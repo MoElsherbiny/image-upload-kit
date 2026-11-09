@@ -2,14 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { SelectOption } from './tui';
 
-export type InitFramework =
-  | 'react'
-  | 'vue'
-  | 'angular'
-  | 'react-native'
-  | 'server'
-  | 'client';
-
+export type InitFramework = 'react' | 'vue' | 'angular' | 'react-native' | 'server' | 'client';
 export type InitStorageAdapter = 'local' | 's3' | 'supabase' | 'memory';
 export type PackageManagerName = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
@@ -21,59 +14,19 @@ export interface DetectedEnvironment {
 }
 
 export const BASE_FRAMEWORK_OPTIONS: ReadonlyArray<SelectOption<InitFramework>> = [
-  {
-    value: 'react',
-    label: 'React / Next.js',
-    hint: 'img-upload-kit/react + headless + Sharp server pipeline',
-  },
-  {
-    value: 'vue',
-    label: 'Vue 3.5+ / Nuxt 4',
-    hint: 'img-upload-kit/vue plugin, v-model components & composables',
-  },
-  {
-    value: 'angular',
-    label: 'Angular 17–21+',
-    hint: 'img-upload-kit/angular signals, Zoneless & Reactive Forms',
-  },
-  {
-    value: 'react-native',
-    label: 'React Native / Expo',
-    hint: 'img-upload-kit/react-native + Expo/RN image picker adapters',
-  },
-  {
-    value: 'server',
-    label: 'Node.js / Edge Server Only',
-    hint: 'img-upload-kit/server + Sharp AVIF/WebP + presigned routes',
-  },
-  {
-    value: 'client',
-    label: 'Headless / Vanilla JS',
-    hint: 'img-upload-kit/client universal XHR, resize & presigned engine',
-  },
+  { value: 'react', label: 'React / Next.js', hint: 'img-upload-kit/react + headless + Sharp server pipeline' },
+  { value: 'vue', label: 'Vue 3.5+ / Nuxt 4', hint: 'img-upload-kit/vue plugin, v-model components & composables' },
+  { value: 'angular', label: 'Angular 17–21+', hint: 'img-upload-kit/angular signals, Zoneless & Reactive Forms' },
+  { value: 'react-native', label: 'React Native / Expo', hint: 'img-upload-kit/react-native + Expo/RN image picker adapters' },
+  { value: 'server', label: 'Node.js / Edge Server Only', hint: 'img-upload-kit/server + Sharp AVIF/WebP + presigned routes' },
+  { value: 'client', label: 'Headless / Vanilla JS', hint: 'img-upload-kit/client universal XHR, resize & presigned engine' },
 ];
 
 export const STORAGE_OPTIONS: ReadonlyArray<SelectOption<InitStorageAdapter>> = [
-  {
-    value: 'local',
-    label: 'Local Filesystem',
-    hint: 'createLocalFsStorageAdapter (./public/uploads — zero cloud keys)',
-  },
-  {
-    value: 's3',
-    label: 'AWS S3 / Cloudflare R2',
-    hint: 'createS3StorageAdapter + direct presigned PUT uploads',
-  },
-  {
-    value: 'supabase',
-    label: 'Supabase Storage',
-    hint: 'createSupabaseStorageAdapter',
-  },
-  {
-    value: 'memory',
-    label: 'In-Memory Adapter',
-    hint: 'createMemoryStorageAdapter (testing & ephemeral sandboxes)',
-  },
+  { value: 'local', label: 'Local Filesystem', hint: 'createLocalFsStorageAdapter (./public/uploads — zero cloud keys)' },
+  { value: 's3', label: 'AWS S3 / Cloudflare R2', hint: 'createS3StorageAdapter + direct presigned PUT uploads' },
+  { value: 'supabase', label: 'Supabase Storage', hint: 'createSupabaseStorageAdapter' },
+  { value: 'memory', label: 'In-Memory Adapter', hint: 'createMemoryStorageAdapter (testing & ephemeral sandboxes)' },
 ];
 
 async function fileExists(targetPath: string): Promise<boolean> {
@@ -85,34 +38,79 @@ async function fileExists(targetPath: string): Promise<boolean> {
   }
 }
 
+async function detectLockfilePm(dir: string): Promise<PackageManagerName | null> {
+  if (
+    (await fileExists(path.join(dir, 'pnpm-lock.yaml'))) ||
+    (await fileExists(path.join(dir, 'pnpm-workspace.yaml')))
+  ) {
+    return 'pnpm';
+  }
+  if (await fileExists(path.join(dir, 'yarn.lock'))) return 'yarn';
+  if (
+    (await fileExists(path.join(dir, 'bun.lockb'))) ||
+    (await fileExists(path.join(dir, 'bun.lock')))
+  ) {
+    return 'bun';
+  }
+  if (await fileExists(path.join(dir, 'package-lock.json'))) return 'npm';
+  return null;
+}
+
+export function normalizeFrameworkOption(raw?: string): InitFramework | undefined {
+  if (!raw) return undefined;
+  const v = raw.trim().toLowerCase();
+  if (v === 'react' || v === 'next' || v === 'nextjs') return 'react';
+  if (v === 'vue' || v === 'nuxt' || v === 'nuxtjs') return 'vue';
+  if (v === 'angular' || v === 'ng') return 'angular';
+  if (v === 'react-native' || v === 'rn' || v === 'expo') return 'react-native';
+  if (v === 'server' || v === 'node' || v === 'edge' || v === 'hono' || v === 'express') {
+    return 'server';
+  }
+  if (v === 'client' || v === 'headless' || v === 'vanilla') return 'client';
+  throw new Error(
+    `Invalid --framework "${raw}". Expected one of: react, vue, angular, react-native, server, client.`,
+  );
+}
+
+export function normalizeStorageOption(raw?: string): InitStorageAdapter | undefined {
+  if (!raw) return undefined;
+  const v = raw.trim().toLowerCase();
+  if (v === 'local' || v === 'fs' || v === 'disk' || v === 'filesystem') return 'local';
+  if (v === 's3' || v === 'r2' || v === 'aws' || v === 'cloudflare') return 's3';
+  if (v === 'supabase' || v === 'sb') return 'supabase';
+  if (v === 'memory' || v === 'mem') return 'memory';
+  throw new Error(
+    `Invalid --storage "${raw}". Expected one of: local, s3, supabase, memory.`,
+  );
+}
+
+export function normalizePmOption(raw?: string): PackageManagerName | undefined {
+  if (!raw) return undefined;
+  const v = raw.trim().toLowerCase();
+  if (v === 'npm' || v === 'pnpm' || v === 'yarn' || v === 'bun') return v;
+  throw new Error(`Invalid --pm "${raw}". Expected one of: npm, pnpm, yarn, bun.`);
+}
+
 export async function detectProjectEnvironment(
   cwd: string = process.cwd(),
 ): Promise<DetectedEnvironment> {
-  let pm: PackageManagerName = 'npm';
-  const ua = process.env.npm_config_user_agent ?? '';
-  if (ua.startsWith('pnpm') || (await fileExists(path.join(cwd, 'pnpm-lock.yaml')))) {
-    pm = 'pnpm';
-  } else if (ua.startsWith('yarn') || (await fileExists(path.join(cwd, 'yarn.lock')))) {
-    pm = 'yarn';
-  } else if (
-    ua.startsWith('bun') ||
-    (await fileExists(path.join(cwd, 'bun.lockb'))) ||
-    (await fileExists(path.join(cwd, 'bun.lock')))
-  ) {
-    pm = 'bun';
-  }
-
   const installedPackages = new Set<string>();
   let framework: InitFramework = 'react';
   let detectedFrameworkName: string | null = null;
+  let declaredPm: PackageManagerName | null = null;
 
   try {
     const raw = await fs.readFile(path.join(cwd, 'package.json'), 'utf8');
     const pkg = JSON.parse(raw) as {
+      packageManager?: string;
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
       peerDependencies?: Record<string, string>;
     };
+    const pmSpec = pkg.packageManager?.split('@')[0]?.trim().toLowerCase();
+    if (pmSpec === 'pnpm' || pmSpec === 'yarn' || pmSpec === 'bun' || pmSpec === 'npm') {
+      declaredPm = pmSpec;
+    }
     for (const group of [pkg.dependencies, pkg.devDependencies, pkg.peerDependencies]) {
       if (group) {
         for (const key of Object.keys(group)) installedPackages.add(key);
@@ -143,6 +141,19 @@ export async function detectProjectEnvironment(
     // No package.json in cwd — default to react + npm
   }
 
+  let pm: PackageManagerName | null = declaredPm;
+  for (const dir of [cwd, path.dirname(cwd), path.dirname(path.dirname(cwd))]) {
+    if (pm) break;
+    pm = await detectLockfilePm(dir);
+  }
+  if (!pm) {
+    const ua = process.env.npm_config_user_agent ?? '';
+    if (ua.startsWith('pnpm')) pm = 'pnpm';
+    else if (ua.startsWith('yarn')) pm = 'yarn';
+    else if (ua.startsWith('bun')) pm = 'bun';
+    else pm = 'npm';
+  }
+
   return { pm, framework, detectedFrameworkName, installedPackages };
 }
 
@@ -153,17 +164,22 @@ export function resolvePackagesToInstall(
 ): string[] {
   const required: string[] = ['img-upload-kit'];
 
-  if (framework === 'react' && !installed.has('react')) {
-    required.push('react', 'react-dom');
+  if (framework === 'react') {
+    if (!installed.has('react')) required.push('react');
+    if (!installed.has('react-dom')) required.push('react-dom');
   } else if (framework === 'vue' && !installed.has('vue')) {
     required.push('vue');
   } else if (framework === 'angular' && !installed.has('@angular/core')) {
     required.push('@angular/core');
-  } else if (framework === 'react-native' && !installed.has('expo-image-picker')) {
+  } else if (
+    framework === 'react-native' &&
+    !installed.has('expo-image-picker') &&
+    !installed.has('react-native-image-picker')
+  ) {
     required.push('expo-image-picker');
   }
 
-  if (framework !== 'react-native' && framework !== 'client') {
+  if (framework !== 'react-native' && framework !== 'client' && !installed.has('sharp')) {
     required.push('sharp');
   }
 

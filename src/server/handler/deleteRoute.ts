@@ -56,7 +56,7 @@ export function createDeleteHandler<TPreset extends string>(
       const originError = checkAllowedOrigin(request, allowedOrigins);
       if (originError) return originError;
 
-      const { searchParams } = new URL(request.url);
+      const { searchParams } = new URL(request.url, 'http://localhost');
       const url = searchParams.get('url');
       const storagePath = searchParams.get('path');
       const bucketParam = searchParams.get('bucket');

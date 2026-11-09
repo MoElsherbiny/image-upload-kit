@@ -5,6 +5,17 @@ All notable changes to `img-upload-kit` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.3] - 2026-11-09
+
+### Changed & Fixed
+
+- **`npx`-First Installation & CLI Enhancements**:
+  - Added hero `npx img-upload-kit@latest init` command block at the top of `README.md` (above the fold on `npmjs.com`) and standardized all framework/migration guides on `npx img-upload-kit@latest init`.
+  - Routed top-level CLI flags (`npx img-upload-kit -f vue -y`) directly to `init`, auto-installed dependencies when `--yes` is passed, added shorthand aliases (`nextjs`, `nuxt`, `expo`, `r2`), and improved monorepo/Corepack package manager detection.
+- **Security, Server & Multi-Platform Parity Hardening**:
+  - Hardened SVG CSS obfuscation sanitization (`sanitizeSvg`), single-pass SHA-256 hashing, bounded LRU variant tracking, atomic variant rollback, and deferred client `maxSizeMB` checks until after `transformAsset`.
+  - Deduplicated `dist/bin.js` and excluded `.map` files from the published npm tarball (`-47.5%` tarball size).
+
 ## [2.2.2] - 2026-11-07
 
 ### Added

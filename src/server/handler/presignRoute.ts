@@ -1,9 +1,13 @@
 import type { StorageAdapter } from '../../storage/types';
 import { DEFAULT_ALLOWED_FORMATS } from '../../types';
 import { validateImageFileStrict } from '../../utils/validators';
-import { checkAllowedOrigin, runAuthorize } from './guards';
+import {
+  checkAllowedOrigin,
+  normalizeOverrides,
+  runAuthorize,
+  sanitizeFolderSegment,
+} from './guards';
 import type {
-  AllowClientOverrides,
   AuthorizeContext,
   UploadHttpHandlerOptions,
 } from './options';
@@ -67,27 +71,6 @@ export async function sweepStagedUploads(options: {
   return { deleted };
 }
 
-function sanitizeFolderSegment(value: string): string {
-  return value
-    .replace(/\\/g, '/')
-    .split('/')
-    .map((part) => part.trim().replace(/[^a-zA-Z0-9._-]/g, '-'))
-    .filter((part) => part && part !== '.' && part !== '..')
-    .join('/');
-}
-
-function normalizeOverrides(
-  overrides?: AllowClientOverrides | boolean,
-): AllowClientOverrides | undefined {
-  if (overrides === true) {
-    return {
-      filename: true, folder: true, dimensions: true, format: true,
-      quality: true, aspectRatio: true, crop: true,
-    };
-  }
-  return overrides || undefined;
-}
-
 function generateUuid(): string {
   if (typeof globalThis.crypto?.randomUUID === 'function') {
     return globalThis.crypto.randomUUID();
@@ -136,7 +119,8 @@ export async function handlePresignRequest<TPreset extends string>(
     const rawFolder = typeof body.folder === 'string' ? body.folder : undefined;
     const filename = typeof body.filename === 'string' && body.filename ? body.filename : undefined;
     const contentType = typeof body.contentType === 'string' ? body.contentType.trim() : '';
-    const size = typeof body.size === 'number' ? body.size : undefined;
+    const hasSize = body.size !== undefined && body.size !== null && body.size !== '';
+    const size = hasSize ? Number(body.size) : undefined;
 
     const presetConfig =
       preset && typeof uploader.resolvePreset === 'function'
@@ -146,8 +130,9 @@ export async function handlePresignRequest<TPreset extends string>(
     const authBucket = allowClientBucketOverride
       ? rawBucket || presetConfig?.bucket || uploader.defaultBucket
       : presetConfig?.bucket || uploader.defaultBucket;
+    const sanitizedRawFolder = rawFolder ? sanitizeFolderSegment(rawFolder) : undefined;
     const authFolder = overrides?.folder
-      ? rawFolder || presetConfig?.folder
+      ? sanitizedRawFolder || presetConfig?.folder
       : presetConfig?.folder;
 
     const authCtx: AuthorizeContext = {

@@ -19,6 +19,7 @@ import {
   collectAllowedBuckets,
   collectMirrorDirs,
   computeMaxSizeMB,
+  createVariantTracker,
   evictDedupeForPath,
   lookupDedupeCache,
   readAndValidateUploadInput,
@@ -94,20 +95,17 @@ export function createImageUploader<
 
   const semaphore = new AsyncSemaphore(concurrency, { maxQueue });
   const buildPath = pathGenerator || createDefaultPathGenerator();
-  const trackedVariants = new Map<string, string[]>();
-  const observedWidths = new Set<number>();
+  const variantTracker = createVariantTracker();
 
   const resolvePreset = (name?: string): UploadPresetConfig | undefined =>
     name ? mergedPresets[name] : undefined;
   const getMirrorDirs = (): string[] => collectMirrorDirs(mergedPresets);
 
   const cleanupVariantsFor = async (bucket: string, basePath: string): Promise<void> => {
-    const key = `${bucket}:${basePath}`;
-    const knownVariantPaths = trackedVariants.get(key);
-    trackedVariants.delete(key);
+    const knownVariantPaths = variantTracker.pop(`${bucket}:${basePath}`);
     await deleteStoredVariants({
       storage, bucket, basePath, mirrorDirs: getMirrorDirs(), knownVariantPaths,
-      candidateWidths: collectCandidateVariantWidths(mergedPresets, observedWidths),
+      candidateWidths: collectCandidateVariantWidths(mergedPresets, variantTracker.widths),
     });
   };
 
@@ -180,7 +178,8 @@ export function createImageUploader<
             processImageBuffer(originalBuffer, {
               maxDimensions, aspectRatio, crop, outputFormat, quality, includeBlurHash,
               optimizationTimeoutMs, blurTimeoutMs, limitInputPixels,
-              effort: defaultEffort, allowSvg, signal: uploadOptions.signal,
+              effort: defaultEffort, allowSvg, precomputedHash: sourceHash,
+              signal: uploadOptions.signal,
             }),
           { signal: uploadOptions.signal },
         );
@@ -225,10 +224,7 @@ export function createImageUploader<
             : { variants: [], srcSet: undefined };
 
         const variantPaths = variants.map((v) => v.storagePath).filter(Boolean) as string[];
-        if (variantPaths.length > 0) {
-          trackedVariants.set(`${storageTarget.bucket}:${uploadResult.path}`, variantPaths);
-          variants.forEach((v) => observedWidths.add(v.width));
-        }
+        variantTracker.track(`${storageTarget.bucket}:${uploadResult.path}`, variantPaths, variants);
 
         const result: UploadedImageData = {
           url: resolvedUrl, blurDataUrl: blurData.dataURL, blurColor: blurData.color,

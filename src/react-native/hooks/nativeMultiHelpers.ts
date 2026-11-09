@@ -86,3 +86,19 @@ export function markNativeItemRetrying(
       : item,
   );
 }
+
+export function syncNativeItemsWithValue(
+  current: readonly NativeMultiUploadItem[],
+  value: readonly UploadedImageData[],
+): NativeMultiUploadItem[] {
+  const byUrl = new Map<string, NativeMultiUploadItem>();
+  for (const item of current) {
+    if (item.data?.url) byUrl.set(item.data.url, item);
+  }
+  const syncedCompleted = value.map((img) => {
+    const existing = byUrl.get(img.url);
+    return existing ? { ...existing, data: img } : toCompletedNativeItem(img);
+  });
+  const inFlight = current.filter((item) => item.isUploading || Boolean(item.error));
+  return [...syncedCompleted, ...inFlight];
+}

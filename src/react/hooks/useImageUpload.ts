@@ -16,6 +16,7 @@ import type {
   UploadLocale,
 } from '../../types';
 import { createSuccessMessage, getStatusMessage } from '../../utils/formatters';
+import { validateImageFile } from '../../utils/validators';
 import { useImageUploadContext } from '../context';
 import { normalizeUploadLocale, resolveTranslations } from '../i18n';
 import type { CustomUploaderFn } from '../types';
@@ -39,6 +40,8 @@ export interface UseImageUploadOptions {
   maxDimensions?: ImageDimensions;
   aspectRatio?: ImageAspectRatio;
   crop?: CropStrategy;
+  maxSizeMB?: number;
+  allowedFormats?: string[];
   transformAsset?: TransformAssetFn<File>;
   customFilename?: string;
   endpoint?: string;
@@ -54,7 +57,7 @@ export interface UseImageUploadOptions {
 
 export function useImageUpload({
   preset, folder, bucket, metadata, altText, outputFormat, quality, maxDimensions,
-  aspectRatio, crop, transformAsset,
+  aspectRatio, crop, maxSizeMB, allowedFormats, transformAsset,
   customFilename: defaultCustomFilename,
   endpoint: propEndpoint, uploader: propUploader, uploadMode: propUploadMode,
   headers: propHeaders, withCredentials: propWithCredentials, locale: propLocale,
@@ -171,6 +174,11 @@ export function useImageUpload({
           throw new Error(ui.heicNotSupported);
         }
 
+        if (maxSizeMB !== undefined) {
+          const postErr = validateImageFile(effectiveFile, maxSizeMB, uploadLocale, allowedFormats);
+          if (postErr) throw new Error(postErr);
+        }
+
         entry.interval = setInterval(() => {
           if (!isMountedRef.current || controller.signal.aborted) {
             tracker.removeEntry(uploadId);
@@ -243,7 +251,7 @@ export function useImageUpload({
     },
     [
       preset, folder, bucket, metadata, altText, outputFormat, quality, maxDimensions,
-      aspectRatio, crop, transformAsset, defaultCustomFilename, resolvedEndpoint,
+      aspectRatio, crop, maxSizeMB, allowedFormats, transformAsset, defaultCustomFilename, resolvedEndpoint,
       resolvedUploader, resolvedUploadMode, resolvedHeaders, resolvedCredentials, uploadLocale,
       ui.transformingFile, ui.preparingUpload, ui.heicNotSupported, ui.uploadFailed,
       ui.networkError, ui.invalidUploadResponse, ui.uploadAborted,

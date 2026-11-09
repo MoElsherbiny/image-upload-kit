@@ -269,5 +269,23 @@ describe('React Native & Expo Subpath (img-upload-kit/react-native)', () => {
     expect(container.querySelector('[data-slot="cover-badge"]')).toBeInTheDocument();
     fireEvent.click(container.querySelector<HTMLElement>('[data-slot="tile-set-cover"]')!);
     expect(onReorder).toHaveBeenCalledWith([imgB, imgA]);
+
+    const deletedUrls: string[] = [];
+    const { result, rerender } = renderHook(
+      ({ val }) =>
+        useNativeMultiUpload({
+          value: val,
+          customDeleter: async (u) => {
+            deletedUrls.push(u);
+            return true;
+          },
+        }),
+      { initialProps: { val: [imgA] } },
+    );
+    expect(result.current.images).toEqual([imgA]);
+    rerender({ val: [imgA, imgB] });
+    expect(result.current.images).toEqual([imgA, imgB]);
+    act(() => result.current.clearAll());
+    expect(deletedUrls).toEqual([imgA.url, imgB.url]);
   });
 });

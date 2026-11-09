@@ -153,4 +153,79 @@ describe('Phase 7a: Responsive Image Variants (Server)', () => {
     const remaining = await storage.list('images', 'rb');
     expect(remaining.items).toHaveLength(0);
   });
+
+  it('rolls back main image and already-uploaded variants when a variant upload fails mid-way', async () => {
+    const baseStorage = createMemoryStorageAdapter();
+    let uploadCallCount = 0;
+    const storage = {
+      ...baseStorage,
+      async upload(params: Parameters<typeof baseStorage.upload>[0]) {
+        uploadCallCount += 1;
+        if (uploadCallCount === 3) {
+          throw new Error('S3 variant write failed');
+        }
+        return baseStorage.upload(params);
+      },
+    };
+    const uploader = createImageUploader({ storage });
+    const img = await solidImage(500, 400, 'png');
+
+    await expect(
+      uploader.uploadImage(
+        { buffer: img, name: 'midfail.png', type: 'image/png' },
+        { folder: 'midfail', outputFormat: 'webp', variantWidths: [200, 350] },
+      ),
+    ).rejects.toThrow('S3 variant write failed');
+
+    const remaining = await baseStorage.list('images', 'midfail');
+    expect(remaining.items).toHaveLength(0);
+  });
+
+  it('blocks CSS comment and hex-escape obfuscated SVG URLs and validates adapter stat/metadata/relative DELETE', async () => {
+    const { sanitizeSvg, createUploadHttpHandler } = await import('../src/server');
+    const { createS3StorageAdapter } = await import('../src/storage');
+
+    const obfuscatedSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><style>.x { background: u/**/r\\6c(https://evil.example/track.png); }</style><rect width="10" height="10"/></svg>`;
+    const cleanSvg = sanitizeSvg(obfuscatedSvg);
+    expect(cleanSvg).not.toContain('evil.example');
+
+    const mem = createMemoryStorageAdapter({ baseUrl: 'https://mem.test/files' });
+    expect(mem.parseUrl('https://mem.test/files/media/my%20folder/pic%201.webp')).toEqual({
+      bucket: 'media',
+      path: 'my folder/pic 1.webp',
+    });
+    await expect(
+      mem.upload({
+        bucket: 'media',
+        path: 'bad.webp',
+        data: Buffer.from('x'),
+        contentType: 'image/webp',
+        metadata: { 'bad\nkey': 'val' },
+      }),
+    ).rejects.toThrow();
+
+    const s3 = createS3StorageAdapter({
+      publicBaseUrl: 'https://s3.test',
+      putObject: async () => ({}),
+      deleteObject: async () => ({}),
+      headObject: async () => ({ ContentLength: 4096, ContentType: 'image/webp' }),
+    });
+    expect(await s3.stat!('media', 'pic.webp')).toEqual({
+      size: 4096,
+      contentType: 'image/webp',
+    });
+
+    const uploader = createImageUploader({ storage: mem, defaultBucket: 'media' });
+    const img = await solidImage(64, 64, 'png');
+    const uploaded = await uploader.uploadImage({ buffer: img, name: 'del.png', type: 'image/png' });
+    const handler = createUploadHttpHandler({ uploader });
+
+    const relReq = {
+      url: `/api/upload?path=${encodeURIComponent(uploaded.storagePath!)}`,
+      method: 'DELETE',
+      headers: new Headers(),
+    } as unknown as Request;
+    const delRes = await handler.DELETE(relReq);
+    expect(delRes.status).toBe(200);
+  });
 });

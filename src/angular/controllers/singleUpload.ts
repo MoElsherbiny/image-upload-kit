@@ -224,7 +224,7 @@ export function createSingleUpload<TPreset extends string = UploadPresetName>(
     uploadStatus.set('');
     phase.set('idle');
     syncState();
-    if (current) await executeDeleteRequest(current, env);
+    if (current) await executeDeleteRequest(current, env, options);
     emitChange(null);
   };
 

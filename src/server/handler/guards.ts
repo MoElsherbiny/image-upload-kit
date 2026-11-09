@@ -1,4 +1,34 @@
-import type { AuthorizeContext, UploadHttpHandlerOptions } from './options';
+import type {
+  AllowClientOverrides,
+  AuthorizeContext,
+  UploadHttpHandlerOptions,
+} from './options';
+
+export function normalizeOverrides(
+  overrides?: AllowClientOverrides | boolean,
+): AllowClientOverrides | undefined {
+  if (overrides === true) {
+    return {
+      filename: true,
+      folder: true,
+      dimensions: true,
+      format: true,
+      quality: true,
+      aspectRatio: true,
+      crop: true,
+    };
+  }
+  return overrides || undefined;
+}
+
+export function sanitizeFolderSegment(value: string): string {
+  return value
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((part) => part.trim().replace(/[^a-zA-Z0-9._-]/g, '-'))
+    .filter((part) => part && part !== '.' && part !== '..')
+    .join('/');
+}
 import { jsonResponse } from './responses';
 
 const DEFAULT_FALLBACK_MAX_MB = 25;

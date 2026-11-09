@@ -97,7 +97,7 @@ export class CliCommandBuilder {
 export class ZeroDepCliProgram {
   private programName = 'img-upload-kit';
   private programDescription = '';
-  private programVersion = '2.2.0';
+  private programVersion = '2.2.3';
   private readonly commands = new Map<string, CliCommandDef>();
 
   name(): string;
@@ -130,15 +130,39 @@ export class ZeroDepCliProgram {
     return builder;
   }
 
-  formatHelp(): string {
+  formatHelp(subcommandName?: string): string {
+    const targetCmd = subcommandName ? this.commands.get(subcommandName) : undefined;
+    if (targetCmd) {
+      const lines = [
+        `${this.programName} ${targetCmd.name} — ${targetCmd.descriptionText}`,
+        '',
+        'Options:',
+      ];
+      for (const opt of targetCmd.options) {
+        lines.push(`  ${opt.flags.padEnd(28)} ${opt.description}`);
+      }
+      lines.push(`  ${'-h, --help'.padEnd(28)} Display help for command`);
+      return lines.join('\n');
+    }
+
     const lines = [
       `${this.programName} v${this.programVersion}`,
       this.programDescription,
+      '',
+      'Usage:',
+      `  npx ${this.programName}@latest init [options]`,
       '',
       'Commands:',
     ];
     for (const cmd of this.commands.values()) {
       lines.push(`  ${cmd.name.padEnd(16)} ${cmd.descriptionText}`);
+    }
+    const initCmd = this.commands.get('init');
+    if (initCmd && initCmd.options.length > 0) {
+      lines.push('', 'Init Options:');
+      for (const opt of initCmd.options) {
+        lines.push(`  ${opt.flags.padEnd(28)} ${opt.description}`);
+      }
     }
     return lines.join('\n');
   }
@@ -156,7 +180,13 @@ export class ZeroDepCliProgram {
       userArgs.includes('--help') ||
       userArgs.includes('-h')
     ) {
-      console.log(this.formatHelp());
+      const targetSub =
+        userArgs[0] === 'help'
+          ? userArgs[1]
+          : userArgs[0] && !userArgs[0].startsWith('-')
+            ? userArgs[0]
+            : undefined;
+      console.log(this.formatHelp(targetSub));
       return this;
     }
 

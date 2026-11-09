@@ -32,9 +32,11 @@ const CANONICAL_SETTING_KEYS = [
 ] as const;
 
 export async function computeSha256Hex(buffer: Uint8Array): Promise<string> {
-  const bytes = new Uint8Array(buffer.byteLength);
-  bytes.set(buffer);
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes);
+  const view =
+    buffer.buffer instanceof ArrayBuffer
+      ? new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength)
+      : new Uint8Array(buffer);
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', view);
   return Array.from(new Uint8Array(digest))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
@@ -64,6 +66,7 @@ function canonicalizeValue(value: unknown): unknown {
 export async function computeDedupeKey(
   buffer: Buffer | Uint8Array,
   settings: Record<string, unknown>,
+  precomputedBufferHash?: string,
 ): Promise<string> {
   const picked: Record<string, unknown> = {};
   for (const key of CANONICAL_SETTING_KEYS) {
@@ -84,7 +87,7 @@ export async function computeDedupeKey(
 
   const canonicalJson = JSON.stringify(canonicalizeValue(picked));
   const [bufferHash, settingsHash] = await Promise.all([
-    computeSha256Hex(buffer),
+    precomputedBufferHash ?? computeSha256Hex(buffer),
     computeSha256Hex(new TextEncoder().encode(canonicalJson)),
   ]);
 

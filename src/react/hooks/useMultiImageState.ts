@@ -37,6 +37,7 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
   const requireAltText = options.requireAltText ?? ctx.requireAltText;
   const standardPreset = preset ? STANDARD_PRESETS[preset as StandardPresetName] : undefined;
   const maxSizeMB = options.maxSizeMB ?? standardPreset?.maxSizeMB ?? 10;
+  const allowedFormats = options.allowedFormats ?? standardPreset?.allowedFormats;
   const requiresManualCommit = Boolean(isOpen);
 
   const [previews, setPreviews] = useState<ImagePreview[]>(() => value.map((img) => mapUploadedToPreview(img)));
@@ -83,6 +84,7 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
     preset, folder: options.folder, bucket: options.bucket, metadata: options.metadata,
     outputFormat: options.outputFormat, quality: QUALITY_PRESETS[qualityLevel].value,
     maxDimensions: options.maxDimensions, aspectRatio: options.aspectRatio, crop: options.crop,
+    maxSizeMB, allowedFormats,
     transformAsset: options.transformAsset, customFilename: options.customFilename,
     endpoint: options.endpoint, uploader: options.uploader, uploadMode: options.uploadMode,
     headers: options.headers, withCredentials: options.withCredentials, locale,
@@ -130,7 +132,9 @@ export function useMultiImageState<TPreset extends string = UploadPresetName>(
     }
 
     const activeCount = previewsRef.current.filter((p) => !p.error).length;
-    const validationResult = validateMultipleFiles(imageFiles, maxSizeMB, activeCount, maxImages, locale);
+    const validationResult = validateMultipleFiles(imageFiles, maxSizeMB, activeCount, maxImages, locale, {
+      skipSizeCheck: Boolean(options.transformAsset),
+    });
     if (validationResult) { setValidationError(validationResult); return; }
 
     setUploadStats({ total: imageFiles.length, completed: 0, failed: 0 });

@@ -5,9 +5,8 @@ import type {
   ImageDimensions,
 } from '../../types';
 import { resolveAspectRatio } from '../../types/aspectRatio';
-import { checkAllowedOrigin, runAuthorize } from './guards';
+import { checkAllowedOrigin, normalizeOverrides, runAuthorize } from './guards';
 import type {
-  AllowClientOverrides,
   AuthorizeContext,
   UploadHttpHandlerOptions,
 } from './options';
@@ -17,18 +16,6 @@ import { verifyUploadToken } from './uploadToken';
 
 const ALLOWED_OUTPUT_FORMATS = new Set(['jpeg', 'png', 'webp', 'avif']);
 const ALLOWED_CROP_STRATEGIES = new Set<CropStrategy>(['attention', 'entropy', 'center']);
-
-function normalizeOverrides(
-  overrides?: AllowClientOverrides | boolean,
-): AllowClientOverrides | undefined {
-  if (overrides === true) {
-    return {
-      filename: true, folder: true, dimensions: true, format: true,
-      quality: true, aspectRatio: true, crop: true,
-    };
-  }
-  return overrides || undefined;
-}
 
 function sanitizeMetadataObject(raw: unknown): Record<string, string> | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
@@ -69,10 +56,17 @@ export async function handleFinalizeRequest<TPreset extends string>(
       tokenStore: presigned.tokenStore,
     });
 
+    const targetBucket =
+      tokenPayload.targetBucket ??
+      (!presigned.stagingBucket || tokenPayload.bucket !== presigned.stagingBucket
+        ? tokenPayload.bucket
+        : undefined);
+    const authBucket = targetBucket ?? uploader.defaultBucket ?? tokenPayload.bucket;
+
     const authCtx: AuthorizeContext = {
       action: 'upload',
       request,
-      bucket: tokenPayload.bucket,
+      bucket: authBucket,
       ...(tokenPayload.folder ? { path: tokenPayload.folder } : {}),
       ...(tokenPayload.preset ? { preset: tokenPayload.preset } : {}),
     };
@@ -203,11 +197,6 @@ export async function handleFinalizeRequest<TPreset extends string>(
       }
 
       const metadata = sanitizeMetadataObject(body.metadata);
-      const targetBucket =
-        tokenPayload.targetBucket ??
-        (!presigned.stagingBucket || tokenPayload.bucket !== presigned.stagingBucket
-          ? tokenPayload.bucket
-          : undefined);
 
       const result = await uploader.uploadImage(
         {

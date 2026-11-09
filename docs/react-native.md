@@ -7,9 +7,11 @@
 ## 1. Installation
 
 ```bash
-npm install img-upload-kit react
-# Recommended for Expo apps:
-npx expo install expo-image-picker expo-image
+# Interactive CLI (detects React Native / Expo & your package manager):
+npx img-upload-kit@latest init
+
+# Or non-interactive for React Native / Expo:
+npx img-upload-kit@latest init --framework react-native --yes
 ```
 
 ---

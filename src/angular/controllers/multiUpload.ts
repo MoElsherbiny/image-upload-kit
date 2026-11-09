@@ -13,7 +13,8 @@ import type {
 } from '../types';
 import {
   applyItemAltText, applyItemBlurColor, collectCompletedItems,
-  countMissingAltItems, createQueuedMultiItem, mapDataToItem, resolveNormalizedColor,
+  countMissingAltItems, createQueuedMultiItem, mapDataToItem,
+  resolveNormalizedColor, revokeAndDeleteMultiItems,
 } from './multiUploadOps';
 import {
   computeVisualState, executeDeleteRequest, executeUploadRequest,
@@ -175,7 +176,7 @@ export function createMultiUpload<TPreset extends string = UploadPresetName>(
     const existingList = items();
     const existingCount = existingList.length;
     const activeCount = existingList.filter((i) => !i.error).length;
-    const batchErr = validateMultipleFiles(incoming, env.maxSizeMB, activeCount, maxFiles, env.locale);
+    const batchErr = validateMultipleFiles(incoming, env.maxSizeMB, activeCount, maxFiles, env.locale, { skipSizeCheck: Boolean(options.transformAsset) });
     if (batchErr) { error.set(batchErr); syncDerived(false); options.onError?.(batchErr); return []; }
 
     const initMsg = options.transformAsset ? env.ui.transforming : env.ui.preparingUpload;
@@ -206,7 +207,7 @@ export function createMultiUpload<TPreset extends string = UploadPresetName>(
     revokeBlobUrl(target.url);
     items.set(items().filter((i) => i.id !== id));
     syncDerived(true);
-    if (target.data) await executeDeleteRequest(target.data, env);
+    if (target.data) await executeDeleteRequest(target.data, env, options);
   };
 
   const cancelItem = (id: string): void => {
@@ -257,7 +258,7 @@ export function createMultiUpload<TPreset extends string = UploadPresetName>(
 
   const clearAll = (): void => {
     tracker.abortAll();
-    for (const item of items()) revokeBlobUrl(item.url);
+    revokeAndDeleteMultiItems(items(), env, options);
     items.set([]);
     error.set('');
     syncDerived(true);

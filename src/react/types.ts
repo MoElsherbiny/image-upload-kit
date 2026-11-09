@@ -102,6 +102,8 @@ export interface BaseImageUploadProps<
   label?: string;
   /** Maximum file size in MB (defaults to preset maxSizeMB or 10) */
   maxSizeMB?: number;
+  /** Allowed MIME types (defaults to preset allowedFormats) */
+  allowedFormats?: string[];
   /** Maximum bounding box dimensions sent to the server */
   maxDimensions?: ImageDimensions;
   /** Target aspect ratio for client preview & server-side smart cropping */

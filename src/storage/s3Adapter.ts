@@ -131,6 +131,23 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
       return listed.some((item) => item.name === targetName);
     },
 
+    async stat(bucket: string, path: string) {
+      const key = normalizeS3Key(path);
+      if (!transport.headObject) return null;
+      try {
+        const head = (await transport.headObject({ Bucket: bucket, Key: key })) as
+          | { ContentLength?: number; ContentType?: string }
+          | undefined;
+        if (!head || typeof head.ContentLength !== 'number') return null;
+        return {
+          size: head.ContentLength,
+          ...(typeof head.ContentType === 'string' ? { contentType: head.ContentType } : {}),
+        };
+      } catch {
+        return null;
+      }
+    },
+
     getPublicUrl,
 
     async list(
