@@ -85,7 +85,7 @@ export async function runInteractiveInit(
   const explicitStorage = normalizeStorageOption(opts.storage);
 
   renderCliIntro(
-    `img-upload-kit v${opts.version ?? '2.2.3'}`,
+    `img-upload-kit v${opts.version ?? '2.2.4'}`,
     'Interactive Framework & Storage Setup',
     output,
   );
