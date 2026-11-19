@@ -1,17 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { normalizeStorageError } from './errorNormalizer';
+import { isUploadKitError, UploadKitError } from '../types/errors';
+import { normalizeStorageError, toStorageFailure } from './errorNormalizer';
 import {
-  type StorageAdapter,
-  type StorageDownloadOptions,
-  type StorageFileEntry,
-  type StorageHealthCheckResult,
-  type StorageListOptions,
-  type StoragePaginatedListResult,
-  type StorageUploadParams,
-  type StorageUploadResult,
-  toPaginatedListResult,
-  validateStorageMetadata,
+  type StorageAdapter, type StorageDownloadOptions, type StorageFileEntry,
+  type StorageHealthCheckResult, type StorageListOptions, type StoragePaginatedListResult,
+  type StorageUploadParams, type StorageUploadResult, toPaginatedListResult, validateStorageMetadata,
 } from './types';
 
 export interface LocalFsStorageOptions {
@@ -23,16 +17,20 @@ export interface LocalFsStorageOptions {
   includeBucketInPath?: boolean;
 }
 
+function invalidPathError(message: string, code: 'STORAGE_ERROR' | 'FORBIDDEN'): UploadKitError {
+  return new UploadKitError(message, { code, status: 400, retryable: false });
+}
+
 function sanitizeRelativePath(inputPath: string): string {
-  if (!inputPath || typeof inputPath !== 'string') throw new Error('Invalid storage path');
+  if (!inputPath || typeof inputPath !== 'string') throw invalidPathError('Invalid storage path', 'STORAGE_ERROR');
   if (inputPath.includes(':') || inputPath.includes('\0')) {
-    throw new Error('Path traversal blocked in LocalFsStorageAdapter');
+    throw invalidPathError('Invalid storage path: path traversal blocked in LocalFsStorageAdapter', 'FORBIDDEN');
   }
   const rawSegments = inputPath.replace(/\\/g, '/').replace(/^\/+/, '').split('/').filter(Boolean);
-  if (rawSegments.length === 0) throw new Error('Invalid storage path');
+  if (rawSegments.length === 0) throw invalidPathError('Invalid storage path', 'STORAGE_ERROR');
   for (const segment of rawSegments) {
     if (segment === '.' || segment === '..') {
-      throw new Error('Invalid storage path: path traversal blocked');
+      throw invalidPathError('Invalid storage path: path traversal blocked', 'FORBIDDEN');
     }
   }
   return rawSegments.join('/');
@@ -41,7 +39,7 @@ function sanitizeRelativePath(inputPath: string): string {
 function assertContainedInRoot(resolvedRoot: string, targetPath: string): void {
   const relative = path.relative(resolvedRoot, targetPath);
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    throw new Error('Path traversal blocked in LocalFsStorageAdapter');
+    throw invalidPathError('Invalid storage path: path traversal blocked in LocalFsStorageAdapter', 'FORBIDDEN');
   }
 }
 
@@ -141,25 +139,18 @@ export function createLocalFsStorageAdapter(options: LocalFsStorageOptions): Loc
     async upload(params: StorageUploadParams): Promise<StorageUploadResult> {
       validateStorageMetadata(params.metadata);
       const { diskPath, cleanRel } = resolveDiskTarget(params.bucket, params.path);
-      await assertRealPathContained(resolvedRoot, diskPath);
-      await fs.mkdir(path.dirname(diskPath), { recursive: true });
-      await assertRealPathContained(resolvedRoot, diskPath);
-
       try {
-        await fs.writeFile(
-          diskPath,
-          params.data,
-          params.upsert === false ? { flag: 'wx' } : undefined,
-        );
+        await assertRealPathContained(resolvedRoot, diskPath);
+        await fs.mkdir(path.dirname(diskPath), { recursive: true });
+        await assertRealPathContained(resolvedRoot, diskPath);
+        await fs.writeFile(diskPath, params.data, params.upsert === false ? { flag: 'wx' } : undefined);
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
-          const existsError = new Error(
-            `File already exists at ${params.bucket}/${cleanRel}`,
-          ) as NodeJS.ErrnoException;
+          const existsError = new Error(`File already exists at ${params.bucket}/${cleanRel}`) as NodeJS.ErrnoException;
           existsError.code = 'EEXIST';
           throw existsError;
         }
-        throw err;
+        throw toStorageFailure(err, { provider: 'local-fs', operation: 'upload' });
       }
       return { bucket: params.bucket, path: cleanRel, url: getPublicUrl(params.bucket, cleanRel) };
     },
@@ -170,7 +161,9 @@ export function createLocalFsStorageAdapter(options: LocalFsStorageOptions): Loc
       try {
         await fs.unlink(diskPath);
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw toStorageFailure(err, { provider: 'local-fs', operation: 'delete' });
+        }
       }
     },
 
@@ -205,16 +198,20 @@ export function createLocalFsStorageAdapter(options: LocalFsStorageOptions): Loc
     ): Promise<Uint8Array> {
       const { diskPath } = resolveDiskTarget(bucket, relativePath);
       await assertRealPathContained(resolvedRoot, diskPath);
-      if (downloadOptions?.maxBytes !== undefined) {
-        const fileStat = await fs.stat(diskPath);
-        if (fileStat.size > downloadOptions.maxBytes) {
-          const err = new Error('Staged file size exceeds maximum allowed bytes') as Error & { status?: number };
-          err.status = 400;
-          throw err;
+      try {
+        if (downloadOptions?.maxBytes !== undefined) {
+          const fileStat = await fs.stat(diskPath);
+          if (fileStat.size > downloadOptions.maxBytes) {
+            throw new UploadKitError('Staged file size exceeds maximum allowed bytes', {
+              code: 'FILE_TOO_LARGE', status: 400, retryable: false,
+            });
+          }
         }
+        const buf = await fs.readFile(diskPath);
+        return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+      } catch (err) {
+        throw toStorageFailure(err, { provider: 'local-fs', operation: 'download' });
       }
-      const buf = await fs.readFile(diskPath);
-      return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
     },
 
     async deleteByUrl(url: string): Promise<boolean> {
@@ -229,8 +226,10 @@ export function createLocalFsStorageAdapter(options: LocalFsStorageOptions): Loc
         await assertRealPathContained(resolvedRoot, diskPath);
         await fs.unlink(diskPath);
         return true;
-      } catch {
-        return false;
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code === 'ENOENT' || (isUploadKitError(err) && err.status === 400)) return false;
+        throw toStorageFailure(err, { provider: 'local-fs', operation: 'delete' });
       }
     },
 

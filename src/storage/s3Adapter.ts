@@ -1,4 +1,5 @@
-import { normalizeStorageError, sanitizeStorageKey } from './errorNormalizer';
+import { isUploadKitError } from '../types/errors';
+import { normalizeStorageError, sanitizeStorageKey, toStorageFailure } from './errorNormalizer';
 import {
   readS3BodyToBytes, type S3ListedObject, type S3ListObjectsInput,
   type S3StorageAdapterOptions, type S3TransportLike,
@@ -29,12 +30,7 @@ function resolveTransport(options: S3StorageAdapterOptions): S3TransportLike {
 
 function isS3PreconditionError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
-  const e = err as {
-    code?: unknown;
-    name?: unknown;
-    statusCode?: unknown;
-    $metadata?: { httpStatusCode?: number };
-  };
+  const e = err as { code?: unknown; name?: unknown; statusCode?: unknown; $metadata?: { httpStatusCode?: number } };
   const status = e.$metadata?.httpStatusCode ?? Number(e.statusCode);
   const code = String(e.code ?? e.name ?? '').toLowerCase();
   return status === 412 || code === 'preconditionfailed' || code === 'eexist';
@@ -77,7 +73,7 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
           ...(cacheControl ? { CacheControl: cacheControl } : {}),
           ...(metadata ? { Metadata: metadata } : {}),
           ...(params.upsert === false ? { IfNoneMatch: '*' } : {}),
-        });
+        }, ...(params.signal ? [{ abortSignal: params.signal }] : []));
       } catch (err) {
         if (isS3PreconditionError(err)) {
           const existsErr = new Error(
@@ -87,14 +83,17 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
           existsErr.statusCode = 412;
           throw existsErr;
         }
-        throw err;
+        throw toStorageFailure(err, { provider: 's3', operation: 'upload' });
       }
 
       return { bucket: params.bucket, path: key, url: getPublicUrl(params.bucket, key) };
     },
 
     async delete(bucket: string, path: string): Promise<void> {
-      await transport.deleteObject({ Bucket: bucket, Key: normalizeS3Key(path) });
+      const Key = normalizeS3Key(path);
+      await transport.deleteObject({ Bucket: bucket, Key }).catch((err: unknown) => {
+        throw toStorageFailure(err, { provider: 's3', operation: 'delete' });
+      });
     },
 
     async exists(bucket: string, path: string): Promise<boolean> {
@@ -194,8 +193,10 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
       try {
         await transport.deleteObject({ Bucket: parsed.bucket, Key: parsed.path });
         return true;
-      } catch {
-        return false;
+      } catch (err) {
+        const failure = toStorageFailure(err, { provider: 's3', operation: 'delete' });
+        if (isUploadKitError(failure) && failure.status === 404) return false;
+        throw failure;
       }
     },
 
@@ -219,8 +220,12 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
     async download(bucket: string, path: string, downloadOptions?: StorageDownloadOptions): Promise<Uint8Array> {
       const key = normalizeS3Key(path);
       if (!transport.getObject) throw new Error('S3StorageAdapter transport does not implement getObject');
-      const res = await transport.getObject({ Bucket: bucket, Key: key });
-      return readS3BodyToBytes(res?.Body, bucket, key, downloadOptions?.maxBytes);
+      try {
+        const res = await transport.getObject({ Bucket: bucket, Key: key });
+        return await readS3BodyToBytes(res?.Body, bucket, key, downloadOptions?.maxBytes);
+      } catch (err) {
+        throw toStorageFailure(err, { provider: 's3', operation: 'download' });
+      }
     },
 
     async healthCheck(): Promise<StorageHealthCheckResult> {

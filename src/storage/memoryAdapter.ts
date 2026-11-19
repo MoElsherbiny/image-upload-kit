@@ -1,24 +1,14 @@
+import { UploadKitError } from '../types/errors';
+import { normalizeStorageError, sanitizeStorageKey } from './errorNormalizer';
 import {
-  type StorageAdapter,
-  type StorageDownloadOptions,
-  type StorageFileEntry,
-  type StorageHealthCheckResult,
-  type StorageListOptions,
-  type StorageMultipartAbortParams,
-  type StorageMultipartCompleteParams,
-  type StorageMultipartCreateParams,
-  type StorageMultipartCreateResult,
-  type StorageMultipartPartParams,
-  type StorageMultipartPartResult,
-  type StoragePaginatedListResult,
-  type StoragePresignedDownloadOptions,
-  type StoragePresignedDownloadResult,
-  type StoragePresignParams,
-  type StoragePresignResult,
-  type StorageUploadParams,
-  type StorageUploadResult,
-  toPaginatedListResult,
-  validateStorageMetadata,
+  type StorageAdapter, type StorageDownloadOptions, type StorageFileEntry,
+  type StorageHealthCheckResult, type StorageListOptions, type StorageMultipartAbortParams,
+  type StorageMultipartCompleteParams, type StorageMultipartCreateParams,
+  type StorageMultipartCreateResult, type StorageMultipartPartParams,
+  type StorageMultipartPartResult, type StoragePaginatedListResult,
+  type StoragePresignedDownloadOptions, type StoragePresignedDownloadResult,
+  type StoragePresignParams, type StoragePresignResult, type StorageUploadParams,
+  type StorageUploadResult, toPaginatedListResult, validateStorageMetadata,
 } from './types';
 
 export interface StoredMemoryObject {
@@ -73,26 +63,29 @@ export function createMemoryStorageAdapter(options: MemoryStorageOptions = {}): 
   const multipartSessions = new Map<string, MultipartSession>();
   let uploadSeq = 0;
 
-  const toKey = (bucket: string, path: string) => `${bucket}::${path.replace(/^\/+/, '')}`;
+  const cleanKey = (rawPath: string) => sanitizeStorageKey(rawPath, 'Memory');
+  const cleanBucket = (bucket: string) => sanitizeStorageKey(bucket, 'Memory');
+  const toKey = (bucket: string, path: string) => `${cleanBucket(bucket)}::${cleanKey(path)}`;
   const getPublicUrl = (bucket: string, path: string): string =>
-    `${baseUrl}/${bucket}/${path.replace(/^\/+/, '')}`;
+    `${baseUrl}/${cleanBucket(bucket)}/${cleanKey(path)}`;
 
   return {
     async upload(params: StorageUploadParams): Promise<StorageUploadResult> {
       validateStorageMetadata(params.metadata);
-      const cleanPath = params.path.replace(/^\/+/, '');
-      const key = toKey(params.bucket, cleanPath);
+      const bucket = cleanBucket(params.bucket);
+      const cleanPath = cleanKey(params.path);
+      const key = `${bucket}::${cleanPath}`;
 
       if (params.upsert === false && store.has(key)) {
         const existsErr = new Error(
-          `Object already exists at ${params.bucket}/${cleanPath}`,
+          `Object already exists at ${bucket}/${cleanPath}`,
         ) as Error & { code?: string };
         existsErr.code = 'EEXIST';
         throw existsErr;
       }
 
       store.set(key, {
-        bucket: params.bucket,
+        bucket,
         path: cleanPath,
         data: new Uint8Array(params.data),
         contentType: params.contentType,
@@ -100,7 +93,7 @@ export function createMemoryStorageAdapter(options: MemoryStorageOptions = {}): 
         metadata: params.metadata,
       });
 
-      return { bucket: params.bucket, path: cleanPath, url: getPublicUrl(params.bucket, cleanPath) };
+      return { bucket, path: cleanPath, url: getPublicUrl(bucket, cleanPath) };
     },
 
     async delete(bucket: string, path: string): Promise<void> {
@@ -112,7 +105,7 @@ export function createMemoryStorageAdapter(options: MemoryStorageOptions = {}): 
     },
 
     async stat(bucket: string, path: string) {
-      const obj = store.get(toKey(bucket, path.replace(/^\/+/, '')));
+      const obj = store.get(toKey(bucket, path));
       return obj ? { size: obj.data.byteLength, contentType: obj.contentType } : null;
     },
 
@@ -123,10 +116,12 @@ export function createMemoryStorageAdapter(options: MemoryStorageOptions = {}): 
       folder?: string,
       listOptions?: StorageListOptions,
     ): Promise<StoragePaginatedListResult> {
-      const cleanFolder = folder ? folder.replace(/^\/+|\/+$/g, '') : '';
+      const safeBucket = cleanBucket(bucket);
+      const trimmedFolder = folder ? folder.replace(/^\/+|\/+$/g, '') : '';
+      const cleanFolder = trimmedFolder ? cleanKey(trimmedFolder) : '';
       const entries: StorageFileEntry[] = [];
       for (const obj of store.values()) {
-        if (obj.bucket !== bucket) continue;
+        if (obj.bucket !== safeBucket) continue;
         if (cleanFolder && !obj.path.startsWith(`${cleanFolder}/`)) continue;
         const name = cleanFolder ? obj.path.slice(cleanFolder.length + 1) : obj.path;
         entries.push({ name, id: `${obj.bucket}/${obj.path}`, createdAt: obj.createdAt, size: obj.data.byteLength });
@@ -156,7 +151,7 @@ export function createMemoryStorageAdapter(options: MemoryStorageOptions = {}): 
         const rest = decodeURIComponent(cleanUrl.slice(prefix.length));
         const slashIdx = rest.indexOf('/');
         if (slashIdx <= 0 || slashIdx === rest.length - 1) return null;
-        return { bucket: rest.slice(0, slashIdx), path: rest.slice(slashIdx + 1) };
+        return { bucket: cleanBucket(rest.slice(0, slashIdx)), path: cleanKey(rest.slice(slashIdx + 1)) };
       } catch {
         return null;
       }
@@ -164,11 +159,12 @@ export function createMemoryStorageAdapter(options: MemoryStorageOptions = {}): 
 
     async createPresignedUpload(params: StoragePresignParams): Promise<StoragePresignResult> {
       validateStorageMetadata(params.metadata);
-      const cleanPath = params.path.replace(/^\/+/, '');
+      const bucket = cleanBucket(params.bucket);
+      const cleanPath = cleanKey(params.path);
       const expiresAt = new Date(Date.now() + (params.expiresInSeconds ?? 300) * 1000).toISOString();
       return {
         method: 'PUT',
-        url: `memory://presigned/${params.bucket}/${cleanPath}`,
+        url: `memory://presigned/${bucket}/${cleanPath}`,
         headers: { 'content-type': params.contentType },
         expiresAt,
       };
@@ -179,24 +175,26 @@ export function createMemoryStorageAdapter(options: MemoryStorageOptions = {}): 
       path: string,
       downloadOptions?: StoragePresignedDownloadOptions,
     ): Promise<StoragePresignedDownloadResult> {
-      const cleanPath = path.replace(/^\/+/, '');
+      const safeBucket = cleanBucket(bucket);
+      const cleanPath = cleanKey(path);
       const expiresAt = new Date(Date.now() + (downloadOptions?.expiresInSeconds ?? 300) * 1000).toISOString();
-      return { url: `memory://signed-download/${bucket}/${cleanPath}`, expiresAt };
+      return { url: `memory://signed-download/${safeBucket}/${cleanPath}`, expiresAt };
     },
 
     async download(bucket: string, path: string, downloadOptions?: StorageDownloadOptions): Promise<Uint8Array> {
-      const cleanPath = path.replace(/^\/+/, '');
-      const obj = store.get(toKey(bucket, cleanPath));
+      const safeBucket = cleanBucket(bucket);
+      const cleanPath = cleanKey(path);
+      const obj = store.get(`${safeBucket}::${cleanPath}`);
       if (!obj) {
-        const err = new Error(`Object not found at ${bucket}/${cleanPath}`) as Error & { status?: number; code?: string };
-        err.status = 404;
-        err.code = 'ENOENT';
-        throw err;
+        throw normalizeStorageError(
+          Object.assign(new Error(`Object not found at ${safeBucket}/${cleanPath}`), { status: 404, code: 'ENOENT' }),
+          { provider: 'memory', operation: 'download' },
+        );
       }
       if (downloadOptions?.maxBytes !== undefined && obj.data.byteLength > downloadOptions.maxBytes) {
-        const err = new Error('Staged file size exceeds maximum allowed bytes') as Error & { status?: number };
-        err.status = 400;
-        throw err;
+        throw new UploadKitError('Staged file size exceeds maximum allowed bytes', {
+          code: 'FILE_TOO_LARGE', status: 400, retryable: false,
+        });
       }
       return new Uint8Array(obj.data);
     },
@@ -207,19 +205,22 @@ export function createMemoryStorageAdapter(options: MemoryStorageOptions = {}): 
 
     async createMultipartUpload(params: StorageMultipartCreateParams): Promise<StorageMultipartCreateResult> {
       validateStorageMetadata(params.metadata);
-      const cleanPath = params.path.replace(/^\/+/, '');
+      const bucket = cleanBucket(params.bucket);
+      const cleanPath = cleanKey(params.path);
       const uploadId = `mem-mp-${++uploadSeq}`;
       multipartSessions.set(uploadId, {
-        bucket: params.bucket,
+        bucket,
         path: cleanPath,
         contentType: params.contentType,
         metadata: params.metadata,
         parts: new Map(),
       });
-      return { uploadId, bucket: params.bucket, path: cleanPath };
+      return { uploadId, bucket, path: cleanPath };
     },
 
     async uploadPart(params: StorageMultipartPartParams): Promise<StorageMultipartPartResult> {
+      cleanBucket(params.bucket);
+      cleanKey(params.path);
       const session = multipartSessions.get(params.uploadId);
       if (!session) throw new Error(`Unknown multipart uploadId: ${params.uploadId}`);
       if (!Number.isInteger(params.partNumber) || params.partNumber < 1) {
@@ -232,6 +233,8 @@ export function createMemoryStorageAdapter(options: MemoryStorageOptions = {}): 
     },
 
     async completeMultipartUpload(params: StorageMultipartCompleteParams): Promise<StorageUploadResult> {
+      cleanBucket(params.bucket);
+      cleanKey(params.path);
       const session = multipartSessions.get(params.uploadId);
       if (!session) throw new Error(`Unknown multipart uploadId: ${params.uploadId}`);
       const sorted = [...params.parts].sort((a, b) => a.partNumber - b.partNumber);
@@ -263,6 +266,8 @@ export function createMemoryStorageAdapter(options: MemoryStorageOptions = {}): 
     },
 
     async abortMultipartUpload(params: StorageMultipartAbortParams): Promise<void> {
+      cleanBucket(params.bucket);
+      cleanKey(params.path);
       multipartSessions.delete(params.uploadId);
     },
 

@@ -1,3 +1,4 @@
+import { UploadKitError } from '../types/errors';
 import type {
   StoragePresignedDownloadOptions,
   StoragePresignedDownloadResult,
@@ -98,7 +99,7 @@ export interface S3AbortMultipartUploadInput {
 
 /** Structural S3 / Cloudflare R2 / MinIO transport with zero runtime SDK dependency. */
 export interface S3TransportLike {
-  putObject(input: S3PutObjectInput): Promise<unknown>;
+  putObject(input: S3PutObjectInput, options?: { abortSignal?: AbortSignal }): Promise<unknown>;
   deleteObject(input: S3DeleteObjectInput): Promise<unknown>;
   headObject?(input: S3HeadObjectInput): Promise<S3HeadObjectOutput | unknown>;
   getObject?(input: S3GetObjectInput): Promise<S3GetObjectOutput | { Body?: unknown }>;
@@ -142,12 +143,12 @@ export type S3StorageAdapterOptions = S3StorageBaseOptions &
     | { transport: S3TransportLike; client?: never; putObject?: never }
   );
 
-function createMaxBytesError(): Error & { status?: number } {
-  const err = new Error('Staged file size exceeds maximum allowed bytes') as Error & {
-    status?: number;
-  };
-  err.status = 400;
-  return err;
+function createMaxBytesError(): UploadKitError {
+  return new UploadKitError('Staged file size exceeds maximum allowed bytes', {
+    code: 'FILE_TOO_LARGE',
+    status: 400,
+    retryable: false,
+  });
 }
 
 function enforceMaxBytes(bytes: Uint8Array, maxBytes?: number): Uint8Array {

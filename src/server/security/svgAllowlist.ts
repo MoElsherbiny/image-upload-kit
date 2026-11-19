@@ -1,3 +1,4 @@
+import { UploadValidationError } from '../handler/responses';
 import type { SvgAttribute } from './svgTokenizer';
 
 const ALLOWED_ELEMENTS_LIST = [
@@ -34,10 +35,8 @@ const ALLOWED_ATTRIBUTES = new Set<string>([
   'display', 'visibility', 'overflow', 'href', 'xlink:href', 'type',
 ]);
 
-const ALLOWED_XMLNS_VALUES = new Set<string>([
-  'http://www.w3.org/2000/svg',
-  'http://www.w3.org/1999/xlink',
-]);
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const XLINK_NS = 'http://www.w3.org/1999/xlink';
 
 const SAFE_NAMED_ENTITIES = new Set(['amp', 'lt', 'gt', 'quot', 'apos']);
 const SAFE_HREF_FRAGMENT_RE = /^#[a-zA-Z0-9_.:-]+$/;
@@ -154,14 +153,31 @@ export function sanitizeSvgAttributes(
       ? lowerName.split(':', 2)[1]
       : lowerName;
 
+    if (lowerName === 'xmlns:svg') {
+      if (attr.value.trim() !== SVG_NS) {
+        throw new UploadValidationError(
+          'Invalid SVG: invalid xmlns:svg namespace',
+          { code: 'INVALID_IMAGE' },
+        );
+      }
+      continue;
+    }
+
     if (lowerName.startsWith('on') || localName.startsWith('on')) continue;
     if (!ALLOWED_ATTRIBUTES.has(lowerName)) continue;
 
     const rawValue = attr.value;
 
-    if (lowerName === 'xmlns' || lowerName === 'xmlns:xlink') {
+    if (lowerName === 'xmlns') {
       const trimmed = rawValue.trim();
-      if (!ALLOWED_XMLNS_VALUES.has(trimmed)) continue;
+      if (trimmed !== SVG_NS) continue;
+      kept.push(`xmlns="${trimmed}"`);
+      continue;
+    }
+
+    if (lowerName === 'xmlns:xlink') {
+      const trimmed = rawValue.trim();
+      if (trimmed !== XLINK_NS) continue;
       kept.push(`${attr.name}="${trimmed}"`);
       continue;
     }

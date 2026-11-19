@@ -85,6 +85,13 @@ export type StoragePathGenerator = (
   context: StoragePathContext,
 ) => GeneratedStorageTarget;
 
+export type UploaderErrorAction = 'recordHook' | 'mirrorCleanup' | 'cleanup';
+
+export type UploaderErrorHook = (
+  error: unknown,
+  ctx: { action: UploaderErrorAction },
+) => void;
+
 export interface ImageUploaderOptions<
   TPresets extends Record<string, UploadPresetConfig> = Record<
     StandardPresetName,
@@ -138,8 +145,8 @@ export interface ImageUploaderOptions<
   onUploadRecord?: UploadRecordHook;
   /** Wait for `onUploadRecord` before returning (defaults to `false` best-effort) */
   awaitRecordHook?: boolean;
-  /** Optional error hook invoked when a non-awaited `onUploadRecord` fails */
-  onError?: (error: unknown, ctx: { action: 'recordHook' | 'mirrorCleanup' }) => void;
+  /** Optional error hook invoked when a non-awaited `onUploadRecord` or rollback cleanup fails */
+  onError?: UploaderErrorHook;
   /** Max concurrent Sharp + LQIP image processing pipelines (defaults to `2`) */
   concurrency?: number;
   /** Max queued processing jobs waiting for a semaphore slot before rejecting with 503 */

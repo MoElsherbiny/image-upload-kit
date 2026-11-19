@@ -41,7 +41,7 @@ describe('Storage Security Hardening & Error Normalization', () => {
     }
   });
 
-  it('blocks .., ., and null-byte traversal in S3, Supabase, and LocalFS', async () => {
+  it('blocks .., ., and null-byte traversal in S3, Supabase, LocalFS, and Memory', async () => {
     const s3 = createS3StorageAdapter({
       publicBaseUrl: 'https://cdn.example.com',
       async putObject() {},
@@ -51,6 +51,7 @@ describe('Storage Security Hardening & Error Normalization', () => {
     const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'iuk-sec-'));
     tempDirs.push(rootDir);
     const local = createLocalFsStorageAdapter({ rootDir });
+    const mem = createMemoryStorageAdapter();
 
     const badPaths = ['../secret.png', 'a/../../b.png', './dot.png', 'a/./b.png', 'evil\0.png'];
     for (const bad of badPaths) {
@@ -61,6 +62,9 @@ describe('Storage Security Hardening & Error Normalization', () => {
       await expect(supabase.delete('b', bad)).rejects.toThrow();
       await expect(supabase.download!('b', bad)).rejects.toThrow();
       await expect(local.upload(p)).rejects.toThrow();
+      await expect(mem.upload(p)).rejects.toThrow();
+      await expect(mem.delete('b', bad)).rejects.toThrow();
+      await expect(mem.download('b', bad)).rejects.toThrow();
     }
   });
 

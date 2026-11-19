@@ -1,14 +1,21 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import {
+  hasStorageErrorMetadata,
+  normalizeStorageError,
+} from '../../storage/errorNormalizer';
 import type {
   StorageAdapter,
   StorageUploadResult,
 } from '../../storage/types';
+import { isUploadKitError } from '../../types/errors';
+import { safeReportUploaderError, throwIfAborted } from './inFlightCoalescer';
 import { stripFilenameExtension } from './pathGenerator';
 import type {
   GeneratedStorageTarget,
   StoragePathContext,
   StoragePathGenerator,
+  UploaderErrorHook,
 } from './types';
 
 export interface UploadWithCollisionRetryParams {
@@ -18,6 +25,7 @@ export interface UploadWithCollisionRetryParams {
   data: Buffer | Uint8Array;
   contentType: string;
   maxRetries?: number;
+  signal?: AbortSignal;
 }
 
 export interface UploadWithCollisionRetryResult {
@@ -35,37 +43,25 @@ function randomRetrySuffix(): string {
   return Math.random().toString(16).slice(2, 10);
 }
 
-/**
- * Determines whether a storage error represents a filename or object collision.
- * Matches `already exists`, `EEXIST`, or HTTP 412 Precondition Failed, while strictly
- * excluding `does not exist` (e.g. non-existent buckets, directories, or missing keys).
- */
-export function isCollisionError(e: unknown): boolean {
+function isDirectCollisionError(e: unknown): boolean {
   if (!e) return false;
-
-  const code =
-    typeof e === 'object' && e !== null && 'code' in e
-      ? String((e as { code: unknown }).code).toUpperCase()
-      : '';
+  const obj = typeof e === 'object' ? (e as Record<string, unknown>) : null;
+  const code = obj && 'code' in obj ? String(obj.code).toUpperCase() : '';
   const statusCode =
-    typeof e === 'object' && e !== null && '$metadata' in e
-      ? (e as { $metadata?: { httpStatusCode?: number } }).$metadata
-          ?.httpStatusCode
-      : typeof e === 'object' && e !== null && 'statusCode' in e
-        ? Number((e as { statusCode: unknown }).statusCode)
-        : undefined;
+    obj && '$metadata' in obj
+      ? (obj.$metadata as { httpStatusCode?: number } | undefined)?.httpStatusCode
+      : obj && 'statusCode' in obj
+        ? Number(obj.statusCode)
+        : obj && 'status' in obj
+          ? Number(obj.status)
+          : undefined;
 
   if (code === 'EEXIST' || code === 'PRECONDITIONFAILED' || statusCode === 412) {
     return true;
   }
-  if (code === 'ENOENT') {
-    return false;
-  }
+  if (code === 'ENOENT') return false;
 
-  const msg =
-    e instanceof Error ? e.message.toLowerCase() : String(e).toLowerCase();
-
-  // Strictly exclude non-existence errors (missing bucket, directory, key)
+  const msg = e instanceof Error ? e.message.toLowerCase() : String(e).toLowerCase();
   if (
     msg.includes('does not exist') ||
     msg.includes("doesn't exist") ||
@@ -75,7 +71,6 @@ export function isCollisionError(e: unknown): boolean {
     return false;
   }
 
-  // Match genuine collision indicators
   return (
     msg.includes('already exists') ||
     msg.includes('already_exists') ||
@@ -83,6 +78,22 @@ export function isCollisionError(e: unknown): boolean {
     msg.includes('file exists') ||
     msg.includes('precondition failed')
   );
+}
+
+/**
+ * Determines whether a storage error (or its nested `cause`) represents a filename
+ * or object collision (`already exists`, `EEXIST`, or HTTP 412 Precondition Failed).
+ */
+export function isCollisionError(e: unknown): boolean {
+  let current: unknown = e;
+  for (let depth = 0; depth < 4 && current; depth++) {
+    if (isDirectCollisionError(current)) return true;
+    const cause =
+      current instanceof Error && 'cause' in current ? current.cause : undefined;
+    if (!cause || cause === current) break;
+    current = cause;
+  }
+  return false;
 }
 
 /**
@@ -95,12 +106,7 @@ export async function uploadWithCollisionRetry(
   params: UploadWithCollisionRetryParams,
 ): Promise<UploadWithCollisionRetryResult> {
   const {
-    storage,
-    buildPath,
-    pathContext,
-    data,
-    contentType,
-    maxRetries = 3,
+    storage, buildPath, pathContext, data, contentType, maxRetries = 3, signal,
   } = params;
 
   const isServerCustomName =
@@ -108,8 +114,10 @@ export async function uploadWithCollisionRetry(
 
   let storageTarget = buildPath(pathContext);
   let uploadResult: StorageUploadResult | undefined;
+  let lastCollisionError: unknown;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
+    throwIfAborted(signal);
     try {
       uploadResult = await storage.upload({
         bucket: storageTarget.bucket,
@@ -119,11 +127,15 @@ export async function uploadWithCollisionRetry(
         upsert: isServerCustomName,
         contentHash: pathContext.contentHash,
         metadata: pathContext.metadata,
+        ...(signal ? { signal } : {}),
       });
       break;
     } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') throw e;
       if (isCollisionError(e)) {
+        lastCollisionError = e;
         if (isServerCustomName) {
+          throwIfAborted(signal);
           uploadResult = await storage.upload({
             bucket: storageTarget.bucket,
             path: storageTarget.path,
@@ -132,6 +144,7 @@ export async function uploadWithCollisionRetry(
             upsert: true,
             contentHash: pathContext.contentHash,
             metadata: pathContext.metadata,
+            ...(signal ? { signal } : {}),
           });
           break;
         }
@@ -149,12 +162,18 @@ export async function uploadWithCollisionRetry(
         });
         continue;
       }
+      if (!isUploadKitError(e) && hasStorageErrorMetadata(e)) {
+        throw normalizeStorageError(e, { operation: 'upload' });
+      }
       throw e;
     }
   }
 
   if (!uploadResult) {
-    throw new Error('Failed to upload image after multiple retries');
+    throw normalizeStorageError(
+      lastCollisionError ?? { statusCode: 409, code: 'EEXIST' },
+      { operation: 'upload' },
+    );
   }
 
   return { uploadResult, storageTarget };
@@ -217,6 +236,7 @@ export async function mirrorBufferLocally(
 export async function deleteMirroredFiles(
   mirrorDirs: string[],
   storagePath: string,
+  onError?: UploaderErrorHook,
 ): Promise<void> {
   if (!mirrorDirs.length || !storagePath) return;
   const relativeTarget = storagePath.replace(/^\/+/, '');
@@ -230,8 +250,11 @@ export async function deleteMirroredFiles(
         const rel = path.relative(resolvedBase, destPath);
         if (rel.startsWith('..') || path.isAbsolute(rel)) return;
         await fs.unlink(destPath);
-      } catch {
-        // Ignore ENOENT or read-only fs errors
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException | undefined)?.code;
+        if (code !== 'ENOENT' && code !== 'EROFS') {
+          safeReportUploaderError(onError, err, 'cleanup');
+        }
       }
     }),
   );
