@@ -169,7 +169,7 @@ export async function runInteractiveInit(opts: RunInitOptions = {}): Promise<Run
   const explicitStorage = normalizeStorageOption(opts.storage);
   const detectedFw = mapDetectedToInitFramework(detected);
 
-  renderCliIntro(`img-upload-kit v${opts.version ?? '2.2.5'}`, 'Interactive Framework & Storage Setup', output);
+  renderCliIntro(`img-upload-kit v${opts.version ?? '2.3.0'}`, 'Interactive Framework & Storage Setup', output);
   if (detectedFw.detectedFrameworkName) {
     renderCliStep('Detected environment', `${detectedFw.detectedFrameworkName} (${pm})`, output);
   }
