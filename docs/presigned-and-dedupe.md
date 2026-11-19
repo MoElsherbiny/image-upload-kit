@@ -113,6 +113,12 @@ const result = await uploader.uploadImage(file, { preset: 'square' });
 console.log(result.deduplicated); // true on cache hit, false on fresh encode
 ```
 
+### Ref-Counted In-Flight Deduplication Coalescing
+
+When multiple requests upload the identical asset concurrently to the same composite key before the cache is warm, `createInFlightCoalescer` coalesces them into a single Sharp encode and storage write (`deduplicated: true` on follower callers) while isolating per-caller `AbortSignal`s:
+- If one caller cancels its request, **only** that caller rejects with `UPLOAD_CANCELLED` (`499`) while remaining callers receive the completed `UploadedImageData`.
+- The underlying Sharp/storage execution only aborts (rolling back any written main, variant, or mirrored objects) when *every* attached caller has aborted.
+
 ---
 
 ## 3. Presigned Direct-to-Storage Uploads (`uploadMode: 'presigned'`)
@@ -181,7 +187,8 @@ export const { POST, DELETE } = createUploadHttpHandler({
     expiresInSeconds: 300,
     // Optional distributed replay store (Redis / KV) for multi-instance deployments:
     // tokenStore: {
-    //   consume: async (jti, ttlMs) => (await redis.set(`iuk:jti:${jti}`, '1', 'PX', ttlMs, 'NX')) === 'OK',
+    //   consume: async (jti, expMs) => (await redis.set(`iuk:jti:${jti}`, '1', 'PX', Math.max(1000, expMs - Date.now()), 'NX')) === 'OK',
+    //   release: async (jti) => { await redis.del(`iuk:jti:${jti}`); },
     // },
   },
 });
@@ -193,6 +200,8 @@ await sweepStagedUploads(storage, {
   maxAgeMs: 60 * 60 * 1000,
 });
 ```
+
+> **Retryable `finalize` Preservation**: If `finalize` fails with a transient retryable error (`isRetryableUploadError(err) === true`, such as a `502`/`503`/`504` storage timeout or `429` rate limit), the handler preserves the staged object in `stagingBucket` and calls `releaseUploadToken` (`tokenStore.release?.(jti)`) so the client can retry `POST ?action=finalize` before token expiry without re-uploading raw bytes.
 
 ### Step 3: Set `uploadMode="presigned"` on Any Client
 

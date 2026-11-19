@@ -1,30 +1,33 @@
 # AnimatedImage & Blur-Up Reveal Guide
 
-`<AnimatedImage />` is a high-performance, blur-up progressive image component for React (>= 18) and Next.js. It delivers instant visual feedback, eliminates Cumulative Layout Shift (CLS), and provides a GPU-accelerated crossfade from low-quality placeholders to sharp hero assets.
+`<AnimatedImage />` is a zero-layout-shift progressive blur-up image primitive available across **React** (`img-upload-kit/react`), **Vue 3 / Nuxt 4** (`img-upload-kit/vue`), **Angular 17–21+** (`img-upload-kit/angular`), and **React Native / Expo** (`img-upload-kit/react-native`).
 
 ---
 
-## 1. Features
+## 1. Key Capabilities & Multi-Platform Availability
 
-- **Progressive Reveal**: Zero-layout-shift reveal with placeholder crossfade.
-- **Hierarchical Placeholders**: Resolves `blurDataUrl` > `blurHash` > `blurColor` with an automatic gradient SVG fallback.
-- **Framework-Agnostic**: Works with native `<img>`, Next.js `next/image` (`as={Image}`), Remix, Astro, or Gatsby.
-- **Headless Reveal State Machine**: Powered by `useImageReveal` hook with pre-decode verification via `HTMLImageElement.decode()`.
-- **CSS-Powered Transition**: 700ms staggered fade-in, customizable shimmer effect, and dark mode tokens.
-- **Accessibility & Reduced Motion**: Sets `aria-busy` during loading and respects `prefers-reduced-motion: reduce`.
+- **Multi-Platform Parity**:
+  - **React / Next.js**: `<AnimatedImage>` & `useImageReveal` from `img-upload-kit/react` (supports `as={Image}` for `next/image`).
+  - **Vue 3 / Nuxt 4**: `<AnimatedImage>` (`<IukAnimatedImage>`) & `useImageReveal` from `img-upload-kit/vue`.
+  - **Angular 17–21+**: `createImageReveal`, `mountAnimatedImage`, & `AnimatedImageComponent` from `img-upload-kit/angular`.
+  - **React Native / Expo**: `<AnimatedImage>` (`<NativeAnimatedImage>`) from `img-upload-kit/react-native` (supports `as={Image}` for `expo-image`).
+- **Hierarchical Placeholders**: Resolves `blurDataUrl` > `blurHash` > `blurColor` (`colorPlaceholder="flat"` wrapper background by default, or `"gradient"` SVG fallback).
+- **Smooth Scale-Settle Reveal**: Transitions over `600ms` (`animationDuration = 600`) from `opacity: 0; scale(1.02)` to `opacity: 1; scale(1)` (`revealScale = 1.02`) after `HTMLImageElement.decode()` resolves.
+- **Resilient Error & Motion Accessibility**: Preserves the placeholder on load failure, retries `fallbackSrc` once if provided, exposes `renderError={({ src, retry }) => ...}`, sets `aria-busy`, and honors `prefers-reduced-motion: reduce`.
 
 ---
 
 ## 2. Basic React Usage
 
 ```tsx
+import type { UploadedImageData } from 'img-upload-kit';
 import { AnimatedImage } from 'img-upload-kit/react';
 import 'img-upload-kit/styles.css';
 
 export function ProductHero({ image }: { image: UploadedImageData }) {
   return (
     <div style={{ width: 800, height: 500, borderRadius: 16, overflow: 'hidden' }}>
-      {/* Shorthand: pass UploadedImageData directly via `image`, or pass explicit src/alt/blur* props */}
+      {/* Pass UploadedImageData directly via `image`, or pass explicit src/alt/blur* props */}
       <AnimatedImage image={image} width={800} height={500} showShimmer />
     </div>
   );
@@ -35,10 +38,11 @@ export function ProductHero({ image }: { image: UploadedImageData }) {
 
 ## 3. Next.js App Router Integration (`as={Image}`)
 
-Pass `next/image` via the `as` prop. `AnimatedImage` forwards image props (`fill`, `sizes`, `priority`) directly while preserving blur-up crossfade orchestration:
+Pass `next/image` via `as`. First-class `priority` and `quality` props forward cleanly without conflicting with `loading="lazy"`:
 
 ```tsx
 import Image from 'next/image';
+import type { UploadedImageData } from 'img-upload-kit';
 import { AnimatedImage } from 'img-upload-kit/react';
 import 'img-upload-kit/styles.css';
 
@@ -47,58 +51,60 @@ export function Banner({ image }: { image: UploadedImageData }) {
     <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9' }}>
       <AnimatedImage
         as={Image}
-        src={image.url}
+        image={image}
         alt={image.altText || 'Banner'}
-        blurDataUrl={image.blurDataUrl}
-        blurHash={image.blurHash}
-        blurColor={image.blurColor}
         fill
+        priority
+        quality={85}
         sizes="(max-width: 768px) 100vw, 1200px"
-        imageComponentProps={{ priority: true, quality: 85 }}
+        fallbackSrc="/images/fallback.webp"
       />
     </div>
   );
 }
 ```
 
+### Vue 3, Angular & React Native Imports
+
+```ts
+import { AnimatedImage as VueAnimatedImage, useImageReveal as useVueReveal } from 'img-upload-kit/vue';
+import { createImageReveal, mountAnimatedImage } from 'img-upload-kit/angular';
+import { AnimatedImage as NativeAnimatedImage } from 'img-upload-kit/react-native';
+
+export { VueAnimatedImage, useVueReveal, createImageReveal, mountAnimatedImage, NativeAnimatedImage };
+```
+
 ---
 
 ## 4. Props Reference (`AnimatedImageProps`)
 
-All standard HTML `<img>` attributes (`loading`, `decoding`, `sizes`, `crossOrigin`, etc.) pass through directly.
+All standard HTML `<img>` attributes (`loading`, `decoding`, `sizes`, `crossOrigin`, etc.) pass through on web. Either `image` (`AnimatedImageSource`) or `src` + `alt` is required.
 
 | Prop | Type | Default | Description |
 | --- | --- | --- | --- |
-| `src` | `string` | *(Required)* | Image source URL. |
-| `alt` | `string` | *(Required)* | Accessible description (`""` for decorative). |
+| `image` | `AnimatedImageSource` | `undefined` | Shorthand `UploadedImageData` object (`url`, `blurDataUrl`, `blurHash`, `blurColor`, `srcSet`). |
+| `src` / `alt` | `string` | *(Required if no `image`)* | Image URL and accessible description (`""` for decorative). |
 | `blurDataUrl` | `string \| null` | `undefined` | WebP LQIP base64 data URL (highest priority). |
-| `blurHash` | `string \| null` | `undefined` | Compact BlurHash decoded client-side on canvas. |
-| `blurColor` | `string \| null` | `undefined` | Dominant hex/rgb color; powers background and gradient SVG fallback. |
-| `fill` | `boolean` | `false` | Absolutely fill parent container (`inset: 0`). |
+| `blurHash` | `string \| null` | `undefined` | Compact BlurHash decoded client-side when `blurDataUrl` is absent. |
+| `blurColor` | `string \| null` | `undefined` | Dominant hex/rgb color or CSS token (`var(--card-bg)`). |
+| `colorPlaceholder` | `'flat' \| 'gradient'` | `'flat'` | When only `blurColor` is present: flat background (`'flat'`) or inline SVG gradient (`'gradient'`). |
+| `aspectRatio` | `ImageAspectRatio` | `undefined` | CSS aspect ratio (`'1:1'`, `'4:5'`, `'9:16'`, `'16:9'`, `number`). |
+| `fill` | `boolean` | `false` | Absolutely fill positioned parent (`inset: 0`). |
+| `priority` | `boolean` | `false` | Sets `loading="eager"` + `fetchPriority="high"` (or forwards `priority` to `as`). |
+| `quality` | `number` | `undefined` | Quality hint (`1–100`) forwarded only when `as` is provided. |
 | `objectFit` | `AnimatedImageObjectFit` | `'cover'` | `'cover' \| 'contain' \| 'fill' \| 'none' \| 'scale-down'`. |
-| `objectPosition`| `CSSProperties['objectPosition']` | `'center'` | CSS object-position coordinate. |
-| `showShimmer` | `boolean` | `false` | Displays an animated highlight pass during loading. |
-| `animationDuration` | `number` | `700` | Crossfade duration in milliseconds. |
-| `as` | `ElementType` | `undefined` | Custom renderer component (e.g. `next/image`). |
-| `imageComponentProps` | `Record<string, unknown>` | `undefined` | Props passed exclusively to the `as` component. |
-| `unstyled` | `boolean` | `false` | Removes all `iuk-animated-image*` classes. |
-| `wrapperClassName` | `string` | `undefined` | Custom class name for the outer container. |
-| `wrapperStyle` | `CSSProperties` | `undefined` | Inline styles for the outer container. |
-| `wrapperProps` | `HTMLAttributes<HTMLDivElement>` | `undefined` | Extra attributes spread onto container `<div>`. |
-| `placeholderClassName` | `string` | `undefined` | Class name applied to placeholder element. |
-| `onLoad` | `(img: HTMLImageElement \| null) => void` | `undefined` | Fires after `HTMLImageElement.decode()` resolves. |
-| `onError` | `(event: SyntheticEvent) => void` | `undefined` | Error handler on load failure. |
+| `animationDuration` | `number` | `600` | Reveal transition duration in milliseconds. |
+| `revealScale` | `number` | `1.02` | Initial pre-reveal scale (`scale(1.02) -> scale(1)`; pass `1` for pure opacity fade). |
+| `showShimmer` | `boolean` | `false` | Displays an animated highlight pass while loading. |
+| `fallbackSrc` | `string` | `undefined` | Backup URL tried once if primary `src` fails to load. |
+| `renderError` | `(ctx) => ReactNode` | `undefined` | Custom recovery UI receiving `{ src, retry }`. |
+| `as` | `ElementType` | `undefined` | Custom image component (e.g. `next/image`). |
+| `imageComponentProps` | `Record<string, unknown>` | `undefined` | Extra props forwarded exclusively to `as`. |
+| `unstyled` | `boolean` | `false` | Strips all `iuk-animated-image*` classes. |
 
 ---
 
-## 5. Placeholder Priority & Fallback Logic
-
-`resolvePlaceholderUrl({ blurDataUrl, blurHash, blurColor })` selects placeholders deterministically:
-
-1. **`blurDataUrl`**: If present, returned directly.
-2. **`blurHash`**: If `blurDataUrl` is absent and `document` is available, decodes to a 32x32 WebP/PNG data URL via `decodeBlurHashToDataURL`.
-3. **`blurColor`**: If valid and non-neutral, builds an SVG gradient using the color.
-4. **Neutral SVG Gradient**: If color is absent, invalid, or neutral (`#000000`, `#ffffff`, `#1a1a1a`), returns an inline SVG gradient from `#2c3340` to `#1e242d`.
+## 5. Placeholder Priority, Slots & CSS Custom Properties
 
 ```ts
 import {
@@ -107,58 +113,38 @@ import {
   resolvePlaceholderUrl,
 } from 'img-upload-kit/react';
 
-// Returns undefined for empty or generic black/white DB placeholders:
-resolveMeaningfulColor('#ffffff'); // -> undefined
+resolveMeaningfulColor('#ffffff'); // -> undefined (neutral white skipped by default)
 resolveMeaningfulColor('#3a7bd5'); // -> '#3a7bd5'
-
-// Generate inline SVG gradient string:
+const placeholder = resolvePlaceholderUrl({ blurColor: '#3a7bd5' });
 const svg = createFallbackBlurSvg('#3a7bd5');
+console.log(placeholder, svg.length);
 ```
 
----
-
-## 6. Semantic Slots & CSS Custom Properties
-
-### Data Attributes
-
-- `data-slot="animated-image"`: Outer wrapper element.
-- `data-slot="animated-image-placeholder"`: Blurry placeholder image element.
-- `data-slot="animated-image-shimmer"`: Shimmer highlight bar.
-- `data-state="loading | loaded | error"`: Dynamic reveal state.
-- `aria-busy="true"`: Present while the image is loading; removed upon decode.
-
-### CSS Design Tokens
+- **Slots & State**: `data-slot="animated-image"`, `data-slot="animated-image-placeholder"`, `data-slot="animated-image-shimmer"`, `data-state="loading | loaded | error"`, and `aria-busy="true"` while decoding.
+- **Crossfade Timing**: Main image transitions opacity and `scale(1.02 -> 1)` over `animationDuration` (`600ms`); placeholder (`scale(1.1)`, `blur(20px)`) fades over `duration * 5 / 6` (`500ms`) and unmounts at `duration + 50ms`.
 
 ```css
 :root {
-  --iuk-animated-image-bg: rgba(38, 45, 56, 0.4);
   --iuk-animated-image-blur: 20px;
-  --iuk-animated-image-shimmer: rgba(255, 255, 255, 0.12);
-  --iuk-animated-image-duration: 700ms;
+  --iuk-animated-image-placeholder-scale: 1.1;
+  --iuk-animated-image-reveal-scale: 1.02;
+  --iuk-animated-image-duration: 600ms;
+  --iuk-animated-image-shimmer: rgba(255, 255, 255, 0.1);
 }
 ```
 
-### Staggered Crossfade Timing
-
-`AnimatedImage` staggers the crossfade to avoid visual "dipping":
-- The placeholder layer stays 100% opaque for the first 25% of `animationDuration`.
-- The placeholder fades out over the remaining 75% (`transition-delay: 25%`).
-- Once the transition finishes, the placeholder DOM element is completely unmounted.
-
 ---
 
-## 7. Headless Hook: `useImageReveal`
-
-For completely custom DOM structures, use `useImageReveal` directly:
+## 6. Headless Hook: `useImageReveal`
 
 ```tsx
 import { useImageReveal } from 'img-upload-kit/react';
 
-export function CustomBlurUpImage({ src, alt, placeholderUrl }: Props) {
+export function CustomBlurUpImage({ src, alt, placeholderUrl }: { src: string; alt: string; placeholderUrl: string }) {
   const { isLoaded, showPlaceholder, hasError, imgRef, handleLoad, handleError } =
     useImageReveal({
       srcKey: src,
-      animationDuration: 500,
+      animationDuration: 600,
       onLoad: (img) => console.log('Image decoded', img?.naturalWidth),
     });
 
@@ -169,9 +155,7 @@ export function CustomBlurUpImage({ src, alt, placeholderUrl }: Props) {
           src={placeholderUrl}
           alt=""
           aria-hidden="true"
-          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-500 ${
-            isLoaded ? 'opacity-0' : 'opacity-100'
-          }`}
+          className={isLoaded ? 'opacity-0' : 'opacity-100'}
         />
       )}
       <img
@@ -180,19 +164,10 @@ export function CustomBlurUpImage({ src, alt, placeholderUrl }: Props) {
         alt={alt}
         onLoad={(e) => handleLoad(e.currentTarget)}
         onError={handleError}
-        className={`h-full w-full object-cover transition-opacity duration-500 ${
-          isLoaded ? 'opacity-100' : 'opacity-0'
-        }`}
+        className={isLoaded ? 'opacity-100' : 'opacity-0'}
       />
-      {hasError && <div className="text-red-500">Failed to load image</div>}
+      {hasError && <div>Failed to load image</div>}
     </div>
   );
 }
 ```
-
-### `useImageReveal` Key Guarantees
-
-1. **Synchronous Reset**: Clears state immediately on `srcKey` change to eliminate stale-frame flashes.
-2. **Pre-Decode Verification**: Awaits `img.decode()` before triggering reveal, avoiding stutter.
-3. **Cached Image Detection**: Automatically detects pre-cached images on initial mount via `requestAnimationFrame`.
-4. **Memory Safety**: Cleans up all pending timers and decode callbacks on unmount.

@@ -45,7 +45,8 @@ In `createUploadHttpHandler` (`src/server/handler/responses.ts`):
 - `errorResponseFromKitError(error)` responds with `error.toPublicJSON()` and `error.status`, preserving `{ error: string }` for backward compatibility while adding `{ code, retryable, metadata? }`.
 - If `error.metadata?.retryAfterSeconds` is a positive number, the handler automatically attaches the `Retry-After` HTTP header.
 - Errors with `status >= 500` and unexpected non-`UploadKitError` exceptions are forwarded to your `onError(error, ctx)` callback; clients receive a redacted `{ error: 'Internal server error' }` (`500`).
-- Storage adapters wrap provider SDK failures with `normalizeStorageError(err, ctx)` so AWS/Supabase/OS error internals are never leaked.
+- **Storage Error Normalization**: Built-in adapters (`S3`, `Supabase`, `LocalFS`) and `createImageUploader` normalize provider SDK and OS errors via `normalizeStorageError(err, ctx)` across `upload`, `delete`, `download`, and `deleteByUrl` into safe `UploadKitError` codes (`STORAGE_ERROR` `502`/`503`/`504` with `retryable: true`, `RATE_LIMITED` `429`, `FORBIDDEN` `403`, `RESOURCE_LIMIT_EXCEEDED` `503` on `ENOSPC`/quota, and `FILE_TOO_LARGE` `400` on `maxBytes`) without leaking credentials, filesystem paths, or stack traces, while preserving `EEXIST`/`412`/`PreconditionFailed` collision rename-retries.
+- **Retryable Session & Staging Preservation**: When presigned `finalize` or resumable `complete` encounters a retryable failure (`isRetryableUploadError(err) === true`), the handler preserves the `_staging/` object or resumable chunk session and releases the single-use `jti` (`releaseUploadToken` / `tokenStore.release`) or completion lock (`store.releaseCompletion`) so clients can retry completion without re-uploading bytes. Non-retryable validation errors (`400`, `413`) immediately clean up the staged object or session.
 
 ```ts
 import { createUploadHttpHandler } from 'img-upload-kit/server/handler';

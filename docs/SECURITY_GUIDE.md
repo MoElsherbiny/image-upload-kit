@@ -75,7 +75,7 @@ Two-phase presigned uploads (`?action=presign` -> direct storage PUT/POST -> `?a
 - **Secret rotation**: Pass `secret: [activeSecret, previousSecret]` (`UploadTokenSecret = string | readonly string[]`, minimum 16 characters each). New tokens are signed with the first secret; verification checks all secrets in constant time.
 - **Clock skew tolerance**: Configure `clockToleranceMs` (default `0`) for distributed clock drift.
 - **Subject (`sub`) ownership binding**: When `getSubject` returns a non-empty string on `presign`, `sub` is embedded in `PresignTokenPayload`. On `finalize`, the handler verifies signature/expiry (`consume: false`), runs `authorize`, verifies `tokenPayload.sub === currentSubject` (`403 FORBIDDEN` on mismatch), enforces rate limits, and **only then** atomically consumes `jti`. An unauthorized caller can never burn a victim's single-use token.
-- **Single-use replay protection**: Without `tokenStore`, tokens are tracked in an in-memory `Map` (capped at 4,096 entries). **The in-memory store is for local development or single-instance deployments only** — it is not shared across containers, serverless functions, or edge isolates.
+- **Single-use replay protection & retryable `release`**: Without `tokenStore`, tokens are tracked in an in-memory `Map` (capped at 4,096 entries). **The in-memory store is for local development or single-instance deployments only** — it is not shared across containers, serverless functions, or edge isolates. If `finalize` fails with a transient retryable error (`isRetryableUploadError(err)`), `releaseUploadToken` calls `tokenStore.release?.(jti)` and preserves the `_staging/` object so the client can retry `finalize` before token expiry without re-uploading raw bytes.
 
 ### Distributed `PresignTokenStore` (Redis Example)
 
@@ -84,12 +84,16 @@ import type { PresignTokenStore } from 'img-upload-kit/server/handler';
 
 export function createRedisTokenStore(redis: {
   set(key: string, value: string, mode: 'PX', ttlMs: number, flag: 'NX'): Promise<string | null>;
+  del(key: string): Promise<number>;
 }): PresignTokenStore {
   return {
     async consume(jti: string, expMs: number): Promise<boolean> {
       const ttlMs = Math.max(1_000, expMs - Date.now());
       const result = await redis.set(`iuk:jti:${jti}`, '1', 'PX', ttlMs, 'NX');
       return result === 'OK';
+    },
+    async release(jti: string): Promise<void> {
+      await redis.del(`iuk:jti:${jti}`);
     },
   };
 }
@@ -176,6 +180,7 @@ const optimized = await optimizeImage(buffer, {
 
 - **`allowedOrigins`**: Pass `string[]` or `(origin: string) => boolean`. Requests with missing or disallowed `Origin`/`Referer` are rejected with `403`.
 - **`maxBodyBytes`**: Enforced via `Content-Length` precheck and streaming byte cap (defaults to `1.25 × max(preset.maxSizeMB, defaultMaxSizeMB)`).
+- **Multipart & resumable upload hardening**: `createMultipartUploadHandler` enforces server-generated keys by default (`allowClientPathOverride: false`), image-only MIME types (`DEFAULT_ALLOWED_FORMATS`, never `application/octet-stream`), a `100 MB` default `maxTotalBytes` cap (replacing rather than double-counting re-uploaded part numbers), and post-completion magic-byte verification (`validateOnComplete: true`, deleting spoofed objects before completion). `createResumableUploadHandler` binds sessions to the authenticated `subject` and resolved preset bucket (`init` -> `complete`) and verifies optional `x-chunk-sha256` digests.
 - **Rate limiting & quotas**: Implement provider-independent `RateLimiter` and `QuotaProvider` interfaces (from `img-upload-kit`) backed by Redis, Upstash, Cloudflare KV, or SQL. `createMemoryRateLimiter` (from `img-upload-kit/server/handler`) is provided for local dev/tests and single-instance servers only.
 
 ```ts

@@ -4,11 +4,11 @@
 
 ---
 
-## 1. Dependencies & Peer Dependencies (`sharp`, `lqip-modern`, `lucide-react`)
+## 1. Dependencies & Peer Dependencies (`sharp`, `lucide-react`)
 
-- **`sharp` & `lqip-modern` are now optional peer dependencies.** Client-only or Edge consumers no longer download native Sharp binaries when installing `img-upload-kit`. Server (`img-upload-kit/server`) and CLI (`img-upload-kit/cli`) consumers must install `sharp`.
+- **`sharp` is an optional peer dependency.** Client-only or Edge consumers no longer download native Sharp binaries when installing `img-upload-kit`. Server (`img-upload-kit/server`) and CLI (`img-upload-kit/cli`) consumers install `sharp` (which powers AVIF/WebP optimization, WebP LQIP generation, and 4-edge color extraction; `blurhash` is bundled directly into `dist/` with zero runtime dependencies).
 - **`lucide-react` has been removed.** All UI icons are now inlined inside `img-upload-kit/react` (`src/react/icons.tsx`) with zero external icon dependencies.
-- **Node.js `>= 20.0.0`** is recommended for development and server runtimes.
+- **Node.js `>= 20.0.0`** is required for development and server runtimes.
 
 ### Before (v1.x)
 ```bash

@@ -5,85 +5,54 @@ Reference guide for AI agents and developers working on `img-upload-kit`.
 ## 1. Core Mission & Guardrails
 
 - **Package**: `img-upload-kit` (standalone npm package at `E:\Personal-Projects\image-upload-kit`).
-- **Core Function**: Sharp AVIF/WebP image optimization, client-side pre-upload resize, presigned direct-to-storage uploads, content-hash deduplication, smart size-guarding, social & e-commerce aspect-ratio attention cropping (`1:1`, `4:5`, `9:16`), responsive `srcSet` variants, WebP LQIP & BlurHash generation, 4-edge ambient color extraction, magic-byte & SVG security, pluggable `StorageAdapter`, and multi-platform UI & headless primitives for **React**, **Vue 3 / Nuxt 4**, **Angular 17–21+**, and **React Native / Expo**.
+- **Core Function**: Sharp AVIF/WebP image optimization, client-side pre-upload resize, presigned/resumable/multipart uploads, ref-counted content-hash deduplication, smart size-guarding, social & e-commerce aspect-ratio & `focalPoint` cropping (`1:1`, `4:5`, `9:16`), responsive `srcSet` variants, WebP LQIP & BlurHash generation, 4-edge ambient color extraction, magic-byte & strict XML allowlist SVG security, pluggable `StorageAdapter` + `migrateStorage`, 4-layer zero-dep CLI, and multi-platform UI & headless primitives for **React**, **Vue 3 / Nuxt 4**, **Angular 17–21+**, and **React Native / Expo**.
 - **Author**: Mo Elsherbiny (`https://www.buildwithsherbo.com/`, GitHub: `@MoElsherbiny`).
-- **Strict Hard Constraint**: **Every file across the entire repository MUST remain <= 300 lines**. Enforced by ESLint `max-lines` and `scripts/check-max-lines.mjs`. Never create or modify a file to exceed 300 lines.
-- **Strict Type Safety (Zero `any`)**: Never use `any` or `eslint-disable` for `@typescript-eslint/no-explicit-any` anywhere in the repository (`@typescript-eslint/no-explicit-any` is enforced as `'error'`). Always use strict TypeScript types (`unknown`, generics, or explicit interfaces).
+- **Strict Hard Constraint**: **Every file across the entire repository MUST remain <= 300 lines**. Enforced by ESLint `max-lines` and `scripts/check-max-lines.mjs`. Never create or modify a file to exceed 300 lines, and never store internal planning documents in the repository.
+- **Strict Type Safety (Zero `any`)**: Never use `any` or `eslint-disable` for `@typescript-eslint/no-explicit-any` anywhere in the repository (`@typescript-eslint/no-explicit-any` is enforced as `'error'`).
 - **Zero Framework Lock-in & Zero Runtime Dependencies**: Keep `package.json` `"dependencies": {}` empty (`blurhash` is bundled into `dist/`, and `sharp` is an optional peer dependency loaded lazily on the server). React components must never import `next/*` directly; Vue components in `src/vue` use peer `vue`; Angular controllers in `src/angular` must not require `@angular/core` at runtime; React Native components in `src/react-native` must never reference DOM globals (`window`, `document`, `HTMLImageElement`).
 
-## 2. Architecture & Subpath Structure
+## 2. Architecture, Subpath & Test Structure
 
-```
+```text
 src/
-├── index.ts                  # Root subpath '.' — Universal types, presets, aspectRatio, validators, formatters, blur helpers
-├── types/                    # Pure domain types (quality, presets, aspectRatio, errors, rateLimit, upload contracts)
-│   ├── aspectRatio.ts        # ImageAspectRatio ('1:1'|'4:5'|'9:16'|...), CropStrategy, resolveAspectRatio, aspectRatioToCss
-│   ├── errors.ts             # UploadKitError, UploadErrorCode, SerializedUploadError, isUploadKitError, isRetryableUploadError
-│   ├── rateLimit.ts          # Provider-independent RateLimiter & QuotaProvider contracts
-│   ├── quality.ts            # Quality presets & dimension configurations
-│   ├── presets.ts            # STANDARD_PRESETS (incl. square, portrait, story), defineUploadPresets, allowSvg, variantWidths
-│   └── upload.ts             # UploadedImageData (incl. deduplicated?), ImageVariant & request parameters
-├── core/                     # Shared framework-agnostic UI & upload primitives
-│   ├── placeholders.ts       # Shared SVG fallback, BlurHash decode & CSS background color resolvers
-│   ├── pointerReorder.ts     # attachPointerReorder pointer-events drag-and-drop gallery reorder enhancer
-│   └── uploadPipeline.ts     # Shared framework-agnostic client upload, validation, preview & delete helpers
+├── index.ts                  # Root subpath '.' — Universal types, presets, aspectRatio, UploadKitError, validators, blur helpers
+├── types/                    # Pure domain types (aspectRatio, errors, rateLimit, quality, presets, upload)
+├── core/                     # Shared placeholders.ts, pointerReorder.ts, uploadPipeline.ts
 ├── i18n/                     # Shared English (en) & Arabic (ar) translations + pluralization + cover/reorder labels
-├── utils/                    # Pure utilities (zero dependencies, side-effect free)
-│   ├── color.ts              # 4-edge RGB/HEX parsing and contrast calculations
-│   ├── formatters.ts         # Byte sizes, filenames, MIME types, extensions, error mapping
-│   └── validators.ts         # File size, dimensions, format guards
-├── client/                   # Subpath './client' — Universal client upload engine (Web + Vue + Angular + React Native)
-│   ├── types.ts              # NativeUploadAsset, UploadableAsset, TransformAssetFn, UploadMode, MultiUploadReorderApi
-│   ├── asset.ts              # normalizeUploadableAsset, isNativeAsset, appendAssetToFormData
-│   ├── reorder.ts            # Immutable moveItem & promoteToCover gallery helpers
-│   ├── transform.ts          # runTransformAsset with AbortSignal enforcement
-│   ├── resize.ts             # createClientResizeTransform (createImageBitmap + OffscreenCanvas) & composeTransforms
-│   ├── presignedUpload.ts    # uploadViaPresignedUrl two-phase presign -> storage -> finalize flow
-│   ├── uploadAsset.ts        # uploadAsset dispatcher ('direct' | 'presigned')
-│   ├── deleteRequest.ts      # deleteUploadedImage opt-in DELETE helper
-│   ├── xhrUpload.ts          # Universal XMLHttpRequest FormData uploader (File, Blob & RN { uri, name, type })
-│   ├── uploadTracker.ts      # Monotonic progress aggregator across parallel uploads
-│   └── uploadQueue.ts        # Bounded concurrency upload queue
-├── storage/                  # Subpath './storage' — s3Adapter, supabaseAdapter, localFsAdapter, memoryAdapter, migration, errorNormalizer
-├── blur/                     # Subpath './blur' — BlurService, BlurHash decoder, fallback SVG builders, LRUCache
-├── server/                   # Subpaths './server' & './server/handler'
+├── utils/                    # Pure utilities: color.ts, formatters.ts, validators.ts
+├── client/                   # './client' — asset, reorder, transform, resize, presignedUpload, resumableUpload,
+│                             #   multipartUpload, retry, uploadAsset, deleteRequest, xhrUpload, uploadTracker, uploadQueue
+├── storage/                  # './storage' — s3Adapter, supabaseAdapter, localFsAdapter, memoryAdapter, migration, errorNormalizer
+├── blur/                     # './blur' — BlurService, bundled BlurHash decoder, placeholders, pathMapper, LRUCache
+├── server/                   # './server' & './server/handler'
 │   ├── semaphore.ts          # Concurrency throttling, queue bounds & AbortSignal for Sharp
-│   ├── handler/              # Web Fetch handler + presign/finalize/delete, uploadToken (rotation+sub), rateLimitGuard, memoryRateLimiter
-│   ├── security/             # Magic-byte detector (sniffFormat), XML allowlist SVG sanitizer (svgTokenizer/svgAllowlist/sanitizeSvg), imageLimits
-│   ├── optimization/         # Sharp AVIF/WebP optimizer, focal crop, sRGB, formatNegotiator, transformCache, LQIP/BlurHash/4-edge color
-│   └── uploader/             # createImageUploader, dedupe.ts, pathGenerator.ts, uploadRetry.ts, variantGenerator.ts
-├── cli/                      # Subpath './cli' & bin 'dist/bin.js' — Infra-aware CLI (init, doctor, validate, agents, config, blur manifest)
-├── react/                    # Subpaths './react' & './headless'
-│   ├── types.ts, styling.ts  # Component props, reorderable/showCoverBadge/transformAsset/uploadMode, 4-tier slot types
-│   ├── icons.tsx             # Zero-dependency inlined SVG icons (no lucide-react)
-│   ├── context.tsx           # Shared ImageUploadProvider singleton across /react & /headless
-│   ├── hooks/                # XHR/presigned upload tracker, queue, clipboard paste, dialog focus trap
-│   ├── components/           # Dropzones, MultiImageGrid (pointer reorder), PreviewTile, Modals, AnimatedImage, BlurImage
-│   ├── headless/             # Headless hooks & render-prop primitives (useSingleUpload, useMultiUpload)
-│   └── styles/               # Modular CSS layers (bundled to dist/styles.css & dist/styles/*.css)
-├── vue/                      # Subpath './vue' — Vue 3.5+ & Nuxt 4 plugin, composables, components & headless slots
-│   ├── config.ts             # createImageUpload plugin, provideImageUploadConfig (provideImageUpload), useImageUploadConfig
-│   ├── composables/          # useSingleUpload.ts, useMultiUpload.ts, useImageReveal.ts, uploadHelpers.ts
-│   └── components/           # AnimatedImage.ts, SingleImageUpload.ts, MultiImageUpload.ts, Headless.ts, UploadComponents.ts
-├── angular/                  # Subpath './angular' — Angular 17–21+ reactive controllers, signals bridge & DOM helpers
-│   ├── config.ts             # provideImageUploadConfig, IMAGE_UPLOAD_CONFIG_TOKEN, resolveImageUploadConfig
-│   ├── signals.ts            # createSignal & createComputed reactive primitives
-│   ├── withAngularSignals.ts # withAngularSignals Zoneless Angular Signal bridge
-│   ├── controllers/          # singleUpload.ts, multiUpload.ts, multiUploadOps.ts, imageReveal.ts, uploadHelpers.ts
-│   └── components/           # animatedImage.ts, singleUploadElement.ts, multiUploadElement.ts, uploadElements.ts, domHelpers.ts
-└── react-native/             # Subpath './react-native' — Expo & Bare React Native components, hooks & pickers
-    ├── context.tsx           # NativeImageUploadProvider & useNativeImageUploadConfig
-    ├── pickers.ts            # createExpoImagePickerAdapter, createRnImagePickerAdapter, createExpoManipulatorResizeTransform
-    ├── hooks/                # useNativeUpload, useNativeSingleUpload, useNativeMultiUpload
-    ├── components/           # AnimatedImage, SingleImageUpload, MultiImageUpload
-    └── theme.ts              # defaultNativeTheme, darkNativeTheme, nativeThemes, resolveNativeTheme
+│   ├── handler/              # Direct/presign/finalize/delete, resumableRoute + resumableStore, multipartRoute + multipartStore,
+│   │                         #   streamBody, uploadToken (rotation + sub + release), rateLimitGuard, memoryRateLimiter
+│   ├── security/             # sniffFormat, XML allowlist SVG sanitizer (svgTokenizer/svgAllowlist/sanitizeSvg), imageLimits
+│   ├── optimization/         # Sharp AVIF/WebP optimizer, resizePlan (focalPoint), sRGB, formatNegotiator, transformCache, LQIP
+│   └── uploader/             # createImageUploader, dedupe.ts, inFlightCoalescer.ts, pathGenerator.ts, uploadRetry.ts, variantGenerator.ts
+├── cli/                      # './cli' & bin 'dist/bin.js' — ZeroDepCliProgram, 4-layer detection, init, doctor, validate, agents, config
+├── react/                    # './react' & './headless' — Components, hooks, slot styling, inlined SVG icons, styles/*.css
+├── vue/                      # './vue' — Vue 3.5+ & Nuxt 4 plugin, composables, AnimatedImage, Single/Multi/Headless components
+├── angular/                  # './angular' — Angular 17–21+ controllers, signals, withAngularSignals, CVA & DOM mounters
+└── react-native/             # './react-native' — NativeImageUploadProvider, Expo/RN pickers, hooks, components & themes
+
+tests/                        # '*.dom.test.{ts,tsx}' runs in jsdom; all other '*.test.{ts,tsx}' run in node
+├── unit/                     # Isolated unit suites: core/, client/, storage/, server/
+├── frameworks/               # UI & controller suites: react/, headless/, vue/, angular/, react-native/
+├── cli/                      # 4-layer detection, scaffolds, doctor/validate/agents/config, blur manifest CLI suites
+├── security/                 # SVG adversarial XML, token lifecycle, magic-byte/pixel limits, rate limiting, route hardening
+├── integration/              # Framework parity, Node HTTP servers, presigned, resumable, and multipart flows
+├── e2e/                      # Live node:http + Sharp + LocalFS full-stack UI framework & CLI lifecycle tests
+├── packaging/                # dist/ smoke, npm pack tarball inspection, doc-examples-typecheck.test.ts
+└── helpers/                  # Shared deterministic Sharp fixtures, XHR/RN stubs, liveTestServer
 ```
 
 ## 3. Presets, Security & Storage Contracts
 
 - **No Domain Categories**: Never hardcode app-specific categories like `'homepage'`, `'brochure'`, or `'admin-profile'`. Use standard visual roles: `thumbnail`, `avatar`, `card`, `cover`, `hero`, `logo`, `original`, `square` (`1:1`), `portrait` (`4:5`), `story` (`9:16`).
-- **Security by Default**: SVG is disabled unless `allowSvg: true` (sanitized via zero-dep XML tokenizer + strict allowlist in `svgTokenizer.ts`, `svgAllowlist.ts`, `sanitizeSvg.ts`, with optional `customSanitizer` hook). Direct, presigned-finalize, and resumable uploads through `createImageUploader` run `sniffImageFormat` and `assertImageMetadataLimits`; `createMultipartUploadHandler` defaults to server-generated keys, image-only MIME types, a `100 MB` byte cap, and post-complete magic-byte verification (`validateOnComplete: true` when `storage.download` is supported, without Sharp re-encoding). Rate-limit IP fallback ignores `X-Forwarded-For` unless `trustProxy` is explicitly configured. Client `FormData` overrides require `allowClientOverrides` in `createUploadHttpHandler`. Presigned `finalize` verifies signature/expiry, `authorize`, and `sub` ownership *before* consuming `jti`.
-- **Storage**: Implementations adhere strictly to `StorageAdapter`: `upload(params)`, `delete(bucket, path)`, optional `exists?`, `stat?`, `getPublicUrl?`, `list?`, `deleteByUrl?`, `parseUrl?`, `createPresignedUpload?`, `download?`, `createPresignedDownload?`, `healthCheck?`, and multipart hooks (`createMultipartUpload?`, `uploadPart?`, `completeMultipartUpload?`, `abortMultipartUpload?`). Built-in adapters (including `memoryAdapter`) enforce `sanitizeStorageKey` and `validateStorageMetadata`.
+- **Security by Default**: SVG is disabled unless `allowSvg: true` (sanitized via zero-dep XML tokenizer + strict allowlist in `svgTokenizer.ts`, `svgAllowlist.ts`, `sanitizeSvg.ts`, with `<svg:svg>` namespace canonicalization and optional `customSanitizer`). Direct, presigned-finalize, and resumable uploads run `sniffImageFormat` and `assertImageMetadataLimits`; `createMultipartUploadHandler` defaults to server-generated keys, image-only MIME types, a `100 MB` byte cap, and `validateOnComplete: true`. Rate-limit IP fallback ignores `X-Forwarded-For` unless `trustProxy` is configured. Presigned `finalize` verifies signature/expiry, `authorize`, and `sub` ownership *before* consuming `jti`, and calls `releaseUploadToken` on retryable storage errors.
+- **Storage**: Implementations adhere strictly to `StorageAdapter` (`upload` with optional `signal`, `delete`, optional `exists`, `stat`, `getPublicUrl`, `list`, `deleteByUrl`, `parseUrl`, `createPresignedUpload`, `download`, `createPresignedDownload`, `healthCheck`, and multipart hooks). Built-in adapters (including `memoryAdapter`) enforce `sanitizeStorageKey`, `validateStorageMetadata`, and `normalizeStorageError`.
 
 ## 4. The 4 UI Styling Tiers & Multi-Platform Parity
 
@@ -96,10 +65,11 @@ src/
 
 Before concluding any work, verify all checks pass:
 ```bash
-node scripts/check-max-lines.mjs # Enforces <= 300 lines across every file in the repo
+node scripts/check-max-lines.mjs # Enforces <= 300 lines across every file (npm run check:lines)
 npm run typecheck                # Must pass with zero TypeScript errors
 npm run lint                     # Must pass with zero ESLint errors (enforces max-lines <= 300)
-npm test                         # Must pass all Vitest suites (Node + jsdom)
-npm run build                    # Builds dist/ (ESM, CJS, .d.ts, .d.cts, dist/styles.css, dist/styles/*.css)
+npm run build                    # Builds dist/ (ESM, CJS, CLI, .d.ts, .d.cts, dist/styles*.css)
+npm test                         # Must pass all Vitest suites (Node + jsdom + doc-examples-typecheck)
 node scripts/check-dist.mjs      # Verifies 'use client', singletons, dependency graph, and exports
+npm pack --dry-run               # Verifies clean publish tarball contents (npm run check:pack)
 ```
