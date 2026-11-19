@@ -2,8 +2,17 @@ import {
   type StorageAdapter,
   type StorageDownloadOptions,
   type StorageFileEntry,
+  type StorageHealthCheckResult,
   type StorageListOptions,
+  type StorageMultipartAbortParams,
+  type StorageMultipartCompleteParams,
+  type StorageMultipartCreateParams,
+  type StorageMultipartCreateResult,
+  type StorageMultipartPartParams,
+  type StorageMultipartPartResult,
   type StoragePaginatedListResult,
+  type StoragePresignedDownloadOptions,
+  type StoragePresignedDownloadResult,
   type StoragePresignParams,
   type StoragePresignResult,
   type StorageUploadParams,
@@ -21,31 +30,34 @@ export interface StoredMemoryObject {
   metadata?: Record<string, string>;
 }
 
+interface MultipartSession {
+  bucket: string;
+  path: string;
+  contentType: string;
+  metadata?: Record<string, string>;
+  parts: Map<number, { etag: string; data: Uint8Array }>;
+}
+
 export interface MemoryStorageAdapter extends StorageAdapter {
   exists(bucket: string, path: string): Promise<boolean>;
   stat(bucket: string, path: string): Promise<{ size: number; contentType?: string } | null>;
   getPublicUrl(bucket: string, path: string): string;
-  list(
-    bucket: string,
-    folder?: string,
-    options?: StorageListOptions,
-  ): Promise<StoragePaginatedListResult>;
+  list(bucket: string, folder?: string, options?: StorageListOptions): Promise<StoragePaginatedListResult>;
   deleteByUrl(url: string): Promise<boolean>;
   parseUrl(url: string): { bucket?: string; path: string } | null;
-  createPresignedUpload(
-    params: StoragePresignParams,
-  ): Promise<StoragePresignResult>;
-  download(
+  createPresignedUpload(params: StoragePresignParams): Promise<StoragePresignResult>;
+  createPresignedDownload(
     bucket: string,
     path: string,
-    options?: StorageDownloadOptions,
-  ): Promise<Uint8Array>;
-  putPresigned(
-    bucket: string,
-    path: string,
-    data: Buffer | Uint8Array,
-    contentType?: string,
-  ): Promise<void>;
+    options?: StoragePresignedDownloadOptions,
+  ): Promise<StoragePresignedDownloadResult>;
+  download(bucket: string, path: string, options?: StorageDownloadOptions): Promise<Uint8Array>;
+  healthCheck(): Promise<StorageHealthCheckResult>;
+  createMultipartUpload(params: StorageMultipartCreateParams): Promise<StorageMultipartCreateResult>;
+  uploadPart(params: StorageMultipartPartParams): Promise<StorageMultipartPartResult>;
+  completeMultipartUpload(params: StorageMultipartCompleteParams): Promise<StorageUploadResult>;
+  abortMultipartUpload(params: StorageMultipartAbortParams): Promise<void>;
+  putPresigned(bucket: string, path: string, data: Buffer | Uint8Array, contentType?: string): Promise<void>;
   getObject(bucket: string, path: string): StoredMemoryObject | undefined;
   clear(): void;
   readonly size: number;
@@ -55,22 +67,15 @@ export interface MemoryStorageOptions {
   baseUrl?: string;
 }
 
-export function createMemoryStorageAdapter(
-  options: MemoryStorageOptions = {},
-): MemoryStorageAdapter {
-  const baseUrl = (options.baseUrl || 'https://memory.local/uploads').replace(
-    /\/+$/,
-    '',
-  );
+export function createMemoryStorageAdapter(options: MemoryStorageOptions = {}): MemoryStorageAdapter {
+  const baseUrl = (options.baseUrl || 'https://memory.local/uploads').replace(/\/+$/, '');
   const store = new Map<string, StoredMemoryObject>();
+  const multipartSessions = new Map<string, MultipartSession>();
+  let uploadSeq = 0;
 
-  const toKey = (bucket: string, path: string) =>
-    `${bucket}::${path.replace(/^\/+/, '')}`;
-
-  const getPublicUrl = (bucket: string, path: string): string => {
-    const cleanPath = path.replace(/^\/+/, '');
-    return `${baseUrl}/${bucket}/${cleanPath}`;
-  };
+  const toKey = (bucket: string, path: string) => `${bucket}::${path.replace(/^\/+/, '')}`;
+  const getPublicUrl = (bucket: string, path: string): string =>
+    `${baseUrl}/${bucket}/${path.replace(/^\/+/, '')}`;
 
   return {
     async upload(params: StorageUploadParams): Promise<StorageUploadResult> {
@@ -95,16 +100,11 @@ export function createMemoryStorageAdapter(
         metadata: params.metadata,
       });
 
-      return {
-        bucket: params.bucket,
-        path: cleanPath,
-        url: getPublicUrl(params.bucket, cleanPath),
-      };
+      return { bucket: params.bucket, path: cleanPath, url: getPublicUrl(params.bucket, cleanPath) };
     },
 
     async delete(bucket: string, path: string): Promise<void> {
-      const key = toKey(bucket, path);
-      store.delete(key);
+      store.delete(toKey(bucket, path));
     },
 
     async exists(bucket: string, path: string): Promise<boolean> {
@@ -125,40 +125,27 @@ export function createMemoryStorageAdapter(
     ): Promise<StoragePaginatedListResult> {
       const cleanFolder = folder ? folder.replace(/^\/+|\/+$/g, '') : '';
       const entries: StorageFileEntry[] = [];
-
       for (const obj of store.values()) {
         if (obj.bucket !== bucket) continue;
         if (cleanFolder && !obj.path.startsWith(`${cleanFolder}/`)) continue;
-        const name = cleanFolder
-          ? obj.path.slice(cleanFolder.length + 1)
-          : obj.path;
-        entries.push({
-          name,
-          id: `${obj.bucket}/${obj.path}`,
-          createdAt: obj.createdAt,
-          size: obj.data.byteLength,
-        });
+        const name = cleanFolder ? obj.path.slice(cleanFolder.length + 1) : obj.path;
+        entries.push({ name, id: `${obj.bucket}/${obj.path}`, createdAt: obj.createdAt, size: obj.data.byteLength });
       }
-
       const offset = listOptions?.cursor ? Number(listOptions.cursor) || 0 : 0;
       const limit = listOptions?.limit ?? entries.length;
       const sliced =
-        listOptions?.limit !== undefined || offset > 0
-          ? entries.slice(offset, offset + limit)
-          : entries;
+        listOptions?.limit !== undefined || offset > 0 ? entries.slice(offset, offset + limit) : entries;
       const nextCursor =
         listOptions?.limit !== undefined && offset + sliced.length < entries.length
           ? String(offset + sliced.length)
           : undefined;
-
       return toPaginatedListResult(sliced, nextCursor);
     },
 
     async deleteByUrl(url: string): Promise<boolean> {
       const parsed = this.parseUrl?.(url);
-      if (!parsed || !parsed.bucket) return false;
-      const key = toKey(parsed.bucket, parsed.path);
-      return store.delete(key);
+      if (!parsed?.bucket) return false;
+      return store.delete(toKey(parsed.bucket, parsed.path));
     },
 
     parseUrl(url: string): { bucket?: string; path: string } | null {
@@ -169,22 +156,16 @@ export function createMemoryStorageAdapter(
         const rest = decodeURIComponent(cleanUrl.slice(prefix.length));
         const slashIdx = rest.indexOf('/');
         if (slashIdx <= 0 || slashIdx === rest.length - 1) return null;
-        const bucket = rest.slice(0, slashIdx);
-        const filePath = rest.slice(slashIdx + 1);
-        return { bucket, path: filePath };
+        return { bucket: rest.slice(0, slashIdx), path: rest.slice(slashIdx + 1) };
       } catch {
         return null;
       }
     },
 
-    async createPresignedUpload(
-      params: StoragePresignParams,
-    ): Promise<StoragePresignResult> {
+    async createPresignedUpload(params: StoragePresignParams): Promise<StoragePresignResult> {
       validateStorageMetadata(params.metadata);
       const cleanPath = params.path.replace(/^\/+/, '');
-      const expiresAt = new Date(
-        Date.now() + (params.expiresInSeconds ?? 300) * 1000,
-      ).toISOString();
+      const expiresAt = new Date(Date.now() + (params.expiresInSeconds ?? 300) * 1000).toISOString();
       return {
         method: 'PUT',
         url: `memory://presigned/${params.bucket}/${cleanPath}`,
@@ -193,47 +174,100 @@ export function createMemoryStorageAdapter(
       };
     },
 
-    async download(
+    async createPresignedDownload(
       bucket: string,
       path: string,
-      downloadOptions?: StorageDownloadOptions,
-    ): Promise<Uint8Array> {
+      downloadOptions?: StoragePresignedDownloadOptions,
+    ): Promise<StoragePresignedDownloadResult> {
+      const cleanPath = path.replace(/^\/+/, '');
+      const expiresAt = new Date(Date.now() + (downloadOptions?.expiresInSeconds ?? 300) * 1000).toISOString();
+      return { url: `memory://signed-download/${bucket}/${cleanPath}`, expiresAt };
+    },
+
+    async download(bucket: string, path: string, downloadOptions?: StorageDownloadOptions): Promise<Uint8Array> {
       const cleanPath = path.replace(/^\/+/, '');
       const obj = store.get(toKey(bucket, cleanPath));
       if (!obj) {
-        const err = new Error(
-          `Object not found at ${bucket}/${cleanPath}`,
-        ) as Error & { status?: number; code?: string };
+        const err = new Error(`Object not found at ${bucket}/${cleanPath}`) as Error & { status?: number; code?: string };
         err.status = 404;
         err.code = 'ENOENT';
         throw err;
       }
-      if (
-        downloadOptions?.maxBytes !== undefined &&
-        obj.data.byteLength > downloadOptions.maxBytes
-      ) {
-        const err = new Error(
-          'Staged file size exceeds maximum allowed bytes',
-        ) as Error & { status?: number };
+      if (downloadOptions?.maxBytes !== undefined && obj.data.byteLength > downloadOptions.maxBytes) {
+        const err = new Error('Staged file size exceeds maximum allowed bytes') as Error & { status?: number };
         err.status = 400;
         throw err;
       }
       return new Uint8Array(obj.data);
     },
 
-    async putPresigned(
-      bucket: string,
-      path: string,
-      data: Buffer | Uint8Array,
-      contentType = 'application/octet-stream',
-    ): Promise<void> {
-      await this.upload({
-        bucket,
-        path,
-        data,
-        contentType,
+    async healthCheck(): Promise<StorageHealthCheckResult> {
+      return { ok: true, latencyMs: 0 };
+    },
+
+    async createMultipartUpload(params: StorageMultipartCreateParams): Promise<StorageMultipartCreateResult> {
+      validateStorageMetadata(params.metadata);
+      const cleanPath = params.path.replace(/^\/+/, '');
+      const uploadId = `mem-mp-${++uploadSeq}`;
+      multipartSessions.set(uploadId, {
+        bucket: params.bucket,
+        path: cleanPath,
+        contentType: params.contentType,
+        metadata: params.metadata,
+        parts: new Map(),
+      });
+      return { uploadId, bucket: params.bucket, path: cleanPath };
+    },
+
+    async uploadPart(params: StorageMultipartPartParams): Promise<StorageMultipartPartResult> {
+      const session = multipartSessions.get(params.uploadId);
+      if (!session) throw new Error(`Unknown multipart uploadId: ${params.uploadId}`);
+      if (!Number.isInteger(params.partNumber) || params.partNumber < 1) {
+        throw new Error('Multipart partNumber must be a positive integer');
+      }
+      const bytes = new Uint8Array(params.data);
+      const etag = `"part-${params.partNumber}-${bytes.byteLength}"`;
+      session.parts.set(params.partNumber, { etag, data: bytes });
+      return { partNumber: params.partNumber, etag };
+    },
+
+    async completeMultipartUpload(params: StorageMultipartCompleteParams): Promise<StorageUploadResult> {
+      const session = multipartSessions.get(params.uploadId);
+      if (!session) throw new Error(`Unknown multipart uploadId: ${params.uploadId}`);
+      const sorted = [...params.parts].sort((a, b) => a.partNumber - b.partNumber);
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      for (const reqPart of sorted) {
+        const stored = session.parts.get(reqPart.partNumber);
+        if (!stored || stored.etag !== reqPart.etag) {
+          throw new Error(`Missing or mismatched multipart part ${reqPart.partNumber}`);
+        }
+        chunks.push(stored.data);
+        total += stored.data.byteLength;
+      }
+      const merged = new Uint8Array(total);
+      let offset = 0;
+      for (const c of chunks) {
+        merged.set(c, offset);
+        offset += c.byteLength;
+      }
+      multipartSessions.delete(params.uploadId);
+      return this.upload({
+        bucket: session.bucket,
+        path: session.path,
+        data: merged,
+        contentType: session.contentType,
+        metadata: session.metadata,
         upsert: true,
       });
+    },
+
+    async abortMultipartUpload(params: StorageMultipartAbortParams): Promise<void> {
+      multipartSessions.delete(params.uploadId);
+    },
+
+    async putPresigned(bucket: string, path: string, data: Buffer | Uint8Array, contentType = 'application/octet-stream'): Promise<void> {
+      await this.upload({ bucket, path, data, contentType, upsert: true });
     },
 
     getObject(bucket: string, path: string): StoredMemoryObject | undefined {
@@ -242,6 +276,7 @@ export function createMemoryStorageAdapter(
 
     clear(): void {
       store.clear();
+      multipartSessions.clear();
     },
 
     get size(): number {

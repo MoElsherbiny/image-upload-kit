@@ -1,4 +1,9 @@
-import type { StoragePresignParams, StoragePresignResult } from './types';
+import type {
+  StoragePresignedDownloadOptions,
+  StoragePresignedDownloadResult,
+  StoragePresignParams,
+  StoragePresignResult,
+} from './types';
 
 export interface S3PutObjectInput {
   Bucket: string;
@@ -53,6 +58,44 @@ export interface S3ListObjectsOutput {
   IsTruncated?: boolean;
 }
 
+export interface S3CreateMultipartUploadInput {
+  Bucket: string;
+  Key: string;
+  ContentType: string;
+  Metadata?: Record<string, string>;
+}
+
+export interface S3CreateMultipartUploadOutput {
+  UploadId?: string;
+}
+
+export interface S3UploadPartInput {
+  Bucket: string;
+  Key: string;
+  UploadId: string;
+  PartNumber: number;
+  Body: Buffer | Uint8Array;
+}
+
+export interface S3UploadPartOutput {
+  ETag?: string;
+}
+
+export interface S3CompleteMultipartUploadInput {
+  Bucket: string;
+  Key: string;
+  UploadId: string;
+  MultipartUpload: {
+    Parts: Array<{ PartNumber: number; ETag: string }>;
+  };
+}
+
+export interface S3AbortMultipartUploadInput {
+  Bucket: string;
+  Key: string;
+  UploadId: string;
+}
+
 /** Structural S3 / Cloudflare R2 / MinIO transport with zero runtime SDK dependency. */
 export interface S3TransportLike {
   putObject(input: S3PutObjectInput): Promise<unknown>;
@@ -61,6 +104,12 @@ export interface S3TransportLike {
   getObject?(input: S3GetObjectInput): Promise<S3GetObjectOutput | { Body?: unknown }>;
   listObjects?(input: S3ListObjectsInput): Promise<S3ListObjectsOutput>;
   listObjectsV2?(input: S3ListObjectsInput): Promise<S3ListObjectsOutput>;
+  createMultipartUpload?(
+    input: S3CreateMultipartUploadInput,
+  ): Promise<S3CreateMultipartUploadOutput>;
+  uploadPart?(input: S3UploadPartInput): Promise<S3UploadPartOutput>;
+  completeMultipartUpload?(input: S3CompleteMultipartUploadInput): Promise<unknown>;
+  abortMultipartUpload?(input: S3AbortMultipartUploadInput): Promise<unknown>;
 }
 
 export type S3PublicUrlBuilder = (bucket: string, path: string) => string;
@@ -74,8 +123,16 @@ export interface S3StorageBaseOptions {
   includeBucketInUrl?: boolean;
   /** Fallback bucket used by `deleteByUrl` when `includeBucketInUrl` is `false`. */
   defaultBucket?: string;
+  /** Optional bucket used by `healthCheck()` probes (falls back to `defaultBucket`). */
+  healthCheckBucket?: string;
   /** Optional delegate to generate a presigned upload URL (`PUT` or `POST`) for direct-to-S3 staging. */
   presignUpload?: (params: StoragePresignParams) => Promise<StoragePresignResult>;
+  /** Optional delegate to generate a short-lived signed download URL for private objects. */
+  presignDownload?: (
+    bucket: string,
+    path: string,
+    options?: StoragePresignedDownloadOptions,
+  ) => Promise<StoragePresignedDownloadResult>;
 }
 
 export type S3StorageAdapterOptions = S3StorageBaseOptions &

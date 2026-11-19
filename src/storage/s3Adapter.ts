@@ -1,30 +1,23 @@
+import { normalizeStorageError, sanitizeStorageKey } from './errorNormalizer';
 import {
-  readS3BodyToBytes,
-  type S3ListedObject,
-  type S3ListObjectsInput,
-  type S3StorageAdapterOptions,
-  type S3TransportLike,
+  readS3BodyToBytes, type S3ListedObject, type S3ListObjectsInput,
+  type S3StorageAdapterOptions, type S3TransportLike,
 } from './s3Types';
 import {
-  type StorageAdapter,
-  type StorageDownloadOptions,
-  type StorageFileEntry,
-  type StorageListOptions,
-  type StoragePaginatedListResult,
-  type StoragePresignParams,
-  type StoragePresignResult,
-  type StorageUploadParams,
-  type StorageUploadResult,
-  toPaginatedListResult,
-  validateStorageMetadata,
+  type StorageAdapter, type StorageDownloadOptions, type StorageFileEntry,
+  type StorageHealthCheckResult, type StorageListOptions, type StorageMultipartAbortParams,
+  type StorageMultipartCompleteParams, type StorageMultipartCreateParams,
+  type StorageMultipartCreateResult, type StorageMultipartPartParams,
+  type StorageMultipartPartResult, type StoragePaginatedListResult,
+  type StoragePresignedDownloadOptions, type StoragePresignedDownloadResult,
+  type StoragePresignParams, type StoragePresignResult, type StorageUploadParams,
+  type StorageUploadResult, toPaginatedListResult, validateStorageMetadata,
 } from './types';
 
 export * from './s3Types';
 
 function normalizeS3Key(rawPath: string): string {
-  const normalized = rawPath.replace(/\\/g, '/').replace(/^\/+/, '');
-  if (!normalized) throw new Error('Invalid S3 object key');
-  return normalized;
+  return sanitizeStorageKey(rawPath, 'S3');
 }
 
 function resolveTransport(options: S3StorageAdapterOptions): S3TransportLike {
@@ -63,22 +56,16 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
     async upload(params: StorageUploadParams): Promise<StorageUploadResult> {
       const key = normalizeS3Key(params.path);
       validateStorageMetadata(params.metadata);
-
-      const isImmutable =
-        params.upsert === false && params.contentType.includes('image/avif');
+      const isImmutable = params.upsert === false && params.contentType.includes('image/avif');
       const cacheControl =
         params.cacheControl ??
         options.cacheControl ??
         (isImmutable
           ? 'public, max-age=31536000, immutable'
           : 'public, max-age=2592000, must-revalidate');
-
       const metadata =
         params.metadata || params.contentHash
-          ? {
-              ...params.metadata,
-              ...(params.contentHash ? { contentHash: params.contentHash } : {}),
-            }
+          ? { ...params.metadata, ...(params.contentHash ? { contentHash: params.contentHash } : {}) }
           : undefined;
 
       try {
@@ -103,11 +90,7 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
         throw err;
       }
 
-      return {
-        bucket: params.bucket,
-        path: key,
-        url: getPublicUrl(params.bucket, key),
-      };
+      return { bucket: params.bucket, path: key, url: getPublicUrl(params.bucket, key) };
     },
 
     async delete(bucket: string, path: string): Promise<void> {
@@ -163,7 +146,6 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
         MaxKeys: listOptions?.limit ?? 1000,
         ...(listOptions?.cursor ? { ContinuationToken: listOptions.cursor } : {}),
       };
-
       const output = transport.listObjects
         ? await transport.listObjects(input)
         : transport.listObjectsV2
@@ -173,14 +155,8 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
       const entries: StorageFileEntry[] = (output?.Contents ?? [])
         .filter((item): item is S3ListedObject & { Key: string } => Boolean(item.Key))
         .map((item) => {
-          const name =
-            prefix && item.Key.startsWith(prefix)
-              ? item.Key.slice(prefix.length)
-              : item.Key;
-          const createdAt =
-            item.LastModified instanceof Date
-              ? item.LastModified.toISOString()
-              : item.LastModified;
+          const name = prefix && item.Key.startsWith(prefix) ? item.Key.slice(prefix.length) : item.Key;
+          const createdAt = item.LastModified instanceof Date ? item.LastModified.toISOString() : item.LastModified;
           return {
             name,
             id: `${bucket}/${item.Key}`,
@@ -189,7 +165,6 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
           };
         })
         .filter((entry) => entry.name.length > 0);
-
       return toPaginatedListResult(entries, output?.NextContinuationToken);
     },
 
@@ -198,19 +173,16 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
       const prefix = `${options.publicBaseUrl.replace(/\/+$/, '')}/`;
       const cleanUrl = url.split(/[?#]/)[0];
       if (!cleanUrl.startsWith(prefix)) return null;
-
       try {
         const rest = decodeURIComponent(cleanUrl.slice(prefix.length)).replace(/^\/+/, '');
         if (!rest) return null;
-
         if (includeBucket) {
           const slashIdx = rest.indexOf('/');
           if (slashIdx <= 0 || slashIdx === rest.length - 1) return null;
-          return { bucket: rest.slice(0, slashIdx), path: rest.slice(slashIdx + 1) };
+          return { bucket: rest.slice(0, slashIdx), path: normalizeS3Key(rest.slice(slashIdx + 1)) };
         }
-
         if (!options.defaultBucket) return null;
-        return { bucket: options.defaultBucket, path: rest };
+        return { bucket: options.defaultBucket, path: normalizeS3Key(rest) };
       } catch {
         return null;
       }
@@ -219,7 +191,6 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
     async deleteByUrl(url: string): Promise<boolean> {
       const parsed = this.parseUrl?.(url);
       if (!parsed || !parsed.bucket) return false;
-
       try {
         await transport.deleteObject({ Bucket: parsed.bucket, Key: parsed.path });
         return true;
@@ -228,28 +199,92 @@ export function createS3StorageAdapter(options: S3StorageAdapterOptions): Storag
       }
     },
 
-    async createPresignedUpload(
-      params: StoragePresignParams,
-    ): Promise<StoragePresignResult> {
+    async createPresignedUpload(params: StoragePresignParams): Promise<StoragePresignResult> {
       const key = normalizeS3Key(params.path);
       validateStorageMetadata(params.metadata);
-      if (!options.presignUpload) {
-        throw new Error('S3StorageAdapter does not have presignUpload configured');
-      }
+      if (!options.presignUpload) throw new Error('S3StorageAdapter does not have presignUpload configured');
       return options.presignUpload({ ...params, path: key });
     },
 
-    async download(
+    async createPresignedDownload(
       bucket: string,
       path: string,
-      downloadOptions?: StorageDownloadOptions,
-    ): Promise<Uint8Array> {
+      downloadOptions?: StoragePresignedDownloadOptions,
+    ): Promise<StoragePresignedDownloadResult> {
       const key = normalizeS3Key(path);
-      if (!transport.getObject) {
-        throw new Error('S3StorageAdapter transport does not implement getObject');
-      }
+      if (!options.presignDownload) throw new Error('S3StorageAdapter does not have presignDownload configured');
+      return options.presignDownload(bucket, key, downloadOptions);
+    },
+
+    async download(bucket: string, path: string, downloadOptions?: StorageDownloadOptions): Promise<Uint8Array> {
+      const key = normalizeS3Key(path);
+      if (!transport.getObject) throw new Error('S3StorageAdapter transport does not implement getObject');
       const res = await transport.getObject({ Bucket: bucket, Key: key });
       return readS3BodyToBytes(res?.Body, bucket, key, downloadOptions?.maxBytes);
+    },
+
+    async healthCheck(): Promise<StorageHealthCheckResult> {
+      const start = Date.now();
+      const bucket = options.healthCheckBucket ?? options.defaultBucket ?? 'healthcheck';
+      try {
+        if (transport.listObjectsV2) await transport.listObjectsV2({ Bucket: bucket, MaxKeys: 1 });
+        else if (transport.listObjects) await transport.listObjects({ Bucket: bucket, MaxKeys: 1 });
+        else if (transport.headObject) {
+          try {
+            await transport.headObject({ Bucket: bucket, Key: '.iuk-healthcheck' });
+          } catch (headErr) {
+            if (normalizeStorageError(headErr, { provider: 's3', operation: 'healthCheck' }).status !== 404) {
+              throw headErr;
+            }
+          }
+        }
+        return { ok: true, latencyMs: Date.now() - start };
+      } catch (err) {
+        const normalized = normalizeStorageError(err, { provider: 's3', operation: 'healthCheck' });
+        return { ok: false, latencyMs: Date.now() - start, message: normalized.message };
+      }
+    },
+
+    async createMultipartUpload(params: StorageMultipartCreateParams): Promise<StorageMultipartCreateResult> {
+      const key = normalizeS3Key(params.path);
+      validateStorageMetadata(params.metadata);
+      if (!transport.createMultipartUpload) throw new Error('S3StorageAdapter transport does not implement createMultipartUpload');
+      const res = await transport.createMultipartUpload({
+        Bucket: params.bucket,
+        Key: key,
+        ContentType: params.contentType,
+        ...(params.metadata ? { Metadata: params.metadata } : {}),
+      });
+      if (!res?.UploadId) throw new Error('S3 createMultipartUpload did not return an UploadId');
+      return { uploadId: res.UploadId, bucket: params.bucket, path: key };
+    },
+
+    async uploadPart(params: StorageMultipartPartParams): Promise<StorageMultipartPartResult> {
+      const key = normalizeS3Key(params.path);
+      if (!transport.uploadPart) throw new Error('S3StorageAdapter transport does not implement uploadPart');
+      const res = await transport.uploadPart({
+        Bucket: params.bucket, Key: key, UploadId: params.uploadId, PartNumber: params.partNumber, Body: params.data,
+      });
+      if (!res?.ETag) throw new Error('S3 uploadPart did not return an ETag');
+      return { partNumber: params.partNumber, etag: res.ETag };
+    },
+
+    async completeMultipartUpload(params: StorageMultipartCompleteParams): Promise<StorageUploadResult> {
+      const key = normalizeS3Key(params.path);
+      if (!transport.completeMultipartUpload) throw new Error('S3StorageAdapter transport does not implement completeMultipartUpload');
+      await transport.completeMultipartUpload({
+        Bucket: params.bucket,
+        Key: key,
+        UploadId: params.uploadId,
+        MultipartUpload: { Parts: params.parts.map((p) => ({ PartNumber: p.partNumber, ETag: p.etag })) },
+      });
+      return { bucket: params.bucket, path: key, url: getPublicUrl(params.bucket, key) };
+    },
+
+    async abortMultipartUpload(params: StorageMultipartAbortParams): Promise<void> {
+      const key = normalizeS3Key(params.path);
+      if (!transport.abortMultipartUpload) throw new Error('S3StorageAdapter transport does not implement abortMultipartUpload');
+      await transport.abortMultipartUpload({ Bucket: params.bucket, Key: key, UploadId: params.uploadId });
     },
   };
 }

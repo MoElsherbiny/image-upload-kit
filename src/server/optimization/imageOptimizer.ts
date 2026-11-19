@@ -1,4 +1,5 @@
 import { DEFAULT_IMAGE_DIMENSIONS } from '../../types';
+import { UploadKitError } from '../../types/errors';
 import { UploadValidationError } from '../handler/responses';
 import { sanitizeSvg } from '../security/sanitizeSvg';
 import { loadSharp } from './loadSharp';
@@ -20,7 +21,6 @@ function extractSvgDimensions(
 ): { width: number; height: number } {
   let width = metaWidth;
   let height = metaHeight;
-
   if (!width || !height) {
     const svgTagMatch = svgText.match(/<svg\b[^>]*>/i);
     if (svgTagMatch) {
@@ -31,7 +31,6 @@ function extractSvgDimensions(
       if (!height && hMatch) height = Math.round(parseFloat(hMatch[1]));
     }
   }
-
   if (!width || !height) {
     const viewBoxMatch = svgText.match(
       /viewBox\s*=\s*["']\s*([\d.-]+)[\s,]+([\d.-]+)[\s,]+([\d.-]+)[\s,]+([\d.-]+)\s*["']/i,
@@ -41,11 +40,30 @@ function extractSvgDimensions(
       if (!height) height = Math.round(parseFloat(viewBoxMatch[4]));
     }
   }
-
   return {
     width: width && width > 0 ? width : 600,
     height: height && height > 0 ? height : 600,
   };
+}
+
+function validateInputLimits(
+  orientedWidth: number | undefined,
+  orientedHeight: number | undefined,
+  pages: number | undefined,
+  options: OptimizeImageOptions,
+): void {
+  const reject = (msg: string): never => {
+    throw new UploadKitError(msg, { code: 'INVALID_IMAGE', status: 400, retryable: false });
+  };
+  if (options.maxWidth !== undefined && orientedWidth !== undefined && orientedWidth > options.maxWidth) {
+    reject(`Image width ${orientedWidth}px exceeds maximum allowed ${options.maxWidth}px`);
+  }
+  if (options.maxHeight !== undefined && orientedHeight !== undefined && orientedHeight > options.maxHeight) {
+    reject(`Image height ${orientedHeight}px exceeds maximum allowed ${options.maxHeight}px`);
+  }
+  if (options.maxFrames !== undefined && pages !== undefined && pages > options.maxFrames) {
+    reject(`Image frame count ${pages} exceeds maximum allowed ${options.maxFrames}`);
+  }
 }
 
 export async function optimizeImage(
@@ -54,7 +72,7 @@ export async function optimizeImage(
 ): Promise<OptimizedImageResult> {
   const sharp = await loadSharp();
   const maxDimensions = options.maxDimensions || DEFAULT_IMAGE_DIMENSIONS;
-  const { outputFormat, quality, aspectRatio, crop } = options;
+  const { outputFormat, quality, aspectRatio, crop, focalPoint, colorSpace, preserveMetadata } = options;
   const limitInputPixels = options.limitInputPixels ?? DEFAULT_LIMIT_INPUT_PIXELS;
   const primaryEffort = options.effort ?? PRIMARY_AVIF_EFFORT;
   const retryEffort =
@@ -78,6 +96,7 @@ export async function optimizeImage(
   if (originalFormat === 'svg') {
     const sanitizedBuffer = sanitizeSvg(buffer);
     const dims = extractSvgDimensions(sanitizedBuffer.toString('utf8'), metadata.width, metadata.height);
+    validateInputLimits(dims.width, dims.height, metadata.pages, options);
     return {
       buffer: sanitizedBuffer,
       width: dims.width,
@@ -95,6 +114,8 @@ export async function optimizeImage(
   const orientedWidth = isRotated90 ? metadata.height : metadata.width;
   const orientedHeight = isRotated90 ? metadata.width : metadata.height;
 
+  validateInputLimits(orientedWidth, orientedHeight, metadata.pages, options);
+
   const isPhoto = originalFormat === 'jpeg' || Boolean(metadata.density && metadata.density > 150);
   const baseQuality = Math.max(1, Math.min(100, quality ?? (isPhoto ? 85 : 88)));
 
@@ -104,20 +125,39 @@ export async function optimizeImage(
     maxDimensions,
     aspectRatio,
     crop,
+    focalPoint,
   });
 
-  pipeline =
-    resizePlan.fit === 'cover'
-      ? pipeline.resize(resizePlan.width, resizePlan.height, {
-          fit: 'cover',
-          position: resizePlan.position,
-          kernel: 'lanczos3',
-        })
-      : pipeline.resize(resizePlan.width, resizePlan.height, {
-          fit: 'inside',
-          withoutEnlargement: true,
-          kernel: 'lanczos3',
-        });
+  if (resizePlan.fit === 'cover' && resizePlan.extract) {
+    const needsRotationMaterialize =
+      typeof metadata.orientation === 'number' && metadata.orientation > 1;
+    if (needsRotationMaterialize) {
+      const rotated = await pipeline.toBuffer();
+      pipeline = sharp(rotated, { failOn: 'error', limitInputPixels });
+    }
+    pipeline = pipeline
+      .extract(resizePlan.extract)
+      .resize(resizePlan.width, resizePlan.height, { fit: 'fill', kernel: 'lanczos3' });
+  } else if (resizePlan.fit === 'cover') {
+    pipeline = pipeline.resize(resizePlan.width, resizePlan.height, {
+      fit: 'cover',
+      position: resizePlan.position,
+      kernel: 'lanczos3',
+    });
+  } else {
+    pipeline = pipeline.resize(resizePlan.width, resizePlan.height, {
+      fit: 'inside',
+      withoutEnlargement: true,
+      kernel: 'lanczos3',
+    });
+  }
+
+  if (colorSpace === 'srgb') {
+    pipeline = pipeline.toColorspace('srgb');
+  }
+  if (preserveMetadata === true) {
+    pipeline = pipeline.withMetadata();
+  }
 
   if (outputFormat === 'jpeg' || outputFormat === 'png' || outputFormat === 'webp') {
     let cloned = pipeline.clone();
@@ -204,7 +244,10 @@ export async function optimizeImage(
       } else {
         const needsExifRotation =
           typeof metadata.orientation === 'number' && metadata.orientation > 1;
-        if (!needsExifRotation) {
+        const hasSensitiveMetadata = Boolean(
+          metadata.exif || metadata.xmp || metadata.iptc || metadata.comments?.length,
+        );
+        if (!needsExifRotation && (preserveMetadata === true || !hasSensitiveMetadata)) {
           return {
             buffer,
             width: orientedWidth || resizePlan.width,
@@ -214,6 +257,7 @@ export async function optimizeImage(
             quality: baseQuality,
           };
         }
+        // Always re-encode when metadata is present and preserveMetadata is false
         passthroughOut = await pipeline
           .clone()
           .jpeg({ quality: 10, mozjpeg: true })
