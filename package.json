@@ -2,7 +2,8 @@
   "name": "img-upload-kit",
   "version": "2.2.5",
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "description": "Multi-platform image upload, Sharp AVIF/WebP optimization, smart aspect-ratio cropping, presigned uploads, content-hash deduplication, LQIP & BlurHash generation, dominant edge-color extraction, pluggable StorageAdapter, and React, Vue/Nuxt, Angular, React Native & Headless UI components.",
   "author": "Mohamed Elsherbiny <mo@buildwithsherbo.com> (https://www.buildwithsherbo.com/)",
@@ -32,7 +33,13 @@
     "webp",
     "image-optimization",
     "dominant-color",
-    "storage-adapter"
+    "storage-adapter",
+    "resumable-upload",
+    "multipart-upload",
+    "cloudflare-r2",
+    "s3-upload",
+    "supabase-storage",
+    "cli"
   ],
   "license": "MIT",
   "type": "module",
@@ -276,7 +283,16 @@
     "lint": "eslint . && node scripts/check-max-lines.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:unit": "vitest run tests/unit",
+    "test:frameworks": "vitest run tests/frameworks",
+    "test:cli": "vitest run tests/cli",
+    "test:security": "vitest run tests/security",
+    "test:integration": "vitest run tests/integration",
+    "test:e2e": "vitest run tests/e2e",
+    "test:packaging": "vitest run tests/packaging",
+    "check:lines": "node scripts/check-max-lines.mjs",
     "check:dist": "node scripts/check-dist.mjs",
+    "check:pack": "npm pack --dry-run",
     "prepublishOnly": "npm run typecheck && npm run lint && npm run build && npm run test && npm run check:dist"
   },
   "packageManager": "pnpm@9.15.0",

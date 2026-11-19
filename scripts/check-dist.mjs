@@ -4,7 +4,7 @@
  *   node scripts/check-dist.mjs        # exits 1 on any failure
  *
  * The pure `runDistChecks()` function is also imported by
- * `tests/dist-smoke.test.ts`.
+ * `tests/packaging/dist-smoke.test.ts`.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -201,11 +201,25 @@ export function runDistChecks(rootDir = process.cwd()) {
     );
   }
 
-  // 6. Every package.json export target exists & dependencies is empty.
+  // 6. Every package.json export target exists, dependencies is empty & npm hygiene holds.
   const pkg = JSON.parse(readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
   check(
     Object.keys(pkg.dependencies ?? {}).length === 0,
     'package.json has zero runtime dependencies',
+  );
+  check(pkg.publishConfig?.access === 'public', 'package.json publishConfig.access is "public"');
+  check(pkg.publishConfig?.provenance === true, 'package.json publishConfig.provenance is true');
+  check(
+    !existsSync(path.join(rootDir, 'docs', 'engineering')),
+    'docs/engineering planning directory does not exist in codebase',
+  );
+  const bannedFiles = (pkg.files ?? []).filter((entry) => {
+    const clean = entry.replace(/^\.?\//, '');
+    return !entry.startsWith('!') && /^(?:tests|src|scripts|docs\/engineering)(?:\/|$)/.test(clean);
+  });
+  check(
+    bannedFiles.length === 0,
+    `pkg.files excludes tests, src, scripts, and docs/engineering ${bannedFiles.join(', ')}`.trim(),
   );
   const targets = [...new Set(collectExportTargets(pkg.exports))];
   for (const target of targets) {
