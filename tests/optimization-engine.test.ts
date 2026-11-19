@@ -98,11 +98,11 @@ describe('Image Optimization Engine Hardening & Features', () => {
       .toBuffer();
 
     await expect(optimizeImage(img, { maxWidth: 100 })).rejects.toSatisfy((err: unknown) => {
-      return isUploadKitError(err) && err.code === 'INVALID_IMAGE' && err.status === 400;
+      return isUploadKitError(err) && err.code === 'RESOURCE_LIMIT_EXCEEDED' && err.status === 400;
     });
 
     await expect(optimizeImage(img, { maxHeight: 50 })).rejects.toSatisfy((err: unknown) => {
-      return isUploadKitError(err) && err.code === 'INVALID_IMAGE' && err.status === 400;
+      return isUploadKitError(err) && err.code === 'RESOURCE_LIMIT_EXCEEDED' && err.status === 400;
     });
 
     // 2-frame animated WebP with distinct frames rejected when maxFrames: 1
@@ -122,7 +122,7 @@ describe('Image Optimization Engine Hardening & Features', () => {
       .toBuffer();
 
     await expect(optimizeImage(multiFrame, { maxFrames: 1 })).rejects.toSatisfy((err: unknown) => {
-      return isUploadKitError(err) && err.code === 'INVALID_IMAGE' && err.status === 400;
+      return isUploadKitError(err) && err.code === 'RESOURCE_LIMIT_EXCEEDED' && err.status === 400;
     });
   });
 

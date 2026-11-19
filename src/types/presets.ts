@@ -70,6 +70,20 @@ export interface UploadPresetConfig {
   allowSvg?: boolean;
   /** Maximum input pixel count allowed by Sharp (defaults to 50 MP = 50,000,000) */
   limitInputPixels?: number;
+  /** Maximum allowed oriented input width in pixels before rejecting */
+  maxWidth?: number;
+  /** Maximum allowed oriented input height in pixels before rejecting */
+  maxHeight?: number;
+  /** Maximum allowed animation frames/pages before rejecting */
+  maxFrames?: number;
+  /** Normalized [0, 1] focal point for aspect-ratio cropping (overrides `crop` position when set) */
+  focalPoint?: { x: number; y: number };
+  /** Output color space conversion (`'srgb'` normalizes wide-gamut/CMYK to sRGB; `'preserve'` keeps source) */
+  colorSpace?: 'srgb' | 'preserve';
+  /** Preserve EXIF/ICC metadata instead of stripping it (defaults to `false`) */
+  preserveMetadata?: boolean;
+  /** Optional custom SVG sanitizer hook invoked before the built-in strict XML allowlist pass */
+  svgSanitizer?: (svg: string) => string;
   /** Responsive variant widths in pixels (e.g. [640, 1024, 1920]); widths >= main image width are skipped */
   variantWidths?: number[];
   /** Optional local directory to mirror uploaded files into */

@@ -5,6 +5,7 @@ import type {
   ImageDimensions,
   ImageOutputFormat,
 } from '../../types';
+import type { TransformCache } from './transformCache';
 
 export interface FocalPoint {
   /** Normalized horizontal coordinate in [0, 1] (0 = left, 0.5 = center, 1 = right) */
@@ -55,6 +56,12 @@ export interface OptimizeImageOptions {
   colorSpace?: OutputColorSpace;
   /** Preserve EXIF/ICC metadata instead of stripping it. Defaults to `false`. */
   preserveMetadata?: boolean;
+  /** Optional custom SVG sanitizer hook forwarded to `sanitizeSvg` before the built-in allowlist pass. */
+  customSanitizer?: (svg: string) => string;
+  /** Optional transform result cache checked before encoding and populated after encoding. */
+  transformCache?: TransformCache;
+  /** Optional precomputed SHA-256 content hash used to build `transformCache` keys. */
+  contentHash?: string;
   /** AVIF/WebP encoding effort (defaults to 6) */
   effort?: number;
 }

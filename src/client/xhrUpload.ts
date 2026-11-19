@@ -5,7 +5,9 @@ import type {
   ImageDimensions,
   UploadedImageData,
 } from '../types';
+import { isUploadKitError, UploadKitError } from '../types/errors';
 import { appendAssetToFormData } from './asset';
+import { createNetworkUploadError, parseClientUploadError } from './errors';
 import type { UploadableAsset } from './types';
 
 export interface XhrUploadOptions {
@@ -63,13 +65,18 @@ function sanitizeRawErrorBody(rawBody: string): string {
   return cleaned;
 }
 
-export function createUploadAbortError(message = 'Upload cancelled'): Error {
-  const err = new Error(message);
+export function createUploadAbortError(message = 'Upload cancelled'): UploadKitError {
+  const err = new UploadKitError(message, {
+    code: 'UPLOAD_CANCELLED',
+    status: 499,
+    retryable: false,
+  });
   err.name = 'AbortError';
   return err;
 }
 
 export function isUploadAbortError(err: unknown): boolean {
+  if (isUploadKitError(err) && err.code === 'UPLOAD_CANCELLED') return true;
   return (
     typeof err === 'object' &&
     err !== null &&
@@ -112,22 +119,31 @@ export function parseErrorPayload(
   return `${fallbackLabel} (${statusInfo})`;
 }
 
+export function createHttpUploadError(
+  status: number,
+  rawBody: string,
+  fallbackLabel = 'Upload failed',
+): UploadKitError {
+  const formatted = parseErrorPayload(status, rawBody, fallbackLabel);
+  const parsed = parseClientUploadError(status, rawBody, formatted);
+  if (parsed.message.includes(`status ${status}`)) {
+    return parsed;
+  }
+  return new UploadKitError(formatted, {
+    code: parsed.code,
+    status: parsed.status,
+    retryable: parsed.retryable,
+    metadata: parsed.metadata,
+  });
+}
+
 export function buildUploadFormData(
   file: UploadableAsset,
   fields: UploadFormFields = {},
 ): FormData {
   const {
-    preset,
-    folder,
-    bucket,
-    altText,
-    customFilename,
-    outputFormat,
-    quality,
-    maxDimensions,
-    aspectRatio,
-    crop,
-    metadata,
+    preset, folder, bucket, altText, customFilename, outputFormat,
+    quality, maxDimensions, aspectRatio, crop, metadata,
   } = fields;
 
   const formData = new FormData();
@@ -143,12 +159,8 @@ export function buildUploadFormData(
     formData.append('maxWidth', String(maxDimensions.width));
     formData.append('maxHeight', String(maxDimensions.height));
   }
-  if (aspectRatio !== undefined) {
-    formData.append('aspectRatio', String(aspectRatio));
-  }
-  if (crop) {
-    formData.append('crop', crop);
-  }
+  if (aspectRatio !== undefined) formData.append('aspectRatio', String(aspectRatio));
+  if (crop) formData.append('crop', crop);
   if (metadata && Object.keys(metadata).length > 0) {
     formData.append('metadata', JSON.stringify(metadata));
   }
@@ -180,17 +192,29 @@ export function uploadViaXhr(
       headers: options.headers,
       credentials: options.withCredentials ? 'include' : 'same-origin',
       signal: options.signal,
-    }).then(async (res) => {
-      const text = await res.text();
-      if (!res.ok) {
-        throw new Error(parseErrorPayload(res.status, text, fallbackLabel));
-      }
-      try {
-        return JSON.parse(text) as UploadedImageData;
-      } catch {
-        throw new Error(invalidJsonLabel);
-      }
-    });
+    })
+      .catch((err: unknown) => {
+        if (options.signal?.aborted || isUploadAbortError(err)) {
+          throw createUploadAbortError(abortedLabel);
+        }
+        if (isUploadKitError(err)) throw err;
+        throw createNetworkUploadError(networkLabel, err);
+      })
+      .then(async (res) => {
+        const text = await res.text();
+        if (!res.ok) {
+          throw createHttpUploadError(res.status, text, fallbackLabel);
+        }
+        try {
+          return JSON.parse(text) as UploadedImageData;
+        } catch {
+          throw new UploadKitError(invalidJsonLabel, {
+            code: 'PROCESSING_FAILED',
+            status: res.status || 502,
+            retryable: false,
+          });
+        }
+      });
   }
 
   return new Promise((resolve, reject) => {
@@ -204,22 +228,14 @@ export function uploadViaXhr(
       }
     }
 
-    const onSignalAbort = () => {
-      xhr.abort();
-    };
+    const onSignalAbort = () => xhr.abort();
     options.signal?.addEventListener('abort', onSignalAbort, { once: true });
-
-    const cleanup = () => {
-      options.signal?.removeEventListener('abort', onSignalAbort);
-    };
+    const cleanup = () => options.signal?.removeEventListener('abort', onSignalAbort);
 
     if (xhr.upload) {
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable && event.total > 0) {
-          const pct = Math.min(
-            85,
-            Math.round((event.loaded / event.total) * 85),
-          );
+          const pct = Math.min(85, Math.round((event.loaded / event.total) * 85));
           options.onUploadProgress?.(pct);
         }
       };
@@ -229,23 +245,24 @@ export function uploadViaXhr(
       cleanup();
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
-          const parsed = JSON.parse(xhr.responseText) as UploadedImageData;
-          resolve(parsed);
+          resolve(JSON.parse(xhr.responseText) as UploadedImageData);
         } catch {
-          reject(new Error(invalidJsonLabel));
+          reject(
+            new UploadKitError(invalidJsonLabel, {
+              code: 'PROCESSING_FAILED',
+              status: xhr.status || 502,
+              retryable: false,
+            }),
+          );
         }
       } else {
-        reject(
-          new Error(
-            parseErrorPayload(xhr.status, xhr.responseText, fallbackLabel),
-          ),
-        );
+        reject(createHttpUploadError(xhr.status, xhr.responseText, fallbackLabel));
       }
     };
 
     xhr.onerror = () => {
       cleanup();
-      reject(new Error(networkLabel));
+      reject(createNetworkUploadError(networkLabel));
     };
 
     xhr.onabort = () => {

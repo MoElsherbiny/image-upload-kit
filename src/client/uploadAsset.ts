@@ -1,5 +1,6 @@
 import type { UploadedImageData } from '../types';
 import { uploadViaPresignedUrl } from './presignedUpload';
+import { type RetryOptions, withRetry } from './retry';
 import type { UploadableAsset, UploadMode } from './types';
 import {
   buildUploadFormData,
@@ -13,6 +14,8 @@ export interface UploadAssetRequestOptions extends XhrUploadOptions {
   mode?: UploadMode;
   /** Endpoint URL (defaults to `'/api/upload'`) */
   endpoint?: string;
+  /** Optional retry configuration for transient failures (network, 429, 503, 5xx). Pass `true` for default exponential backoff. */
+  retry?: RetryOptions | boolean;
 }
 
 /**
@@ -25,8 +28,20 @@ export function uploadAsset(
   options: UploadAssetRequestOptions = {},
 ): Promise<UploadedImageData> {
   const endpoint = options.endpoint ?? '/api/upload';
-  if (options.mode === 'presigned') {
-    return uploadViaPresignedUrl(endpoint, asset, fields, options);
+  const execute = (): Promise<UploadedImageData> => {
+    if (options.mode === 'presigned') {
+      return uploadViaPresignedUrl(endpoint, asset, fields, options);
+    }
+    return uploadViaXhr(endpoint, buildUploadFormData(asset, fields), options);
+  };
+
+  if (!options.retry) {
+    return execute();
   }
-  return uploadViaXhr(endpoint, buildUploadFormData(asset, fields), options);
+
+  const retryOptions: RetryOptions =
+    options.retry === true
+      ? { signal: options.signal }
+      : { signal: options.signal, ...options.retry };
+  return withRetry(() => execute(), retryOptions);
 }

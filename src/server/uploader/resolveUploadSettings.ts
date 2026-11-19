@@ -10,6 +10,7 @@ import type {
 } from '../../types';
 import { validateImageFileStrict } from '../../utils/validators';
 import { UploadValidationError } from '../handler/responses';
+import type { FocalPoint, OutputColorSpace } from '../optimization';
 import { assertMagicBytesAllowed, sanitizeSvg } from '../security';
 import { computeDedupeKey, computeSha256Hex, type DedupeStore } from './dedupe';
 import { resolveEffectiveAllowedFormats } from './variantGenerator';
@@ -23,6 +24,13 @@ export interface UploaderDefaults {
   defaultAllowSvg: boolean;
   defaultIncludeBlurHash: boolean;
   defaultLimitInputPixels?: number;
+  defaultMaxWidth?: number;
+  defaultMaxHeight?: number;
+  defaultMaxFrames?: number;
+  defaultFocalPoint?: FocalPoint;
+  defaultColorSpace?: OutputColorSpace;
+  defaultPreserveMetadata?: boolean;
+  defaultSvgSanitizer?: (svg: string) => string;
   defaultDedupeEnabled: boolean;
 }
 
@@ -36,10 +44,17 @@ export interface ResolvedUploadSettings {
   maxDimensions: ImageDimensions;
   aspectRatio?: Exclude<ImageAspectRatio, 'auto'>;
   crop?: CropStrategy;
+  focalPoint?: FocalPoint;
   outputFormat?: ExplicitOutputFormat;
   quality?: number;
   includeBlurHash: boolean;
   limitInputPixels?: number;
+  maxWidth?: number;
+  maxHeight?: number;
+  maxFrames?: number;
+  colorSpace?: OutputColorSpace;
+  preserveMetadata?: boolean;
+  svgSanitizer?: (svg: string) => string;
   variantWidths?: number[];
   shouldDedupe: boolean;
   dedupeSettings: Record<string, unknown>;
@@ -64,23 +79,19 @@ export function resolveUploadSettings<TPreset extends string>(
   const explicitAllowSvg = Boolean(
     uploadOptions.allowSvg ??
       presetConfig?.allowSvg ??
-      (defaults.defaultAllowSvg &&
-        !uploadOptions.allowedFormats &&
-        !presetConfig?.allowedFormats),
+      (defaults.defaultAllowSvg && !uploadOptions.allowedFormats && !presetConfig?.allowedFormats),
   );
   const allowedFormats = resolveEffectiveAllowedFormats(
-    uploadOptions.allowedFormats ??
-      presetConfig?.allowedFormats ??
-      defaults.defaultAllowedFormats,
+    uploadOptions.allowedFormats ?? presetConfig?.allowedFormats ?? defaults.defaultAllowedFormats,
     allowSvg,
     explicitAllowSvg,
   );
   const maxDimensions =
-    uploadOptions.maxDimensions ??
-    presetConfig?.maxDimensions ??
-    defaults.defaultMaxDimensions;
+    uploadOptions.maxDimensions ?? presetConfig?.maxDimensions ?? defaults.defaultMaxDimensions;
   const aspectRatio = uploadOptions.aspectRatio ?? presetConfig?.aspectRatio;
   const crop = uploadOptions.crop ?? presetConfig?.crop;
+  const focalPoint =
+    uploadOptions.focalPoint ?? presetConfig?.focalPoint ?? defaults.defaultFocalPoint;
   const outputFormat = uploadOptions.outputFormat ?? presetConfig?.outputFormat;
   const quality = uploadOptions.quality ?? presetConfig?.quality;
   const includeBlurHash =
@@ -91,11 +102,20 @@ export function resolveUploadSettings<TPreset extends string>(
     uploadOptions.limitInputPixels ??
     presetConfig?.limitInputPixels ??
     defaults.defaultLimitInputPixels;
+  const maxWidth = uploadOptions.maxWidth ?? presetConfig?.maxWidth ?? defaults.defaultMaxWidth;
+  const maxHeight = uploadOptions.maxHeight ?? presetConfig?.maxHeight ?? defaults.defaultMaxHeight;
+  const maxFrames = uploadOptions.maxFrames ?? presetConfig?.maxFrames ?? defaults.defaultMaxFrames;
+  const colorSpace =
+    uploadOptions.colorSpace ?? presetConfig?.colorSpace ?? defaults.defaultColorSpace;
+  const preserveMetadata =
+    uploadOptions.preserveMetadata ??
+    presetConfig?.preserveMetadata ??
+    defaults.defaultPreserveMetadata;
+  const svgSanitizer =
+    uploadOptions.svgSanitizer ?? presetConfig?.svgSanitizer ?? defaults.defaultSvgSanitizer;
   const variantWidths = uploadOptions.variantWidths ?? presetConfig?.variantWidths;
   const shouldDedupe =
-    uploadOptions.deduplicate ??
-    presetConfig?.deduplicate ??
-    defaults.defaultDedupeEnabled;
+    uploadOptions.deduplicate ?? presetConfig?.deduplicate ?? defaults.defaultDedupeEnabled;
 
   const dedupeSettings: Record<string, unknown> = {
     bucket,
@@ -104,30 +124,21 @@ export function resolveUploadSettings<TPreset extends string>(
     maxDimensions,
     aspectRatio,
     crop,
+    focalPoint,
     outputFormat,
     quality,
+    colorSpace,
+    preserveMetadata,
     variantWidths,
     includeBlurHash,
     customFilename: uploadOptions.customFilename,
   };
 
   return {
-    presetConfig,
-    bucket,
-    folder,
-    maxSizeMB,
-    allowSvg,
-    allowedFormats,
-    maxDimensions,
-    aspectRatio,
-    crop,
-    outputFormat,
-    quality,
-    includeBlurHash,
-    limitInputPixels,
-    variantWidths,
-    shouldDedupe,
-    dedupeSettings,
+    presetConfig, bucket, folder, maxSizeMB, allowSvg, allowedFormats,
+    maxDimensions, aspectRatio, crop, focalPoint, outputFormat, quality,
+    includeBlurHash, limitInputPixels, maxWidth, maxHeight, maxFrames,
+    colorSpace, preserveMetadata, svgSanitizer, variantWidths, shouldDedupe, dedupeSettings,
   };
 }
 
@@ -136,6 +147,7 @@ export async function readAndValidateUploadInput(
   maxSizeMB: number,
   allowedFormats: string[],
   allowSvg: boolean,
+  svgSanitizer?: (svg: string) => string,
 ): Promise<Buffer> {
   const isWebFile = typeof (input as File).arrayBuffer === 'function';
   if (isWebFile) {
@@ -163,7 +175,10 @@ export async function readAndValidateUploadInput(
 
   const sniffed = assertMagicBytesAllowed(originalBuffer, allowedFormats, allowSvg);
   if (sniffed.format === 'svg') {
-    originalBuffer = sanitizeSvg(originalBuffer);
+    originalBuffer = sanitizeSvg(
+      originalBuffer,
+      svgSanitizer ? { customSanitizer: svgSanitizer } : undefined,
+    );
   }
   return originalBuffer;
 }
@@ -181,21 +196,10 @@ export async function lookupDedupeCache(params: {
   sourceHash: string;
   cachedResult?: UploadedImageData;
 }> {
-  const {
-    originalBuffer,
-    dedupeSettings,
-    dedupeStore,
-    verifyExists,
-    storage,
-    bucket,
-    altText,
-  } = params;
+  const { originalBuffer, dedupeSettings, dedupeStore, verifyExists, storage, bucket, altText } =
+    params;
   const sourceHash = await computeSha256Hex(originalBuffer);
-  const dedupeKey = await computeDedupeKey(
-    originalBuffer,
-    dedupeSettings,
-    sourceHash,
-  );
+  const dedupeKey = await computeDedupeKey(originalBuffer, dedupeSettings, sourceHash);
   const cached = await dedupeStore.get(dedupeKey);
   if (cached) {
     const existsOk =
@@ -207,11 +211,7 @@ export async function lookupDedupeCache(params: {
       return {
         dedupeKey,
         sourceHash,
-        cachedResult: {
-          ...cached,
-          altText: altText ?? cached.altText,
-          deduplicated: true,
-        },
+        cachedResult: { ...cached, altText: altText ?? cached.altText, deduplicated: true },
       };
     }
     await dedupeStore.delete?.(dedupeKey);
@@ -245,15 +245,9 @@ export function collectAllowedBuckets(
   return [...buckets];
 }
 
-export function collectMirrorDirs(
-  presets: Record<string, UploadPresetConfig>,
-): string[] {
+export function collectMirrorDirs(presets: Record<string, UploadPresetConfig>): string[] {
   return [
-    ...new Set(
-      Object.values(presets)
-        .map((p) => p?.mirrorDir)
-        .filter(Boolean) as string[],
-    ),
+    ...new Set(Object.values(presets).map((p) => p?.mirrorDir).filter(Boolean) as string[]),
   ];
 }
 
