@@ -5,14 +5,25 @@ import type {
   ImageDimensions,
 } from '../../types';
 import { resolveAspectRatio } from '../../types/aspectRatio';
+import { UploadKitError } from '../../types/errors';
 import { checkAllowedOrigin, normalizeOverrides, runAuthorize } from './guards';
 import type {
   AuthorizeContext,
   UploadHttpHandlerOptions,
 } from './options';
-import { handleUnexpectedError, jsonResponse } from './responses';
 import { readBoundedJsonBody } from './presignRoute';
-import { verifyUploadToken } from './uploadToken';
+import {
+  enforceQuota,
+  enforceRateLimit,
+  recordQuotaUsage,
+  resolveSubject,
+} from './rateLimitGuard';
+import {
+  errorResponseFromKitError,
+  handleUnexpectedError,
+  jsonResponse,
+} from './responses';
+import { consumeUploadToken, verifyUploadToken } from './uploadToken';
 
 const ALLOWED_OUTPUT_FORMATS = new Set(['jpeg', 'png', 'webp', 'avif']);
 const ALLOWED_CROP_STRATEGIES = new Set<CropStrategy>(['attention', 'entropy', 'center']);
@@ -51,9 +62,10 @@ export async function handleFinalizeRequest<TPreset extends string>(
       return jsonResponse({ error: 'Missing required upload token' }, 400);
     }
 
+    // 1. Verify signature, claims & expiry WITHOUT consuming jti yet
     const tokenPayload = await verifyUploadToken(rawToken, presigned.secret, {
-      consume: true,
-      tokenStore: presigned.tokenStore,
+      consume: false,
+      clockToleranceMs: presigned.clockToleranceMs,
     });
 
     const targetBucket =
@@ -70,8 +82,38 @@ export async function handleFinalizeRequest<TPreset extends string>(
       ...(tokenPayload.folder ? { path: tokenPayload.folder } : {}),
       ...(tokenPayload.preset ? { preset: tokenPayload.preset } : {}),
     };
+
+    // 2. Authorize caller BEFORE consuming single-use token
     const authError = await runAuthorize(authorize, authCtx);
     if (authError) return authError;
+
+    // 3. Enforce subject binding when token carries `sub`
+    const currentSubject = await resolveSubject(options.getSubject, authCtx);
+    if (tokenPayload.sub !== undefined && currentSubject !== tokenPayload.sub) {
+      return errorResponseFromKitError(
+        new UploadKitError('Upload token subject mismatch', {
+          code: 'FORBIDDEN',
+          status: 403,
+        }),
+      );
+    }
+
+    // 4. Enforce rate limit before consuming token
+    const rateLimitError = await enforceRateLimit(options, {
+      action: 'finalize',
+      request,
+      subject: currentSubject,
+      bucket: authBucket,
+      preset: tokenPayload.preset,
+    });
+    if (rateLimitError) return rateLimitError;
+
+    // 5. Atomically consume jti only after caller is verified and authorized
+    await consumeUploadToken(
+      tokenPayload.jti,
+      tokenPayload.exp,
+      presigned.tokenStore,
+    );
 
     const storage = uploader.getStorage?.() ?? uploader.storage;
     if (!storage || typeof storage.download !== 'function') {
@@ -117,6 +159,16 @@ export async function handleFinalizeRequest<TPreset extends string>(
           400,
         );
       }
+
+      const quotaError = await enforceQuota(options, {
+        action: 'finalize',
+        request,
+        subject: currentSubject,
+        bytes: stagedBytes.byteLength,
+        bucket: authBucket,
+        preset: tokenPayload.preset,
+      });
+      if (quotaError) return quotaError;
 
       const overrides = normalizeOverrides(options.allowClientOverrides);
       const presetConfig =
@@ -225,6 +277,15 @@ export async function handleFinalizeRequest<TPreset extends string>(
           signal: request.signal,
         },
       );
+
+      await recordQuotaUsage(options, {
+        action: 'finalize',
+        request,
+        subject: currentSubject,
+        bytes: result.size ?? stagedBytes.byteLength,
+        bucket: result.bucket,
+        preset: result.preset,
+      });
 
       return jsonResponse(result, 200);
     } finally {

@@ -11,6 +11,11 @@ import type {
   AuthorizeContext,
   UploadHttpHandlerOptions,
 } from './options';
+import {
+  enforceQuota,
+  enforceRateLimit,
+  resolveSubject,
+} from './rateLimitGuard';
 import { handleUnexpectedError, jsonResponse } from './responses';
 import { type PresignTokenPayload, signUploadToken } from './uploadToken';
 
@@ -146,6 +151,27 @@ export async function handlePresignRequest<TPreset extends string>(
     const authError = await runAuthorize(authorize, authCtx);
     if (authError) return authError;
 
+    const subject = await resolveSubject(options.getSubject, authCtx);
+    const rateLimitError = await enforceRateLimit(options, {
+      action: 'presign',
+      request,
+      subject,
+      bucket: authBucket,
+      preset,
+      contentLength: size,
+    });
+    if (rateLimitError) return rateLimitError;
+
+    const quotaError = await enforceQuota(options, {
+      action: 'presign',
+      request,
+      subject,
+      bytes: size ?? 0,
+      bucket: authBucket,
+      preset,
+    });
+    if (quotaError) return quotaError;
+
     if (preset) {
       if (allowedPresets && allowedPresets.length > 0 && !allowedPresets.includes(preset)) {
         return jsonResponse(
@@ -247,6 +273,7 @@ export async function handlePresignRequest<TPreset extends string>(
       path: stagingPath,
       contentType,
       maxBytes,
+      ...(subject ? { sub: subject } : {}),
       ...(targetBucket ? { targetBucket } : {}),
       ...(preset ? { preset } : {}),
       ...(folder ? { folder } : {}),

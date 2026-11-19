@@ -19,6 +19,7 @@ export interface SniffedFormatResult {
 
 const AVIF_BRANDS = new Set(['avif', 'avis']);
 const HEIF_BRANDS = new Set(['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1']);
+const WEBP_CHUNKS = new Set(['VP8 ', 'VP8L', 'VP8X']);
 
 function readAscii(bytes: Uint8Array, start: number, end: number): string {
   let out = '';
@@ -29,12 +30,27 @@ function readAscii(bytes: Uint8Array, start: number, end: number): string {
   return out;
 }
 
+function hasTextPolyglotPrefix(bytes: Uint8Array, offset: number): boolean {
+  const sample = readAscii(bytes, offset, Math.min(bytes.length, offset + 64))
+    .trimStart()
+    .toLowerCase();
+  return (
+    sample.startsWith('<script') ||
+    sample.startsWith('<!doctype html') ||
+    sample.startsWith('<html') ||
+    sample.startsWith('<?php')
+  );
+}
+
 function sniffIsoBmff(bytes: Uint8Array): SniffedFormatResult | null {
   if (bytes.length < 12) return null;
   if (readAscii(bytes, 4, 8) !== 'ftyp') return null;
 
   const boxSize =
     ((bytes[0] << 24) | (bytes[1] << 16) | (bytes[2] << 8) | bytes[3]) >>> 0;
+  if (boxSize < 12 || boxSize > bytes.length + 1024 * 1024 * 64) {
+    return null;
+  }
   const maxOffset = Math.min(
     bytes.length,
     boxSize >= 16 ? Math.min(boxSize, 128) : 64,
@@ -73,6 +89,7 @@ function sniffTextSvg(bytes: Uint8Array): SniffedFormatResult | null {
     .trimStart();
 
   if (!text.startsWith('<')) return null;
+  if (/^<\?php\b/i.test(text)) return null;
 
   // Strip XML prolog, comments, and DOCTYPE declarations before checking the root tag
   const stripped = text
@@ -95,6 +112,7 @@ function sniffTextSvg(bytes: Uint8Array): SniffedFormatResult | null {
 /**
  * Inspects magic bytes of a buffer to determine its true image format,
  * independent of any client-supplied MIME type or file extension.
+ * Rejects truncated headers and obvious HTML/PHP/script polyglot headers.
  */
 export function sniffImageFormat(
   input: Buffer | Uint8Array,
@@ -105,14 +123,19 @@ export function sniffImageFormat(
       : new Uint8Array(input as ArrayBufferLike);
   if (bytes.length < 4) return null;
 
-  // JPEG: FF D8 FF
-  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+  // JPEG: FF D8 FF followed by a valid marker byte
+  if (
+    bytes[0] === 0xff &&
+    bytes[1] === 0xd8 &&
+    bytes[2] === 0xff &&
+    bytes[3] >= 0xc0
+  ) {
     return { format: 'jpeg', mime: 'image/jpeg' };
   }
 
-  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  // PNG: 89 50 4E 47 0D 0A 1A 0A + IHDR chunk header (minimum 24 bytes)
   if (
-    bytes.length >= 8 &&
+    bytes.length >= 24 &&
     bytes[0] === 0x89 &&
     bytes[1] === 0x50 &&
     bytes[2] === 0x4e &&
@@ -120,24 +143,29 @@ export function sniffImageFormat(
     bytes[4] === 0x0d &&
     bytes[5] === 0x0a &&
     bytes[6] === 0x1a &&
-    bytes[7] === 0x0a
+    bytes[7] === 0x0a &&
+    readAscii(bytes, 12, 16) === 'IHDR'
   ) {
     return { format: 'png', mime: 'image/png' };
   }
 
-  // GIF: GIF87a or GIF89a
-  if (bytes.length >= 6) {
+  // GIF: GIF87a or GIF89a + 7-byte Logical Screen Descriptor (minimum 13 bytes)
+  if (bytes.length >= 13) {
     const header = readAscii(bytes, 0, 6);
-    if (header === 'GIF87a' || header === 'GIF89a') {
+    if (
+      (header === 'GIF87a' || header === 'GIF89a') &&
+      !hasTextPolyglotPrefix(bytes, 6)
+    ) {
       return { format: 'gif', mime: 'image/gif' };
     }
   }
 
-  // WebP: RIFF....WEBP
+  // WebP: RIFF....WEBP + valid VP8/VP8L/VP8X chunk header (minimum 16 bytes)
   if (
-    bytes.length >= 12 &&
+    bytes.length >= 16 &&
     readAscii(bytes, 0, 4) === 'RIFF' &&
-    readAscii(bytes, 8, 12) === 'WEBP'
+    readAscii(bytes, 8, 12) === 'WEBP' &&
+    WEBP_CHUNKS.has(readAscii(bytes, 12, 16))
   ) {
     return { format: 'webp', mime: 'image/webp' };
   }
@@ -146,31 +174,39 @@ export function sniffImageFormat(
   const bmff = sniffIsoBmff(bytes);
   if (bmff) return bmff;
 
-  // TIFF: II*\0 (little-endian) or MM\0* (big-endian)
+  // TIFF: II*\0 (little-endian) or MM\0* (big-endian) + IFD offset (minimum 8 bytes)
   if (
-    (bytes[0] === 0x49 &&
+    bytes.length >= 8 &&
+    ((bytes[0] === 0x49 &&
       bytes[1] === 0x49 &&
       bytes[2] === 0x2a &&
       bytes[3] === 0x00) ||
-    (bytes[0] === 0x4d &&
-      bytes[1] === 0x4d &&
-      bytes[2] === 0x00 &&
-      bytes[3] === 0x2a)
+      (bytes[0] === 0x4d &&
+        bytes[1] === 0x4d &&
+        bytes[2] === 0x00 &&
+        bytes[3] === 0x2a))
   ) {
     return { format: 'tiff', mime: 'image/tiff' };
   }
 
-  // BMP: BM
-  if (bytes.length >= 14 && bytes[0] === 0x42 && bytes[1] === 0x4d) {
+  // BMP: BM + 14-byte file header + minimum 12-byte DIB header (26 bytes)
+  if (
+    bytes.length >= 26 &&
+    bytes[0] === 0x42 &&
+    bytes[1] === 0x4d &&
+    !hasTextPolyglotPrefix(bytes, 2)
+  ) {
     return { format: 'bmp', mime: 'image/bmp' };
   }
 
-  // ICO: 00 00 01 00
+  // ICO: 00 00 01 00 + image count >= 1 (minimum 6 bytes)
   if (
+    bytes.length >= 6 &&
     bytes[0] === 0x00 &&
     bytes[1] === 0x00 &&
     bytes[2] === 0x01 &&
-    bytes[3] === 0x00
+    bytes[3] === 0x00 &&
+    (bytes[4] !== 0x00 || bytes[5] !== 0x00)
   ) {
     return { format: 'ico', mime: 'image/x-icon' };
   }
@@ -187,18 +223,21 @@ export function assertMagicBytesAllowed(
   if (!sniffed) {
     throw new UploadValidationError(
       'Unsupported image format: file content is not a recognized image',
+      { code: 'UNSUPPORTED_FORMAT' },
     );
   }
 
   if (sniffed.format === 'svg' && !allowSvg) {
     throw new UploadValidationError(
       'File type image/svg+xml is not allowed unless allowSvg: true is set',
+      { code: 'UNSUPPORTED_FORMAT' },
     );
   }
 
   if (allowedFormats.length > 0 && !allowedFormats.includes(sniffed.mime)) {
     throw new UploadValidationError(
       `File type ${sniffed.mime} is not allowed. Allowed: ${allowedFormats.join(', ')}`,
+      { code: 'UNSUPPORTED_FORMAT' },
     );
   }
 

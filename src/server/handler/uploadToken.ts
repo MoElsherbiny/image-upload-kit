@@ -1,5 +1,7 @@
 import { UploadValidationError } from './responses';
 
+export type UploadTokenSecret = string | readonly string[];
+
 export interface PresignTokenStore {
   /** Atomically marks `jti` as consumed until `expMs`. Returns `true` if newly consumed, or `false` if already consumed. */
   consume(jti: string, expMs: number): Promise<boolean> | boolean;
@@ -23,6 +25,10 @@ export interface PresignTokenPayload {
 export interface VerifyUploadTokenOptions {
   consume?: boolean;
   tokenStore?: PresignTokenStore;
+  /** Clock skew tolerance in milliseconds when checking token expiry (default `0`). */
+  clockToleranceMs?: number;
+  /** Optional current timestamp in ms for deterministic testing (default `Date.now()`). */
+  now?: number;
 }
 
 const MIN_SECRET_LENGTH = 16;
@@ -30,6 +36,29 @@ const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 const MAX_CONSUMED_TOKENS = 4096;
 const consumedTokens = new Map<string, number>();
+
+function normalizeSecrets(
+  secret: UploadTokenSecret,
+  asValidationError: boolean,
+): string[] {
+  const list = Array.isArray(secret) ? secret : [secret];
+  if (
+    list.length === 0 ||
+    list.some(
+      (s) => typeof s !== 'string' || s.trim().length < MIN_SECRET_LENGTH,
+    )
+  ) {
+    const message =
+      'Presigned upload token secret must be at least 16 characters';
+    if (asValidationError) {
+      throw new UploadValidationError(message, {
+        code: 'INVALID_UPLOAD_TOKEN',
+      });
+    }
+    throw new Error(message);
+  }
+  return list as string[];
+}
 
 function toBase64Url(bytes: Uint8Array): string {
   let binary = '';
@@ -109,43 +138,63 @@ function consumeInMemoryToken(jti: string, expMs: number): boolean {
 }
 
 /**
+ * Atomically marks a verified token `jti` as consumed.
+ * Throws a 409 `UploadValidationError` (`INVALID_UPLOAD_TOKEN`) if already consumed.
+ */
+export async function consumeUploadToken(
+  jti: string,
+  expMs: number,
+  tokenStore?: PresignTokenStore,
+): Promise<void> {
+  const newlyConsumed = tokenStore
+    ? await tokenStore.consume(jti, expMs)
+    : consumeInMemoryToken(jti, expMs);
+  if (!newlyConsumed) {
+    throw new UploadValidationError('Upload token has already been used', {
+      code: 'INVALID_UPLOAD_TOKEN',
+      status: 409,
+    });
+  }
+}
+
+/**
  * Signs a stateless `PresignTokenPayload` using WebCrypto HMAC-SHA256.
+ * When `secret` is an array (rotation), signs with the first (active) secret.
  */
 export async function signUploadToken(
   payload: PresignTokenPayload,
-  secret: string,
+  secret: UploadTokenSecret,
 ): Promise<string> {
-  if (typeof secret !== 'string' || secret.trim().length < MIN_SECRET_LENGTH) {
-    throw new Error('Presigned upload token secret must be at least 16 characters');
-  }
+  const [activeSecret] = normalizeSecrets(secret, false);
   const json = JSON.stringify(payload);
   const payloadB64 = toBase64Url(textEncoder.encode(json));
-  const sigBytes = await computeHmacSha256(payloadB64, secret);
+  const sigBytes = await computeHmacSha256(payloadB64, activeSecret);
   const sigB64 = toBase64Url(sigBytes);
   return `${payloadB64}.${sigB64}`;
 }
 
 /**
- * Verifies an HMAC-SHA256 upload token in constant time, checks expiration,
- * and atomically consumes the token `jti` (unless `options.consume === false`).
+ * Verifies an HMAC-SHA256 upload token in constant time across all configured secrets,
+ * checks expiration (respecting `clockToleranceMs`), and atomically consumes the token `jti`
+ * unless `options.consume === false`.
  */
 export async function verifyUploadToken(
   token: string,
-  secret: string,
+  secret: UploadTokenSecret,
   options?: VerifyUploadTokenOptions,
 ): Promise<PresignTokenPayload> {
   if (!token || typeof token !== 'string') {
-    throw new UploadValidationError('Invalid upload token');
+    throw new UploadValidationError('Invalid upload token', {
+      code: 'INVALID_UPLOAD_TOKEN',
+    });
   }
-  if (typeof secret !== 'string' || secret.trim().length < MIN_SECRET_LENGTH) {
-    throw new UploadValidationError(
-      'Presigned upload token secret must be at least 16 characters',
-    );
-  }
+  const secrets = normalizeSecrets(secret, true);
 
   const parts = token.split('.');
   if (parts.length !== 2 || !parts[0] || !parts[1]) {
-    throw new UploadValidationError('Malformed upload token');
+    throw new UploadValidationError('Malformed upload token', {
+      code: 'INVALID_UPLOAD_TOKEN',
+    });
   }
 
   const [payloadB64, sigB64] = parts;
@@ -153,12 +202,22 @@ export async function verifyUploadToken(
   try {
     actualSig = fromBase64Url(sigB64);
   } catch {
-    throw new UploadValidationError('Invalid upload token encoding');
+    throw new UploadValidationError('Invalid upload token encoding', {
+      code: 'INVALID_UPLOAD_TOKEN',
+    });
   }
 
-  const expectedSig = await computeHmacSha256(payloadB64, secret);
-  if (!constantTimeEqual(expectedSig, actualSig)) {
-    throw new UploadValidationError('Invalid upload token signature');
+  let signatureValid = false;
+  for (const candidate of secrets) {
+    const expectedSig = await computeHmacSha256(payloadB64, candidate);
+    if (constantTimeEqual(expectedSig, actualSig)) {
+      signatureValid = true;
+    }
+  }
+  if (!signatureValid) {
+    throw new UploadValidationError('Invalid upload token signature', {
+      code: 'INVALID_UPLOAD_TOKEN',
+    });
   }
 
   let parsed: unknown;
@@ -166,11 +225,15 @@ export async function verifyUploadToken(
     const jsonBytes = fromBase64Url(payloadB64);
     parsed = JSON.parse(textDecoder.decode(jsonBytes));
   } catch {
-    throw new UploadValidationError('Invalid upload token payload');
+    throw new UploadValidationError('Invalid upload token payload', {
+      code: 'INVALID_UPLOAD_TOKEN',
+    });
   }
 
-  if (!parsed || typeof parsed !== 'object') {
-    throw new UploadValidationError('Invalid upload token payload');
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new UploadValidationError('Invalid upload token payload', {
+      code: 'INVALID_UPLOAD_TOKEN',
+    });
   }
 
   const payload = parsed as PresignTokenPayload;
@@ -179,6 +242,7 @@ export async function verifyUploadToken(
     typeof payload.jti !== 'string' ||
     !payload.jti ||
     typeof payload.exp !== 'number' ||
+    !Number.isFinite(payload.exp) ||
     typeof payload.bucket !== 'string' ||
     !payload.bucket ||
     typeof payload.path !== 'string' ||
@@ -186,26 +250,32 @@ export async function verifyUploadToken(
     typeof payload.contentType !== 'string' ||
     !payload.contentType ||
     typeof payload.maxBytes !== 'number' ||
-    payload.maxBytes <= 0
+    !Number.isFinite(payload.maxBytes) ||
+    payload.maxBytes <= 0 ||
+    (payload.sub !== undefined &&
+      (typeof payload.sub !== 'string' || !payload.sub.trim()))
   ) {
-    throw new UploadValidationError('Invalid upload token claims');
+    throw new UploadValidationError('Invalid upload token claims', {
+      code: 'INVALID_UPLOAD_TOKEN',
+    });
   }
 
-  if (Date.now() >= payload.exp) {
-    throw new UploadValidationError('Upload token has expired');
+  const rawTolerance = options?.clockToleranceMs ?? 0;
+  const clockToleranceMs =
+    typeof rawTolerance === 'number' &&
+    Number.isFinite(rawTolerance) &&
+    rawTolerance > 0
+      ? rawTolerance
+      : 0;
+  const now = options?.now ?? Date.now();
+  if (now >= payload.exp + clockToleranceMs) {
+    throw new UploadValidationError('Upload token has expired', {
+      code: 'UPLOAD_EXPIRED',
+    });
   }
 
   if (options?.consume !== false) {
-    const newlyConsumed = options?.tokenStore
-      ? await options.tokenStore.consume(payload.jti, payload.exp)
-      : consumeInMemoryToken(payload.jti, payload.exp);
-    if (!newlyConsumed) {
-      const err = new Error('Upload token has already been used') as Error & {
-        status?: number;
-      };
-      err.status = 409;
-      throw err;
-    }
+    await consumeUploadToken(payload.jti, payload.exp, options?.tokenStore);
   }
 
   return payload;

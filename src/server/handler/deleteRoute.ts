@@ -1,6 +1,7 @@
 import { parsePublicStorageUrl } from '../../storage/urlParser';
 import { checkAllowedOrigin, runAuthorize } from './guards';
-import type { UploadHttpHandlerOptions } from './options';
+import type { AuthorizeContext, UploadHttpHandlerOptions } from './options';
+import { enforceRateLimit, resolveSubject } from './rateLimitGuard';
 import { handleUnexpectedError, jsonResponse } from './responses';
 
 function parseVirtualHostedS3Bucket(url: string): {
@@ -76,13 +77,23 @@ export function createDeleteHandler<TPreset extends string>(
         parsedFromUrl?.bucket ??
         (bucketParam || uploader.defaultBucket || 'images');
 
-      const authError = await runAuthorize(authorize, {
+      const authCtx: AuthorizeContext = {
         action: 'delete',
         request,
         ...(resolvedPath ? { path: resolvedPath } : {}),
         ...(resolvedBucket ? { bucket: resolvedBucket } : {}),
-      });
+      };
+      const authError = await runAuthorize(authorize, authCtx);
       if (authError) return authError;
+
+      const subject = await resolveSubject(options.getSubject, authCtx);
+      const rateLimitError = await enforceRateLimit(options, {
+        action: 'delete',
+        request,
+        subject,
+        bucket: resolvedBucket,
+      });
+      if (rateLimitError) return rateLimitError;
 
       if (url) {
         if (parsedFromUrl?.bucket) {

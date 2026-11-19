@@ -1,5 +1,6 @@
+import type { QuotaProvider, RateLimiter } from '../../types/rateLimit';
 import type { ImageUploader } from '../uploadService';
-import type { PresignTokenStore } from './uploadToken';
+import type { PresignTokenStore, UploadTokenSecret } from './uploadToken';
 
 export interface AuthorizeContext {
   action: 'upload' | 'delete';
@@ -34,14 +35,19 @@ export interface AllowClientOverrides {
 export type ClientOverridesConfig = AllowClientOverrides;
 
 export interface PresignedHandlerOptions {
-  /** HMAC-SHA256 secret used to sign and verify stateless presign tokens (minimum 16 characters) */
-  secret: string;
+  /**
+   * HMAC-SHA256 secret (or rotation array `[activeSecret, ...previousSecrets]`)
+   * used to sign and verify stateless presign tokens (minimum 16 characters each).
+   */
+  secret: UploadTokenSecret;
   /** Optional bucket for temporary staging objects (defaults to resolved target bucket) */
   stagingBucket?: string;
   /** Prefix inside the staging bucket for temporary objects (defaults to `'_staging/'`) */
   stagingPrefix?: string;
   /** Token and presigned URL TTL in seconds (defaults to `300` = 5 minutes) */
   expiresInSeconds?: number;
+  /** Optional clock skew tolerance in milliseconds when verifying token expiration (defaults to `0`) */
+  clockToleranceMs?: number;
   /** Optional atomic replay store (e.g. Redis SET NX PX) for multi-instance deployments */
   tokenStore?: PresignTokenStore;
 }
@@ -57,6 +63,13 @@ export interface UploadHttpHandlerOptions<TPreset extends string = string> {
    * Optional authorization check. Return `false` or throw to reject with 401.
    */
   authorize?: (ctx: AuthorizeContext) => boolean | Promise<boolean>;
+  /**
+   * Optional resolver returning the authenticated user/tenant identifier for
+   * presigned token subject (`sub`) binding, rate-limit keying, and quota enforcement.
+   */
+  getSubject?: (
+    ctx: AuthorizeContext,
+  ) => string | undefined | Promise<string | undefined>;
   /**
    * Optional whitelist of allowed preset names.
    */
@@ -87,6 +100,18 @@ export interface UploadHttpHandlerOptions<TPreset extends string = string> {
    * Optional two-phase presigned upload configuration (`?action=presign` & `?action=finalize`).
    */
   presigned?: PresignedHandlerOptions;
+  /**
+   * Optional provider-independent rate limiter applied to `POST`, `presign`, `finalize`, and `DELETE`.
+   */
+  rateLimiter?: RateLimiter;
+  /**
+   * Optional per-user/tenant storage quota provider enforced on `POST`, `presign`, and `finalize`.
+   */
+  quotaProvider?: QuotaProvider;
+  /**
+   * Optional custom key extractor for rate limiting. Defaults to `sub:<subject>` or client IP.
+   */
+  rateLimitKey?: (req: Request, subject?: string) => string;
   /**
    * Hook invoked when an unexpected 500 internal error occurs. Raw error details are never sent to clients.
    */

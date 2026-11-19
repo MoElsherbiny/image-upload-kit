@@ -6,6 +6,10 @@ import {
   resolveMaxBodyBytes,
   runAuthorize,
 } from './guards';
+import {
+  createMemoryRateLimiter,
+  type MemoryRateLimiterOptions,
+} from './memoryRateLimiter';
 import type {
   AllowClientOverrides,
   AuthorizeContext,
@@ -16,15 +20,24 @@ import type {
 import { parseUploadForm, peekUploadAuthContext } from './parseUploadForm';
 import { handlePresignRequest, sweepStagedUploads } from './presignRoute';
 import {
+  enforceQuota,
+  enforceRateLimit,
+  recordQuotaUsage,
+  resolveSubject,
+} from './rateLimitGuard';
+import {
+  errorResponseFromKitError,
   handleUnexpectedError,
   isClientValidationError,
   jsonResponse,
   UploadValidationError,
 } from './responses';
 import {
+  consumeUploadToken,
   type PresignTokenPayload,
   type PresignTokenStore,
   signUploadToken,
+  type UploadTokenSecret,
   type VerifyUploadTokenOptions,
   verifyUploadToken,
 } from './uploadToken';
@@ -32,7 +45,11 @@ import {
 export {
   type AllowClientOverrides,
   type AuthorizeContext,
+  consumeUploadToken,
+  createMemoryRateLimiter,
+  errorResponseFromKitError,
   isClientValidationError,
+  type MemoryRateLimiterOptions,
   type PresignedHandlerOptions,
   type PresignTokenPayload,
   type PresignTokenStore,
@@ -40,6 +57,7 @@ export {
   sweepStagedUploads,
   type UploadErrorContext,
   type UploadHttpHandlerOptions,
+  type UploadTokenSecret,
   UploadValidationError,
   type VerifyUploadTokenOptions,
   verifyUploadToken,
@@ -79,13 +97,43 @@ export function createUploadHttpHandler<TPreset extends string = string>(
       const authError = await runAuthorize(authorize, authCtx);
       if (authError) return authError;
 
+      const subject = await resolveSubject(options.getSubject, authCtx);
+      const rateLimitError = await enforceRateLimit(options, {
+        action: 'upload',
+        request,
+        subject,
+        bucket: authCtx.bucket,
+        preset: authCtx.preset,
+      });
+      if (rateLimitError) return rateLimitError;
+
       const parsed = parseUploadForm(formData, authCtx, options);
       if (parsed.errorResponse) return parsed.errorResponse;
+
+      const fileBytes = parsed.file?.size ?? 0;
+      const quotaError = await enforceQuota(options, {
+        action: 'upload',
+        request,
+        subject,
+        bytes: fileBytes,
+        bucket: parsed.uploadOptions?.bucket ?? authCtx.bucket,
+        preset: parsed.uploadOptions?.preset,
+      });
+      if (quotaError) return quotaError;
 
       const result = await uploader.uploadImage(
         parsed.file!,
         parsed.uploadOptions,
       );
+
+      await recordQuotaUsage(options, {
+        action: 'upload',
+        request,
+        subject,
+        bytes: result.size ?? fileBytes,
+        bucket: result.bucket,
+        preset: result.preset,
+      });
 
       return jsonResponse(result, 200);
     } catch (error) {

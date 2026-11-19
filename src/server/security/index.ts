@@ -9,3 +9,9 @@ export {
   sanitizeSvg,
   type SanitizeSvgOptions,
 } from './sanitizeSvg';
+export {
+  assertImageMetadataLimits,
+  DEFAULT_IMAGE_RESOURCE_LIMITS,
+  type ImageMetadataLike,
+  type ImageResourceLimits,
+} from './imageLimits';
