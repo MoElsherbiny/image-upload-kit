@@ -16,8 +16,10 @@ Reference guide for AI agents and developers working on `img-upload-kit`.
 ```
 src/
 ├── index.ts                  # Root subpath '.' — Universal types, presets, aspectRatio, validators, formatters, blur helpers
-├── types/                    # Pure domain types (quality, presets, aspectRatio, upload contracts, ImageVariant)
+├── types/                    # Pure domain types (quality, presets, aspectRatio, errors, rateLimit, upload contracts)
 │   ├── aspectRatio.ts        # ImageAspectRatio ('1:1'|'4:5'|'9:16'|...), CropStrategy, resolveAspectRatio, aspectRatioToCss
+│   ├── errors.ts             # UploadKitError, UploadErrorCode, SerializedUploadError, isUploadKitError, isRetryableUploadError
+│   ├── rateLimit.ts          # Provider-independent RateLimiter & QuotaProvider contracts
 │   ├── quality.ts            # Quality presets & dimension configurations
 │   ├── presets.ts            # STANDARD_PRESETS (incl. square, portrait, story), defineUploadPresets, allowSvg, variantWidths
 │   └── upload.ts             # UploadedImageData (incl. deduplicated?), ImageVariant & request parameters
@@ -42,15 +44,15 @@ src/
 │   ├── xhrUpload.ts          # Universal XMLHttpRequest FormData uploader (File, Blob & RN { uri, name, type })
 │   ├── uploadTracker.ts      # Monotonic progress aggregator across parallel uploads
 │   └── uploadQueue.ts        # Bounded concurrency upload queue
-├── storage/                  # Subpath './storage' — Pluggable storage adapters (s3Adapter, supabaseAdapter, localFsAdapter, memoryAdapter)
+├── storage/                  # Subpath './storage' — s3Adapter, supabaseAdapter, localFsAdapter, memoryAdapter, migration, errorNormalizer
 ├── blur/                     # Subpath './blur' — BlurService, BlurHash decoder, fallback SVG builders, LRUCache
 ├── server/                   # Subpaths './server' & './server/handler'
 │   ├── semaphore.ts          # Concurrency throttling, queue bounds & AbortSignal for Sharp
-│   ├── handler/              # Web Standard Request / FormData + presignRoute.ts, finalizeRoute.ts, uploadToken.ts (edge-safe entry)
-│   ├── security/             # Magic-byte detector (sniffFormat.ts) & allowlist SVG sanitizer (sanitizeSvg.ts)
-│   ├── optimization/         # Sharp AVIF/WebP optimizer, smart aspect crop, single-decode LQIP/BlurHash/4-edge color
+│   ├── handler/              # Web Fetch handler + presign/finalize/delete, uploadToken (rotation+sub), rateLimitGuard, memoryRateLimiter
+│   ├── security/             # Magic-byte detector (sniffFormat), XML allowlist SVG sanitizer (svgTokenizer/svgAllowlist/sanitizeSvg), imageLimits
+│   ├── optimization/         # Sharp AVIF/WebP optimizer, focal crop, sRGB, formatNegotiator, transformCache, LQIP/BlurHash/4-edge color
 │   └── uploader/             # createImageUploader, dedupe.ts, pathGenerator.ts, uploadRetry.ts, variantGenerator.ts
-├── cli/                      # Subpath './cli' & bin 'dist/bin.js' — Manifest generator CLI
+├── cli/                      # Subpath './cli' & bin 'dist/bin.js' — Infra-aware CLI (init, doctor, validate, agents, config, blur manifest)
 ├── react/                    # Subpaths './react' & './headless'
 │   ├── types.ts, styling.ts  # Component props, reorderable/showCoverBadge/transformAsset/uploadMode, 4-tier slot types
 │   ├── icons.tsx             # Zero-dependency inlined SVG icons (no lucide-react)
@@ -80,8 +82,8 @@ src/
 ## 3. Presets, Security & Storage Contracts
 
 - **No Domain Categories**: Never hardcode app-specific categories like `'homepage'`, `'brochure'`, or `'admin-profile'`. Use standard visual roles: `thumbnail`, `avatar`, `card`, `cover`, `hero`, `logo`, `original`, `square` (`1:1`), `portrait` (`4:5`), `story` (`9:16`).
-- **Security by Default**: SVG is disabled unless `allowSvg: true` (which sanitizes via `sanitizeSvg`). Every upload is checked with `sniffImageFormat`. Client `FormData` overrides require `allowClientOverrides` in `createUploadHttpHandler`.
-- **Storage**: Implementations adhere strictly to `StorageAdapter`: `upload(params)`, `delete(bucket, path)`, optional `exists?(bucket, path)`, `stat?(bucket, path)`, `getPublicUrl?(bucket, path)`, `list?(bucket, folder?, options?)`, `deleteByUrl?(url)`, `parseUrl?(url)`, `createPresignedUpload?(params)`, and `download?(bucket, path, options?)`.
+- **Security by Default**: SVG is disabled unless `allowSvg: true` (sanitized via zero-dep XML tokenizer + strict allowlist in `svgTokenizer.ts`, `svgAllowlist.ts`, `sanitizeSvg.ts`, with optional `customSanitizer` hook). Every upload is checked with `sniffImageFormat` and `assertImageMetadataLimits`. Client `FormData` overrides require `allowClientOverrides` in `createUploadHttpHandler`. Presigned `finalize` verifies signature/expiry, `authorize`, and `sub` ownership *before* consuming `jti`.
+- **Storage**: Implementations adhere strictly to `StorageAdapter`: `upload(params)`, `delete(bucket, path)`, optional `exists?`, `stat?`, `getPublicUrl?`, `list?`, `deleteByUrl?`, `parseUrl?`, `createPresignedUpload?`, `download?`, `createPresignedDownload?`, `healthCheck?`, and multipart hooks (`createMultipartUpload?`, `uploadPart?`, `completeMultipartUpload?`, `abortMultipartUpload?`). Built-in adapters enforce `sanitizeStorageKey` and `validateStorageMetadata`.
 
 ## 4. The 4 UI Styling Tiers & Multi-Platform Parity
 
