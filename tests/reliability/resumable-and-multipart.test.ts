@@ -212,12 +212,13 @@ describe('S3-compatible multipart uploads (MemoryStorageAdapter)', () => {
     });
 
     const payload = new Uint8Array(250);
-    for (let i = 0; i < payload.byteLength; i++) payload[i] = i % 251;
+    payload.set(VALID_PNG_BYTES, 0);
+    for (let i = VALID_PNG_BYTES.byteLength; i < payload.byteLength; i++) payload[i] = i % 251;
 
     const progressEvents: number[] = [];
     const result = await uploadMultipart('https://api.test/multipart', payload, {
-      path: 'photos/large.bin',
-      contentType: 'application/octet-stream',
+      path: 'photos/large.png',
+      contentType: 'image/png',
       partSize: 64,
       concurrency: 2,
       headers: { 'x-user': 'alice' },
@@ -226,10 +227,10 @@ describe('S3-compatible multipart uploads (MemoryStorageAdapter)', () => {
     });
 
     expect(result.bucket).toBe('images');
-    expect(result.path).toBe('photos/large.bin');
+    expect(result.path).toMatch(/^[0-9a-f-]+\.png$/);
     expect(progressEvents.at(-1)).toBe(100);
 
-    const stored = storage.getObject('images', 'photos/large.bin');
+    const stored = storage.getObject('images', result.path);
     expect(stored).toBeDefined();
     expect(Array.from(stored!.data)).toEqual(Array.from(payload));
   });
@@ -257,9 +258,11 @@ describe('S3-compatible multipart uploads (MemoryStorageAdapter)', () => {
     };
 
     const payload = new Uint8Array(150);
+    payload.set(VALID_PNG_BYTES, 0);
     await expect(
       uploadMultipart('https://api.test/multipart', payload, {
-        path: 'photos/aborted.bin',
+        path: 'photos/aborted.png',
+        contentType: 'image/png',
         partSize: 50,
         concurrency: 2,
         headers: { 'x-user': 'alice' },
@@ -269,16 +272,17 @@ describe('S3-compatible multipart uploads (MemoryStorageAdapter)', () => {
     ).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
     expect(aborted).toBe(true);
-    expect(storage.getObject('images', 'photos/aborted.bin')).toBeUndefined();
+    expect((await storage.list('images', '')).items).toHaveLength(0);
 
     // Cross-user ownership check on part upload
     const initRes = await handler.POST(
       new Request('https://api.test/multipart?action=init', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-user': 'alice' },
-        body: JSON.stringify({ path: 'private/doc.bin', contentType: 'application/octet-stream' }),
+        body: JSON.stringify({ path: 'private/doc.png', contentType: 'image/png' }),
       }),
     );
+    expect(initRes.status).toBe(200);
     const { uploadId } = (await initRes.json()) as { uploadId: string };
     const bobPart = await handler.PUT(
       new Request(`https://api.test/multipart?action=part&uploadId=${uploadId}&partNumber=1`, {

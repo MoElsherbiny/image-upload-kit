@@ -3,11 +3,46 @@ import type { QuotaContext, RateLimitContext } from '../../types/rateLimit';
 import type { AuthorizeContext, UploadHttpHandlerOptions } from './options';
 import { errorResponseFromKitError } from './responses';
 
-function extractClientIp(request: Request): string | undefined {
+/** Subset of handler options consumed by `enforceRateLimit`. */
+export type RateLimitGuardOptions = Pick<
+  UploadHttpHandlerOptions,
+  'rateLimiter' | 'rateLimitKey' | 'trustProxy'
+>;
+
+/** Subset of handler options consumed by `enforceQuota` / `recordQuotaUsage`. */
+export type QuotaGuardOptions = Pick<
+  UploadHttpHandlerOptions,
+  'quotaProvider' | 'rateLimitKey' | 'trustProxy'
+>;
+
+function resolveTrustedHops(trustProxy: boolean | number | undefined): number {
+  if (trustProxy === true) return 1;
+  if (typeof trustProxy === 'number' && Number.isFinite(trustProxy) && trustProxy >= 1) {
+    return Math.floor(trustProxy);
+  }
+  return 0;
+}
+
+/**
+ * Resolves the client IP from proxy headers ONLY when `trustProxy` is enabled.
+ * With N trusted hops, picks the `X-Forwarded-For` entry N positions from the right
+ * (the address appended by your outermost trusted proxy), never the client-controlled leftmost entry.
+ */
+export function extractClientIp(
+  request: Request,
+  trustProxy?: boolean | number,
+): string | undefined {
+  const hops = resolveTrustedHops(trustProxy);
+  if (hops === 0) return undefined;
   const forwarded = request.headers.get('x-forwarded-for');
   if (forwarded) {
-    const first = forwarded.split(',')[0]?.trim();
-    if (first) return first;
+    const entries = forwarded
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    if (entries.length > 0) {
+      return entries[Math.max(0, entries.length - hops)];
+    }
   }
   const realIp = request.headers.get('x-real-ip')?.trim();
   if (realIp) return realIp;
@@ -31,18 +66,41 @@ export function resolveRateLimitKey(
   request: Request,
   subject?: string,
   customKeyFn?: (req: Request, subject?: string) => string,
+  trustProxy?: boolean | number,
 ): string {
   if (customKeyFn) {
     const custom = customKeyFn(request, subject);
     if (custom) return custom;
   }
   if (subject) return `sub:${subject}`;
-  const ip = extractClientIp(request);
+  const ip = extractClientIp(request, trustProxy);
   return ip ? `ip:${ip}` : 'anonymous';
 }
 
-export async function enforceRateLimit<TPreset extends string>(
-  options: UploadHttpHandlerOptions<TPreset>,
+function limitErrorResponse(
+  message: string,
+  code: 'RATE_LIMITED' | 'RESOURCE_LIMIT_EXCEEDED',
+  retryable: boolean,
+  rawRetryAfter: number | undefined,
+): Response {
+  const retryAfterSeconds =
+    typeof rawRetryAfter === 'number' && Number.isFinite(rawRetryAfter) && rawRetryAfter > 0
+      ? Math.ceil(rawRetryAfter)
+      : undefined;
+  const err = new UploadKitError(message, {
+    code,
+    status: 429,
+    retryable,
+    ...(retryAfterSeconds !== undefined ? { metadata: { retryAfterSeconds } } : {}),
+  });
+  return errorResponseFromKitError(
+    err,
+    retryAfterSeconds !== undefined ? { 'Retry-After': String(retryAfterSeconds) } : undefined,
+  );
+}
+
+export async function enforceRateLimit(
+  options: RateLimitGuardOptions,
   params: {
     action: RateLimitContext['action'];
     request: Request;
@@ -58,6 +116,7 @@ export async function enforceRateLimit<TPreset extends string>(
     params.request,
     params.subject,
     options.rateLimitKey,
+    options.trustProxy,
   );
   const result = await options.rateLimiter.consume({
     action: params.action,
@@ -65,111 +124,57 @@ export async function enforceRateLimit<TPreset extends string>(
     ...(params.subject ? { subject: params.subject } : {}),
     ...(params.bucket ? { bucket: params.bucket } : {}),
     ...(params.preset ? { preset: params.preset } : {}),
-    ...(params.contentLength !== undefined
-      ? { contentLength: params.contentLength }
-      : {}),
+    ...(params.contentLength !== undefined ? { contentLength: params.contentLength } : {}),
   });
 
   if (result.allowed) return null;
-
-  const retryAfterSeconds =
-    typeof result.retryAfterSeconds === 'number' &&
-    Number.isFinite(result.retryAfterSeconds) &&
-    result.retryAfterSeconds > 0
-      ? Math.ceil(result.retryAfterSeconds)
-      : undefined;
-
-  const err = new UploadKitError(result.reason ?? 'Too many requests', {
-    code: 'RATE_LIMITED',
-    status: 429,
-    retryable: true,
-    ...(retryAfterSeconds !== undefined
-      ? { metadata: { retryAfterSeconds } }
-      : {}),
-  });
-
-  return errorResponseFromKitError(
-    err,
-    retryAfterSeconds !== undefined
-      ? { 'Retry-After': String(retryAfterSeconds) }
-      : undefined,
-  );
+  return limitErrorResponse(result.reason ?? 'Too many requests', 'RATE_LIMITED', true, result.retryAfterSeconds);
 }
 
-export async function enforceQuota<TPreset extends string>(
-  options: UploadHttpHandlerOptions<TPreset>,
-  params: {
-    action: QuotaContext['action'];
-    request: Request;
-    subject?: string;
-    bytes: number;
-    bucket?: string;
-    preset?: string;
-  },
-): Promise<Response | null> {
-  if (!options.quotaProvider) return null;
+interface QuotaParams {
+  action: QuotaContext['action'];
+  request: Request;
+  subject?: string;
+  bytes: number;
+  bucket?: string;
+  preset?: string;
+}
 
+function buildQuotaContext(options: QuotaGuardOptions, params: QuotaParams): QuotaContext {
   const subject =
     params.subject ??
-    resolveRateLimitKey(params.request, undefined, options.rateLimitKey);
-
-  const result = await options.quotaProvider.check({
+    resolveRateLimitKey(params.request, undefined, options.rateLimitKey, options.trustProxy);
+  return {
     action: params.action,
     subject,
     bytes: Math.max(0, params.bytes),
     ...(params.bucket ? { bucket: params.bucket } : {}),
     ...(params.preset ? { preset: params.preset } : {}),
-  });
+  };
+}
 
+export async function enforceQuota(
+  options: QuotaGuardOptions,
+  params: QuotaParams,
+): Promise<Response | null> {
+  if (!options.quotaProvider) return null;
+  const result = await options.quotaProvider.check(buildQuotaContext(options, params));
   if (result.allowed) return null;
-
-  const retryAfterSeconds =
-    typeof result.retryAfterSeconds === 'number' &&
-    Number.isFinite(result.retryAfterSeconds) &&
-    result.retryAfterSeconds > 0
-      ? Math.ceil(result.retryAfterSeconds)
-      : undefined;
-
-  const err = new UploadKitError(result.reason ?? 'Storage quota exceeded', {
-    code: 'RESOURCE_LIMIT_EXCEEDED',
-    status: 429,
-    retryable: false,
-    ...(retryAfterSeconds !== undefined
-      ? { metadata: { retryAfterSeconds } }
-      : {}),
-  });
-
-  return errorResponseFromKitError(
-    err,
-    retryAfterSeconds !== undefined
-      ? { 'Retry-After': String(retryAfterSeconds) }
-      : undefined,
+  return limitErrorResponse(
+    result.reason ?? 'Storage quota exceeded',
+    'RESOURCE_LIMIT_EXCEEDED',
+    false,
+    result.retryAfterSeconds,
   );
 }
 
-export async function recordQuotaUsage<TPreset extends string>(
-  options: UploadHttpHandlerOptions<TPreset>,
-  params: {
-    action: QuotaContext['action'];
-    request: Request;
-    subject?: string;
-    bytes: number;
-    bucket?: string;
-    preset?: string;
-  },
+export async function recordQuotaUsage(
+  options: QuotaGuardOptions,
+  params: QuotaParams,
 ): Promise<void> {
   if (!options.quotaProvider?.recordUsage) return;
-  const subject =
-    params.subject ??
-    resolveRateLimitKey(params.request, undefined, options.rateLimitKey);
   try {
-    await options.quotaProvider.recordUsage({
-      action: params.action,
-      subject,
-      bytes: Math.max(0, params.bytes),
-      ...(params.bucket ? { bucket: params.bucket } : {}),
-      ...(params.preset ? { preset: params.preset } : {}),
-    });
+    await options.quotaProvider.recordUsage(buildQuotaContext(options, params));
   } catch {
     // Non-fatal quota telemetry failure
   }

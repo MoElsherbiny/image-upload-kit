@@ -1,44 +1,50 @@
 import { DEFAULT_ALLOWED_FORMATS } from '../../types';
-import { UploadKitError } from '../../types/errors';
+import { isRetryableUploadError } from '../../types/errors';
 import { validateImageFileStrict } from '../../utils/validators';
 import {
-  checkAllowedOrigin, generateId, guardRouteAccess, kitErrorResponse,
-  normalizeOverrides, resolveClientFolder, sanitizeFolderSegment,
+  checkAllowedOrigin,
+  generateId,
+  guardRouteAccess,
+  kitErrorResponse,
+  normalizeOverrides,
+  resolveClientFolder,
+  sanitizeFolderSegment,
 } from './guards';
 import type { AuthorizeContext, UploadHttpHandlerOptions } from './options';
 import { enforceQuota, recordQuotaUsage } from './rateLimitGuard';
 import { handleUnexpectedError, jsonResponse } from './responses';
+import {
+  createMemoryResumableSessionStore,
+  DEFAULT_RESUMABLE_SESSION_TTL_MS,
+  type MemoryResumableSessionStoreOptions,
+  type ResumableSessionRecord,
+  type ResumableSessionStore,
+} from './resumableStore';
 import { readBoundedJsonBody, readBoundedStreamBytes, sha256Hex } from './streamBody';
 
-export interface ResumableSessionRecord {
-  id: string; subject?: string; filename: string; contentType: string;
-  totalSize: number; chunkSize: number; receivedBytes: number;
-  bucket?: string; folder?: string; preset?: string; createdAt: number; expiresAt: number;
-}
-
-export interface ResumableSessionStore {
-  create(session: ResumableSessionRecord): Promise<void> | void;
-  get(sessionId: string): Promise<ResumableSessionRecord | null | undefined> | ResumableSessionRecord | null | undefined;
-  appendChunk(sessionId: string, offset: number, data: Uint8Array): Promise<ResumableSessionRecord> | ResumableSessionRecord;
-  assemble(sessionId: string): Promise<Uint8Array> | Uint8Array;
-  delete(sessionId: string): Promise<void> | void;
-  claimForCompletion?(sessionId: string): Promise<boolean> | boolean;
-  listExpired?(now: number, maxAgeMs?: number): Promise<ResumableSessionRecord[]> | ResumableSessionRecord[];
-  listAll?(): Promise<ResumableSessionRecord[]> | ResumableSessionRecord[];
-}
-
-export interface MemoryResumableSessionStoreOptions {
-  maxSessions?: number;
-  maxTotalBytes?: number;
-  now?: () => number;
-}
+export {
+  createMemoryResumableSessionStore,
+  type MemoryResumableSessionStoreOptions,
+  type ResumableSessionRecord,
+  type ResumableSessionStore,
+};
 
 export interface ResumableUploadHandlerOptions<TPreset extends string = string>
   extends Pick<
     UploadHttpHandlerOptions<TPreset>,
-    | 'uploader' | 'authorize' | 'getSubject' | 'allowedOrigins' | 'allowedPresets'
-    | 'allowedBuckets' | 'allowClientBucketOverride' | 'allowClientOverrides'
-    | 'rateLimiter' | 'quotaProvider' | 'rateLimitKey' | 'onError'
+    | 'uploader'
+    | 'authorize'
+    | 'getSubject'
+    | 'allowedOrigins'
+    | 'allowedPresets'
+    | 'allowedBuckets'
+    | 'allowClientBucketOverride'
+    | 'allowClientOverrides'
+    | 'rateLimiter'
+    | 'quotaProvider'
+    | 'rateLimitKey'
+    | 'trustProxy'
+    | 'onError'
   > {
   store?: ResumableSessionStore;
   defaultChunkSize?: number;
@@ -49,99 +55,6 @@ export interface ResumableUploadHandlerOptions<TPreset extends string = string>
 
 const DEFAULT_CHUNK_SIZE = 1024 * 1024;
 const DEFAULT_MAX_CHUNK_SIZE = 10 * 1024 * 1024;
-const DEFAULT_SESSION_TTL_MS = 3_600_000;
-const DEFAULT_MAX_SESSIONS = 500;
-const DEFAULT_MAX_TOTAL_BYTES = 256 * 1024 * 1024;
-
-type MemoryEntry = { record: ResumableSessionRecord; chunks: Map<number, Uint8Array>; bufferedBytes: number; completing: boolean };
-
-/** Dev/single-instance bounded in-memory `ResumableSessionStore`. */
-export function createMemoryResumableSessionStore(options: MemoryResumableSessionStoreOptions = {}): ResumableSessionStore {
-  const maxSessions = Math.max(1, Math.floor(options.maxSessions ?? DEFAULT_MAX_SESSIONS));
-  const maxTotalBytes = Math.max(1, Math.floor(options.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES));
-  const now = options.now ?? (() => Date.now());
-  const sessions = new Map<string, MemoryEntry>();
-  let totalBufferedBytes = 0;
-
-  const pruneExpired = (): void => {
-    const ts = now();
-    for (const [id, entry] of sessions) {
-      if (entry.record.expiresAt <= ts) {
-        totalBufferedBytes = Math.max(0, totalBufferedBytes - entry.bufferedBytes);
-        sessions.delete(id);
-      }
-    }
-  };
-  const limitErr = (msg: string) => new UploadKitError(msg, { code: 'RESOURCE_LIMIT_EXCEEDED', status: 503 });
-  const notFoundErr = () => new UploadKitError('Resumable upload session not found', { code: 'INVALID_UPLOAD_TOKEN', status: 404 });
-
-  return {
-    create(session) {
-      if ((!sessions.has(session.id) && sessions.size >= maxSessions) || totalBufferedBytes + session.totalSize > maxTotalBytes) {
-        pruneExpired();
-      }
-      if (!sessions.has(session.id) && sessions.size >= maxSessions) throw limitErr('Maximum active resumable upload sessions reached');
-      if (totalBufferedBytes + session.totalSize > maxTotalBytes) throw limitErr('Resumable upload memory limit exceeded');
-      sessions.set(session.id, { record: { ...session }, chunks: new Map(), bufferedBytes: 0, completing: false });
-    },
-    get(sessionId) {
-      const entry = sessions.get(sessionId);
-      return entry ? { ...entry.record } : null;
-    },
-    appendChunk(sessionId, offset, data) {
-      const entry = sessions.get(sessionId);
-      if (!entry) throw notFoundErr();
-      const delta = data.byteLength - (entry.chunks.get(offset)?.byteLength ?? 0);
-      if (totalBufferedBytes + delta > maxTotalBytes) {
-        pruneExpired();
-        if (!sessions.has(sessionId)) throw notFoundErr();
-      }
-      if (totalBufferedBytes + delta > maxTotalBytes) throw limitErr('Resumable upload memory limit exceeded');
-      entry.chunks.set(offset, new Uint8Array(data));
-      entry.bufferedBytes += delta;
-      totalBufferedBytes += delta;
-      let end = 0;
-      for (const off of [...entry.chunks.keys()].sort((a, b) => a - b)) {
-        if (off > end) break;
-        end = Math.max(end, off + entry.chunks.get(off)!.byteLength);
-      }
-      entry.record.receivedBytes = end;
-      return { ...entry.record };
-    },
-    assemble(sessionId) {
-      const entry = sessions.get(sessionId);
-      if (!entry) throw notFoundErr();
-      const merged = new Uint8Array(entry.record.totalSize);
-      let cursor = 0;
-      for (const off of [...entry.chunks.keys()].sort((a, b) => a - b)) {
-        if (off !== cursor) throw new UploadKitError('Resumable upload has missing chunk range', { code: 'INVALID_IMAGE', status: 400 });
-        const chunk = entry.chunks.get(off)!;
-        merged.set(chunk, off);
-        cursor += chunk.byteLength;
-      }
-      if (cursor !== entry.record.totalSize) throw new UploadKitError('Resumable upload is incomplete', { code: 'INVALID_IMAGE', status: 400 });
-      return merged;
-    },
-    claimForCompletion(sessionId) {
-      const entry = sessions.get(sessionId);
-      if (!entry || entry.completing) return false;
-      entry.completing = true;
-      return true;
-    },
-    delete(sessionId) {
-      const entry = sessions.get(sessionId);
-      if (!entry) return;
-      totalBufferedBytes = Math.max(0, totalBufferedBytes - entry.bufferedBytes);
-      sessions.delete(sessionId);
-    },
-    listExpired(ts, maxAgeMs) {
-      return [...sessions.values()].filter(({ record }) => record.expiresAt <= ts || (maxAgeMs !== undefined && ts - record.createdAt >= maxAgeMs)).map(({ record }) => ({ ...record }));
-    },
-    listAll() {
-      return [...sessions.values()].map(({ record }) => ({ ...record }));
-    },
-  };
-}
 
 /** Creates Web Fetch handlers (`POST`, `PATCH`, `DELETE`) for resumable chunked uploads. */
 export function createResumableUploadHandler<TPreset extends string = string>(
@@ -152,7 +65,7 @@ export function createResumableUploadHandler<TPreset extends string = string>(
   const store = options.store ?? createMemoryResumableSessionStore({ now });
   const defaultChunkSize = options.defaultChunkSize ?? DEFAULT_CHUNK_SIZE;
   const maxChunkSize = options.maxChunkSize ?? DEFAULT_MAX_CHUNK_SIZE;
-  const sessionTtlMs = options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
+  const sessionTtlMs = options.sessionTtlMs ?? DEFAULT_RESUMABLE_SESSION_TTL_MS;
   const completing = new Set<string>();
 
   async function guardSession(request: Request, sessionId: string, action: 'upload' | 'delete') {
@@ -195,6 +108,7 @@ export function createResumableUploadHandler<TPreset extends string = string>(
     if (quotaErr) return quotaErr;
 
     if (preset && options.allowedPresets && !options.allowedPresets.includes(preset)) return kitErrorResponse(`Invalid preset "${preset}"`, 'INVALID_IMAGE', 400, false);
+    if (preset && typeof uploader.resolvePreset === 'function' && !presetConfig) return kitErrorResponse(`Invalid preset "${preset}"`, 'INVALID_IMAGE', 400, false);
     if (rawBucket && options.allowedBuckets && !options.allowedBuckets.includes(rawBucket)) return kitErrorResponse(`Bucket "${rawBucket}" is not allowed`, 'FORBIDDEN', 403, false);
     const resolvedFolder = resolveClientFolder(rawFolder, overrides, authCtx);
     if (resolvedFolder.errorResponse) return resolvedFolder.errorResponse;
@@ -212,10 +126,12 @@ export function createResumableUploadHandler<TPreset extends string = string>(
     const chunkSize = Math.max(1, Math.min(maxChunkSize, Math.floor(Number.isFinite(reqChunk) && reqChunk > 0 ? reqChunk : defaultChunkSize)));
     const createdAt = now();
     const expiresAt = createdAt + sessionTtlMs;
-    const bucket = (options.allowClientBucketOverride ? rawBucket : undefined) || uploader.defaultBucket;
     const record: ResumableSessionRecord = {
       id: generateId(), filename, contentType, totalSize: Math.floor(totalSize), chunkSize, receivedBytes: 0, createdAt, expiresAt,
-      ...(access.subject ? { subject: access.subject } : {}), ...(bucket ? { bucket } : {}), ...(resolvedFolder.folder ? { folder: resolvedFolder.folder } : {}), ...(preset ? { preset } : {}),
+      ...(access.subject ? { subject: access.subject } : {}),
+      ...(authBucket ? { bucket: authBucket } : {}),
+      ...(resolvedFolder.folder ? { folder: resolvedFolder.folder } : {}),
+      ...(preset ? { preset } : {}),
     };
     await store.create(record);
     return jsonResponse({ sessionId: record.id, chunkSize, totalSize: record.totalSize, offset: 0, expiresAt: new Date(expiresAt).toISOString() }, 201);
@@ -233,17 +149,31 @@ export function createResumableUploadHandler<TPreset extends string = string>(
       completing.delete(session.id);
       return kitErrorResponse('Resumable upload is already being completed', 'INVALID_UPLOAD_TOKEN', 409, false);
     }
+
+    let keepSessionForRetry = false;
     try {
       const assembled = await store.assemble(session.id);
+      const presetBucket =
+        (session.preset && typeof uploader.resolvePreset === 'function'
+          ? uploader.resolvePreset(session.preset)?.bucket
+          : undefined) || uploader.defaultBucket;
+      const bucketOverride = session.bucket && session.bucket !== presetBucket ? session.bucket : undefined;
       const result = await uploader.uploadImage(
         { buffer: Buffer.from(assembled.buffer, assembled.byteOffset, assembled.byteLength), name: session.filename, type: session.contentType, size: assembled.byteLength },
-        { preset: session.preset as TPreset | undefined, bucket: session.bucket, folder: session.folder, signal: request.signal },
+        { preset: session.preset as TPreset | undefined, ...(bucketOverride ? { bucket: bucketOverride } : {}), folder: session.folder, signal: request.signal },
       );
       await recordQuotaUsage(options, { action: 'finalize', request, subject, bytes: result.size ?? assembled.byteLength, bucket: result.bucket, preset: result.preset });
       return jsonResponse(result, 200);
+    } catch (err) {
+      if (isRetryableUploadError(err)) keepSessionForRetry = true;
+      throw err;
     } finally {
       completing.delete(session.id);
-      await store.delete(session.id);
+      if (keepSessionForRetry) {
+        await store.releaseCompletion?.(session.id);
+      } else {
+        await store.delete(session.id);
+      }
     }
   }
 

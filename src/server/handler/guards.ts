@@ -180,7 +180,7 @@ export async function runAuthorize(
 export async function guardRouteAccess(
   options: Pick<
     UploadHttpHandlerOptions,
-    'allowedOrigins' | 'authorize' | 'getSubject' | 'rateLimiter' | 'rateLimitKey'
+    'allowedOrigins' | 'authorize' | 'getSubject' | 'rateLimiter' | 'rateLimitKey' | 'trustProxy'
   >,
   ctx: AuthorizeContext,
   rateAction: 'upload' | 'delete' | 'presign' | 'finalize' = ctx.action,
@@ -191,17 +191,14 @@ export async function guardRouteAccess(
   const authErr = await runAuthorize(options.authorize, ctx);
   if (authErr) return { errorResponse: authErr };
   const subject = await resolveSubject(options.getSubject, ctx);
-  const rateErr = await enforceRateLimit(
-    options as unknown as UploadHttpHandlerOptions,
-    {
-      action: rateAction,
-      request: ctx.request,
-      subject,
-      bucket: ctx.bucket,
-      preset: ctx.preset,
-      ...(contentLength !== undefined ? { contentLength } : {}),
-    },
-  );
+  const rateErr = await enforceRateLimit(options, {
+    action: rateAction,
+    request: ctx.request,
+    subject,
+    bucket: ctx.bucket,
+    preset: ctx.preset,
+    ...(contentLength !== undefined ? { contentLength } : {}),
+  });
   if (rateErr) return { errorResponse: rateErr };
   return { subject };
 }

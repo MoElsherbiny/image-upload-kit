@@ -1,22 +1,16 @@
-import type {
-  CropStrategy,
-  ExplicitOutputFormat,
-  ImageAspectRatio,
-  ImageDimensions,
-} from '../../types';
-import { resolveAspectRatio } from '../../types/aspectRatio';
+import { isRetryableUploadError } from '../../types/errors';
+import { parseFinalizeOverrides } from './finalizeOverrides';
 import {
   checkAllowedOrigin,
   kitErrorResponse,
   normalizeOverrides,
   runAuthorize,
-  sanitizeMetadataRecord,
 } from './guards';
 import type {
   AuthorizeContext,
+  UploadErrorContext,
   UploadHttpHandlerOptions,
 } from './options';
-import { readBoundedJsonBody } from './presignRoute';
 import {
   enforceQuota,
   enforceRateLimit,
@@ -24,25 +18,31 @@ import {
   resolveSubject,
 } from './rateLimitGuard';
 import { handleUnexpectedError, jsonResponse } from './responses';
-import { consumeUploadToken, verifyUploadToken } from './uploadToken';
+import { readBoundedJsonBody } from './streamBody';
+import { consumeUploadToken, releaseUploadToken, verifyUploadToken } from './uploadToken';
 
-const ALLOWED_OUTPUT_FORMATS = new Set(['jpeg', 'png', 'webp', 'avif']);
-const ALLOWED_CROP_STRATEGIES = new Set<CropStrategy>(['attention', 'entropy', 'center']);
+function reportErrorSafe(
+  onError: UploadHttpHandlerOptions['onError'],
+  error: unknown,
+  ctx: UploadErrorContext,
+): void {
+  try {
+    onError?.(error, ctx);
+  } catch {
+    // Ignore secondary logger failures
+  }
+}
 
 export async function handleFinalizeRequest<TPreset extends string>(
   request: Request,
   options: UploadHttpHandlerOptions<TPreset>,
 ): Promise<Response> {
   const { uploader, authorize, allowedOrigins, presigned, onError } = options;
+  const errCtx: UploadErrorContext = { action: 'upload', request };
 
   try {
     if (!presigned || !presigned.secret) {
-      return kitErrorResponse(
-        'Presigned uploads are not enabled on this endpoint',
-        'FORBIDDEN',
-        404,
-        false,
-      );
+      return kitErrorResponse('Presigned uploads are not enabled on this endpoint', 'FORBIDDEN', 404, false);
     }
 
     const originError = checkAllowedOrigin(request, allowedOrigins);
@@ -64,9 +64,7 @@ export async function handleFinalizeRequest<TPreset extends string>(
 
     const targetBucket =
       tokenPayload.targetBucket ??
-      (!presigned.stagingBucket || tokenPayload.bucket !== presigned.stagingBucket
-        ? tokenPayload.bucket
-        : undefined);
+      (!presigned.stagingBucket || tokenPayload.bucket !== presigned.stagingBucket ? tokenPayload.bucket : undefined);
     const authBucket = targetBucket ?? uploader.defaultBucket ?? tokenPayload.bucket;
 
     const authCtx: AuthorizeContext = {
@@ -98,22 +96,14 @@ export async function handleFinalizeRequest<TPreset extends string>(
     if (rateLimitError) return rateLimitError;
 
     // 5. Atomically consume jti only after caller is verified and authorized
-    await consumeUploadToken(
-      tokenPayload.jti,
-      tokenPayload.exp,
-      presigned.tokenStore,
-    );
+    await consumeUploadToken(tokenPayload.jti, tokenPayload.exp, presigned.tokenStore);
 
     const storage = uploader.getStorage?.() ?? uploader.storage;
     if (!storage || typeof storage.download !== 'function') {
-      return kitErrorResponse(
-        'Storage adapter does not support download for presigned finalize',
-        'STORAGE_ERROR',
-        501,
-        false,
-      );
+      return kitErrorResponse('Storage adapter does not support download for presigned finalize', 'STORAGE_ERROR', 501, false);
     }
 
+    let preserveStagedForRetry = false;
     try {
       if (typeof storage.stat === 'function') {
         const meta = await storage.stat(tokenPayload.bucket, tokenPayload.path);
@@ -129,13 +119,12 @@ export async function handleFinalizeRequest<TPreset extends string>(
 
       let stagedBytes: Uint8Array;
       try {
-        stagedBytes = await storage.download(tokenPayload.bucket, tokenPayload.path, {
-          maxBytes: tokenPayload.maxBytes,
-        });
+        stagedBytes = await storage.download(tokenPayload.bucket, tokenPayload.path, { maxBytes: tokenPayload.maxBytes });
       } catch (err) {
         if (err instanceof Error && err.message.includes('exceeds maximum allowed')) {
           return kitErrorResponse(err.message, 'FILE_TOO_LARGE', 400, false);
         }
+        if (isRetryableUploadError(err)) throw err;
         return kitErrorResponse('Staged upload object not found', 'INVALID_IMAGE', 400, false);
       }
 
@@ -161,99 +150,16 @@ export async function handleFinalizeRequest<TPreset extends string>(
       });
       if (quotaError) return quotaError;
 
-      const overrides = normalizeOverrides(options.allowClientOverrides);
       const presetConfig =
         tokenPayload.preset && typeof uploader.resolvePreset === 'function'
           ? uploader.resolvePreset(tokenPayload.preset)
           : undefined;
-
-      const altText = typeof body.altText === 'string' ? body.altText : undefined;
-      const customFilename =
-        overrides?.filename && typeof body.customFilename === 'string' && body.customFilename
-          ? body.customFilename
-          : undefined;
-
-      let outputFormat: ExplicitOutputFormat | undefined;
-      if (typeof body.outputFormat === 'string' && body.outputFormat) {
-        if (!ALLOWED_OUTPUT_FORMATS.has(body.outputFormat)) {
-          return kitErrorResponse(
-            `Invalid output format "${body.outputFormat}". Allowed formats: jpeg, png, webp, avif`,
-            'UNSUPPORTED_FORMAT',
-            400,
-            false,
-          );
-        }
-        if (overrides?.format) {
-          outputFormat = body.outputFormat as ExplicitOutputFormat;
-        }
-      }
-
-      let quality: number | undefined;
-      if (body.quality !== undefined && body.quality !== null) {
-        const q = Number(body.quality);
-        if (!Number.isFinite(q) || !Number.isInteger(q) || q < 1 || q > 100) {
-          return kitErrorResponse(
-            `Invalid quality "${body.quality}". Must be an integer between 1 and 100.`,
-            'INVALID_IMAGE',
-            400,
-            false,
-          );
-        }
-        if (overrides?.quality) {
-          quality = presetConfig?.quality ? Math.min(q, presetConfig.quality) : q;
-        }
-      }
-
-      let maxDimensions: ImageDimensions | undefined;
-      if (body.maxDimensions && typeof body.maxDimensions === 'object') {
-        const dims = body.maxDimensions as { width?: unknown; height?: unknown };
-        const w = Number(dims.width);
-        const h = Number(dims.height);
-        if (!Number.isFinite(w) || !Number.isFinite(h) || w < 1 || h < 1) {
-          return kitErrorResponse('Invalid maxWidth or maxHeight dimensions', 'INVALID_IMAGE', 400, false);
-        }
-        if (overrides?.dimensions) {
-          const cap = presetConfig?.maxDimensions;
-          maxDimensions = cap
-            ? { width: Math.min(Math.floor(w), cap.width), height: Math.min(Math.floor(h), cap.height) }
-            : { width: Math.floor(w), height: Math.floor(h) };
-        }
-      }
-
-      let aspectRatio: Exclude<ImageAspectRatio, 'auto'> | undefined;
-      if (body.aspectRatio !== undefined && body.aspectRatio !== null && body.aspectRatio !== 'auto') {
-        const numericRatio = resolveAspectRatio(body.aspectRatio as ImageAspectRatio);
-        if (numericRatio === undefined) {
-          return kitErrorResponse(`Invalid aspectRatio "${String(body.aspectRatio)}"`, 'INVALID_IMAGE', 400, false);
-        }
-        if (overrides?.aspectRatio) {
-          aspectRatio = body.aspectRatio as Exclude<ImageAspectRatio, 'auto'>;
-        }
-      }
-
-      let crop: CropStrategy | undefined;
-      if (typeof body.crop === 'string' && body.crop) {
-        const trimmedCrop = body.crop.trim() as CropStrategy;
-        if (!ALLOWED_CROP_STRATEGIES.has(trimmedCrop)) {
-          return kitErrorResponse(
-            `Invalid crop "${body.crop}". Allowed values: attention, entropy, center`,
-            'INVALID_IMAGE',
-            400,
-            false,
-          );
-        }
-        if (overrides?.aspectRatio || overrides?.crop) crop = trimmedCrop;
-      }
-
-      const metadata = sanitizeMetadataRecord(body.metadata);
+      const parsed = parseFinalizeOverrides(body, normalizeOverrides(options.allowClientOverrides), presetConfig);
+      if (parsed.errorResponse) return parsed.errorResponse;
 
       const result = await uploader.uploadImage(
         {
-          buffer: Buffer.from(
-            stagedBytes.buffer,
-            stagedBytes.byteOffset,
-            stagedBytes.byteLength,
-          ),
+          buffer: Buffer.from(stagedBytes.buffer, stagedBytes.byteOffset, stagedBytes.byteLength),
           name: tokenPayload.originalName,
           type: tokenPayload.contentType,
           size: stagedBytes.byteLength,
@@ -262,15 +168,15 @@ export async function handleFinalizeRequest<TPreset extends string>(
           preset: tokenPayload.preset as TPreset | undefined,
           folder: tokenPayload.folder,
           bucket: targetBucket,
-          altText,
-          customFilename,
-          ...(customFilename ? { isClientFilename: true } : {}),
-          outputFormat,
-          quality,
-          maxDimensions,
-          ...(aspectRatio !== undefined ? { aspectRatio } : {}),
-          ...(crop !== undefined ? { crop } : {}),
-          metadata,
+          altText: parsed.altText,
+          customFilename: parsed.customFilename,
+          ...(parsed.customFilename ? { isClientFilename: true } : {}),
+          outputFormat: parsed.outputFormat,
+          quality: parsed.quality,
+          maxDimensions: parsed.maxDimensions,
+          ...(parsed.aspectRatio !== undefined ? { aspectRatio: parsed.aspectRatio } : {}),
+          ...(parsed.crop !== undefined ? { crop: parsed.crop } : {}),
+          metadata: parsed.metadata,
           signal: request.signal,
         },
       );
@@ -285,10 +191,22 @@ export async function handleFinalizeRequest<TPreset extends string>(
       });
 
       return jsonResponse(result, 200);
+    } catch (innerErr) {
+      if (isRetryableUploadError(innerErr)) {
+        preserveStagedForRetry = true;
+        await releaseUploadToken(tokenPayload.jti, presigned.tokenStore).catch((relErr) => {
+          reportErrorSafe(onError, relErr, errCtx);
+        });
+      }
+      throw innerErr;
     } finally {
-      await storage.delete(tokenPayload.bucket, tokenPayload.path).catch(() => {});
+      if (!preserveStagedForRetry) {
+        await storage.delete(tokenPayload.bucket, tokenPayload.path).catch((cleanupErr) => {
+          reportErrorSafe(onError, cleanupErr, errCtx);
+        });
+      }
     }
   } catch (error) {
-    return handleUnexpectedError(error, { action: 'upload', request }, onError);
+    return handleUnexpectedError(error, errCtx, onError);
   }
 }

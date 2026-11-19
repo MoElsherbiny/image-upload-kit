@@ -1,7 +1,7 @@
-import type { StorageAdapter, StorageMultipartPartResult } from '../../storage/types';
+import type { StorageAdapter } from '../../storage/types';
 import { DEFAULT_ALLOWED_FORMATS } from '../../types';
-import { UploadKitError } from '../../types/errors';
 import { validateImageFileStrict } from '../../utils/validators';
+import { assertMagicBytesAllowed } from '../security/sniffFormat';
 import {
   checkAllowedOrigin,
   generateId,
@@ -11,133 +11,87 @@ import {
   sanitizeFolderSegment,
   sanitizeMetadataRecord,
 } from './guards';
+import {
+  bytesExcludingPart,
+  createMemoryMultipartSessionStore,
+  DEFAULT_MULTIPART_SESSION_TTL_MS,
+  type MemoryMultipartSessionStoreOptions,
+  type MultipartSessionRecord,
+  type MultipartSessionStore,
+  parsePartsList,
+} from './multipartStore';
 import type { AuthorizeContext, UploadHttpHandlerOptions } from './options';
 import { enforceQuota, recordQuotaUsage } from './rateLimitGuard';
 import { handleUnexpectedError, jsonResponse } from './responses';
 import { readBoundedJsonBody, readBoundedStreamBytes } from './streamBody';
 
-export interface MultipartSessionRecord {
-  uploadId: string;
-  bucket: string;
-  path: string;
-  subject?: string;
-  receivedBytes: number;
-  createdAt: number;
-  expiresAt: number;
-}
-
-export interface MultipartSessionStore {
-  create(session: MultipartSessionRecord): Promise<void> | void;
-  get(uploadId: string): Promise<MultipartSessionRecord | null | undefined> | MultipartSessionRecord | null | undefined;
-  addBytes?(uploadId: string, bytes: number): Promise<MultipartSessionRecord | null | undefined> | MultipartSessionRecord | null | undefined;
-  delete(uploadId: string): Promise<void> | void;
-}
-
-export interface MemoryMultipartSessionStoreOptions {
-  maxSessions?: number;
-  ttlMs?: number;
-  now?: () => number;
-}
+export {
+  createMemoryMultipartSessionStore,
+  type MemoryMultipartSessionStoreOptions,
+  type MultipartSessionRecord,
+  type MultipartSessionStore,
+};
 
 export interface MultipartUploadHandlerOptions
   extends Pick<
     UploadHttpHandlerOptions,
-    | 'authorize' | 'getSubject' | 'allowedOrigins' | 'allowedBuckets'
-    | 'allowClientBucketOverride' | 'rateLimiter' | 'quotaProvider' | 'rateLimitKey' | 'onError'
+    | 'authorize'
+    | 'getSubject'
+    | 'allowedOrigins'
+    | 'allowedBuckets'
+    | 'allowClientBucketOverride'
+    | 'rateLimiter'
+    | 'quotaProvider'
+    | 'rateLimitKey'
+    | 'trustProxy'
+    | 'onError'
   > {
   storage: StorageAdapter;
   store?: MultipartSessionStore;
   defaultBucket?: string;
   maxPartBytes?: number;
+  /** Maximum total bytes across all parts in a session. Defaults to 100 MB (`104_857_600`). */
   maxTotalBytes?: number;
+  /** Allowed image MIME types. Defaults to `DEFAULT_ALLOWED_FORMATS` (no `application/octet-stream`). */
   allowedFormats?: string[];
+  /** Allow clients to choose the target storage key via `body.path`. Defaults to `false`. */
   allowClientPathOverride?: boolean;
+  /**
+   * Download the assembled object after `completeMultipartUpload` and verify magic bytes with
+   * `assertMagicBytesAllowed`, deleting invalid objects and returning 400 `INVALID_IMAGE`. Defaults to `true`.
+   */
+  validateOnComplete?: boolean;
   sessionTtlMs?: number;
   now?: () => number;
 }
 
 const DEFAULT_MAX_PART_BYTES = 10 * 1024 * 1024;
-const DEFAULT_MAX_SESSIONS = 500;
-const DEFAULT_SESSION_TTL_MS = 3_600_000;
-const DEFAULT_MULTIPART_ALLOWED_FORMATS = [...DEFAULT_ALLOWED_FORMATS, 'application/octet-stream'];
-
-function parsePartsList(raw: unknown): StorageMultipartPartResult[] | null {
-  if (!Array.isArray(raw) || raw.length === 0) return null;
-  const parts: StorageMultipartPartResult[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
-    const { partNumber, etag } = item as { partNumber?: unknown; etag?: unknown };
-    if (typeof partNumber !== 'number' || !Number.isInteger(partNumber) || partNumber < 1 || typeof etag !== 'string' || etag.trim().length === 0) {
-      return null;
-    }
-    parts.push({ partNumber, etag });
-  }
-  return parts;
-}
-
-/** Dev/single-instance bounded TTL-evicting in-memory `MultipartSessionStore`. */
-export function createMemoryMultipartSessionStore(
-  options: MemoryMultipartSessionStoreOptions = {},
-): MultipartSessionStore {
-  const maxSessions = Math.max(1, Math.floor(options.maxSessions ?? DEFAULT_MAX_SESSIONS));
-  const ttlMs = Math.max(1, Math.floor(options.ttlMs ?? DEFAULT_SESSION_TTL_MS));
-  const now = options.now ?? (() => Date.now());
-  const sessions = new Map<string, MultipartSessionRecord>();
-
-  const pruneExpired = (): void => {
-    const ts = now();
-    for (const [id, entry] of sessions) {
-      if (entry.expiresAt <= ts) sessions.delete(id);
-    }
-  };
-
-  return {
-    create(session) {
-      pruneExpired();
-      if (!sessions.has(session.uploadId) && sessions.size >= maxSessions) {
-        throw new UploadKitError('Maximum active multipart upload sessions reached', { code: 'RESOURCE_LIMIT_EXCEEDED', status: 503 });
-      }
-      const createdAt = session.createdAt || now();
-      const expiresAt = session.expiresAt ? Math.min(session.expiresAt, createdAt + ttlMs) : createdAt + ttlMs;
-      sessions.set(session.uploadId, { ...session, createdAt, expiresAt });
-    },
-    get(uploadId) {
-      const entry = sessions.get(uploadId);
-      if (!entry) return null;
-      if (entry.expiresAt <= now()) {
-        sessions.delete(uploadId);
-        return null;
-      }
-      return { ...entry };
-    },
-    addBytes(uploadId, bytes) {
-      const entry = sessions.get(uploadId);
-      if (!entry) return null;
-      entry.receivedBytes += Math.max(0, bytes);
-      return { ...entry };
-    },
-    delete(uploadId) {
-      sessions.delete(uploadId);
-    },
-  };
-}
+const DEFAULT_MAX_TOTAL_BYTES = 100 * 1024 * 1024;
+const MISSING_DOWNLOAD_MESSAGE =
+  'Storage adapter does not support download() required for multipart content validation; implement storage.download or set validateOnComplete: false';
 
 /** Creates Web Fetch handlers (`POST`, `PUT`, `DELETE`) for S3-compatible multipart uploads. */
 export function createMultipartUploadHandler(options: MultipartUploadHandlerOptions) {
   const { storage, allowedOrigins, allowedBuckets, allowClientBucketOverride = false, onError } = options;
   const defaultBucket = options.defaultBucket ?? 'images';
   const maxPartBytes = options.maxPartBytes ?? DEFAULT_MAX_PART_BYTES;
-  const maxTotalBytes = options.maxTotalBytes;
-  const allowedFormats = options.allowedFormats ?? DEFAULT_MULTIPART_ALLOWED_FORMATS;
-  const allowClientPathOverride = options.allowClientPathOverride ?? true;
-  const sessionTtlMs = options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
+  const maxTotalBytes = options.maxTotalBytes ?? DEFAULT_MAX_TOTAL_BYTES;
+  const allowedFormats = options.allowedFormats ?? DEFAULT_ALLOWED_FORMATS;
+  const allowClientPathOverride = options.allowClientPathOverride ?? false;
+  const validateOnComplete = options.validateOnComplete !== false;
+  const sessionTtlMs = options.sessionTtlMs ?? DEFAULT_MULTIPART_SESSION_TTL_MS;
   const now = options.now ?? (() => Date.now());
   const store = options.store ?? createMemoryMultipartSessionStore({ ttlMs: sessionTtlMs, now });
-  const limitOpts = {
-    rateLimiter: options.rateLimiter,
-    quotaProvider: options.quotaProvider,
-    rateLimitKey: options.rateLimitKey,
-  } as unknown as UploadHttpHandlerOptions;
+
+  const deleteRejectedObject = async (bucket: string, path: string, request: Request): Promise<void> => {
+    await storage.delete(bucket, path).catch((cleanupErr) => {
+      try {
+        onError?.(cleanupErr, { action: 'upload', request });
+      } catch {
+        // Ignore secondary logger failures
+      }
+    });
+  };
 
   async function guardSession(request: Request, uploadId: string, action: 'upload' | 'delete') {
     const access = await guardRouteAccess(options, { action, request }, action);
@@ -160,6 +114,9 @@ export function createMultipartUploadHandler(options: MultipartUploadHandlerOpti
     if (typeof storage.createMultipartUpload !== 'function') {
       return kitErrorResponse('Storage adapter does not support multipart uploads', 'STORAGE_ERROR', 501, false);
     }
+    if (validateOnComplete && typeof storage.download !== 'function') {
+      return kitErrorResponse(MISSING_DOWNLOAD_MESSAGE, 'STORAGE_ERROR', 501, false);
+    }
     const { body, errorResponse } = await readBoundedJsonBody(request, 16_384);
     if (errorResponse || !body) return errorResponse!;
 
@@ -176,7 +133,7 @@ export function createMultipartUploadHandler(options: MultipartUploadHandlerOpti
     const authCtx: AuthorizeContext = { action: 'upload', request, bucket, path: targetPath };
     const access = await guardRouteAccess(options, authCtx, 'upload', declaredSize);
     if (access.errorResponse) return access.errorResponse;
-    const quotaErr = await enforceQuota(limitOpts, { action: 'upload', request, subject: access.subject, bytes: declaredSize && declaredSize > 0 ? declaredSize : 0, bucket });
+    const quotaErr = await enforceQuota(options, { action: 'upload', request, subject: access.subject, bytes: declaredSize && declaredSize > 0 ? declaredSize : 0, bucket });
     if (quotaErr) return quotaErr;
 
     if (rawBucket && allowedBuckets && !allowedBuckets.includes(rawBucket)) {
@@ -188,17 +145,17 @@ export function createMultipartUploadHandler(options: MultipartUploadHandlerOpti
     if (declaredSize !== undefined && (!Number.isFinite(declaredSize) || declaredSize <= 0)) {
       return kitErrorResponse('Invalid totalSize', 'INVALID_IMAGE', 400, false);
     }
-    if (maxTotalBytes !== undefined && declaredSize !== undefined && declaredSize > maxTotalBytes) {
+    if (declaredSize !== undefined && declaredSize > maxTotalBytes) {
       return kitErrorResponse(`Upload exceeds maximum total size of ${maxTotalBytes} bytes`, 'FILE_TOO_LARGE', 413, false);
     }
-    const maxMB = maxTotalBytes !== undefined ? maxTotalBytes / (1024 * 1024) : Number.MAX_SAFE_INTEGER;
+    const maxMB = maxTotalBytes / (1024 * 1024);
     const formatCheck = validateImageFileStrict({ size: declaredSize ?? 1, type: contentType }, maxMB, allowedFormats);
     if (!formatCheck.valid) return kitErrorResponse(formatCheck.error || 'Unsupported format', 'UNSUPPORTED_FORMAT', 400, false);
 
     const created = await storage.createMultipartUpload({ bucket, path: targetPath, contentType, metadata: sanitizeMetadataRecord(body.metadata) });
     const createdAt = now();
     await store.create({
-      uploadId: created.uploadId, bucket: created.bucket, path: created.path, receivedBytes: 0,
+      uploadId: created.uploadId, bucket: created.bucket, path: created.path, receivedBytes: 0, partSizes: {},
       createdAt, expiresAt: createdAt + sessionTtlMs, ...(access.subject ? { subject: access.subject } : {}),
     });
     return jsonResponse(created, 200);
@@ -215,25 +172,34 @@ export function createMultipartUploadHandler(options: MultipartUploadHandlerOpti
     if (!Number.isInteger(partNumber) || partNumber < 1) {
       return kitErrorResponse('partNumber must be a positive integer', 'INVALID_IMAGE', 400, false);
     }
-    if (maxTotalBytes !== undefined && session.receivedBytes >= maxTotalBytes) {
+    const priorBytes = bytesExcludingPart(session, partNumber);
+    if (priorBytes >= maxTotalBytes) {
       return kitErrorResponse('Multipart upload exceeds maximum total size', 'FILE_TOO_LARGE', 413, false);
     }
-    const limit = maxTotalBytes !== undefined ? Math.min(maxPartBytes, maxTotalBytes - session.receivedBytes) : maxPartBytes;
+    const limit = Math.min(maxPartBytes, maxTotalBytes - priorBytes);
     const { bytes, errorResponse: readErr } = await readBoundedStreamBytes(request, limit, 'Part exceeds maximum allowed size');
     if (readErr || !bytes) return readErr!;
     if (bytes.byteLength === 0) return kitErrorResponse('Multipart part body is empty', 'INVALID_IMAGE', 400, false);
 
-    const quotaErr = await enforceQuota(limitOpts, { action: 'upload', request, subject, bytes: bytes.byteLength, bucket: session.bucket });
+    const deltaBytes = Math.max(0, bytes.byteLength - (session.partSizes?.[partNumber] ?? 0));
+    const quotaErr = await enforceQuota(options, { action: 'upload', request, subject, bytes: deltaBytes, bucket: session.bucket });
     if (quotaErr) return quotaErr;
 
     const uploaded = await storage.uploadPart({ bucket: session.bucket, path: session.path, uploadId: session.uploadId, partNumber, data: bytes });
-    await store.addBytes?.(session.uploadId, bytes.byteLength);
+    if (typeof store.recordPart === 'function') {
+      await store.recordPart(session.uploadId, partNumber, bytes.byteLength);
+    } else {
+      await store.addBytes?.(session.uploadId, bytes.byteLength);
+    }
     return jsonResponse(uploaded, 200);
   }
 
   async function handleComplete(request: Request): Promise<Response> {
     if (typeof storage.completeMultipartUpload !== 'function') {
       return kitErrorResponse('Storage adapter does not support completing multipart uploads', 'STORAGE_ERROR', 501, false);
+    }
+    if (validateOnComplete && typeof storage.download !== 'function') {
+      return kitErrorResponse(MISSING_DOWNLOAD_MESSAGE, 'STORAGE_ERROR', 501, false);
     }
     const { body, errorResponse: bodyErr } = await readBoundedJsonBody(request, 65_536);
     if (bodyErr || !body) return bodyErr!;
@@ -244,7 +210,36 @@ export function createMultipartUploadHandler(options: MultipartUploadHandlerOpti
 
     const result = await storage.completeMultipartUpload({ bucket: session.bucket, path: session.path, uploadId: session.uploadId, parts });
     await store.delete(session.uploadId);
-    await recordQuotaUsage(limitOpts, { action: 'finalize', request, subject, bytes: session.receivedBytes, bucket: session.bucket });
+
+    const targetBucket = result.bucket || session.bucket;
+    const targetPath = result.path || session.path;
+    let finalBytes = session.receivedBytes;
+    if (validateOnComplete) {
+      let downloaded: Uint8Array;
+      try {
+        downloaded = await storage.download!(targetBucket, targetPath, { maxBytes: maxTotalBytes });
+      } catch (dlErr) {
+        if (dlErr instanceof Error && dlErr.message.includes('exceeds maximum allowed')) {
+          await deleteRejectedObject(targetBucket, targetPath, request);
+          return kitErrorResponse(dlErr.message, 'FILE_TOO_LARGE', 413, false);
+        }
+        throw dlErr;
+      }
+      if (downloaded.byteLength > maxTotalBytes) {
+        await deleteRejectedObject(targetBucket, targetPath, request);
+        return kitErrorResponse(`Upload exceeds maximum total size of ${maxTotalBytes} bytes`, 'FILE_TOO_LARGE', 413, false);
+      }
+      try {
+        assertMagicBytesAllowed(downloaded, allowedFormats, false);
+      } catch (valErr) {
+        await deleteRejectedObject(targetBucket, targetPath, request);
+        const msg = valErr instanceof Error ? valErr.message : 'Multipart object failed image content validation';
+        return kitErrorResponse(msg, 'INVALID_IMAGE', 400, false);
+      }
+      finalBytes = downloaded.byteLength;
+    }
+
+    await recordQuotaUsage(options, { action: 'finalize', request, subject, bytes: finalBytes, bucket: targetBucket });
     return jsonResponse(result, 200);
   }
 
