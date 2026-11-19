@@ -1,5 +1,55 @@
 import type { StorageProviderId } from '../types/detection';
 
+interface S3TemplateSpec {
+  regionExpr: string;
+  endpointExpr?: string;
+  forcePathStyle?: boolean;
+  bucketExpr: string;
+  publicBaseUrlExpr: string;
+  accessKeyExpr: string;
+  secretKeyExpr: string;
+  preamble?: string[];
+}
+
+function renderS3AdapterContent(spec: S3TemplateSpec): string {
+  const clientLines = [
+    'const s3 = new S3Client({',
+    `  region: ${spec.regionExpr},`,
+    ...(spec.endpointExpr ? [`  endpoint: ${spec.endpointExpr},`] : []),
+    ...(spec.forcePathStyle !== undefined ? [`  forcePathStyle: ${String(spec.forcePathStyle)},`] : []),
+    '  credentials: {',
+    `    accessKeyId: ${spec.accessKeyExpr},`,
+    `    secretAccessKey: ${spec.secretKeyExpr},`,
+    '  },',
+    '});',
+  ];
+
+  return [
+    'import {',
+    '  DeleteObjectCommand,',
+    '  GetObjectCommand,',
+    '  HeadObjectCommand,',
+    '  PutObjectCommand,',
+    '  S3Client,',
+    "} from '@aws-sdk/client-s3';",
+    "import { createS3StorageAdapter } from 'img-upload-kit/storage';",
+    '',
+    ...(spec.preamble ?? []),
+    `const defaultBucket = ${spec.bucketExpr};`,
+    ...clientLines,
+    '',
+    'export const uploadStorage = createS3StorageAdapter({',
+    `  publicBaseUrl: ${spec.publicBaseUrlExpr},`,
+    '  defaultBucket,',
+    '  putObject: (input) => s3.send(new PutObjectCommand(input)),',
+    '  deleteObject: (input) => s3.send(new DeleteObjectCommand(input)),',
+    '  getObject: (input) => s3.send(new GetObjectCommand(input)),',
+    '  headObject: (input) => s3.send(new HeadObjectCommand(input)),',
+    '});',
+    '',
+  ].join('\n');
+}
+
 export function buildStorageAdapterFile(storage: StorageProviderId): {
   relativePath: string;
   content: string;
@@ -9,19 +59,15 @@ export function buildStorageAdapterFile(storage: StorageProviderId): {
     return {
       relativePath: 'src/lib/upload-storage.ts',
       description: 'AWS S3 StorageAdapter configuration',
-      content: [
-        "import { createS3StorageAdapter } from 'img-upload-kit/storage';",
-        '',
-        'export const uploadStorage = createS3StorageAdapter({',
-        "  region: process.env.AWS_REGION ?? 'us-east-1',",
-        "  bucket: process.env.AWS_S3_BUCKET ?? '',",
-        '  credentials: {',
-        "    accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '',",
-        "    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '',",
-        '  },',
-        '});',
-        '',
-      ].join('\n'),
+      content: renderS3AdapterContent({
+        preamble: ["const region = process.env.AWS_REGION ?? 'us-east-1';"],
+        regionExpr: 'region',
+        bucketExpr: "process.env.AWS_S3_BUCKET ?? ''",
+        publicBaseUrlExpr:
+          'process.env.AWS_S3_PUBLIC_URL ?? `https://${defaultBucket}.s3.${region}.amazonaws.com`',
+        accessKeyExpr: "process.env.AWS_ACCESS_KEY_ID ?? ''",
+        secretKeyExpr: "process.env.AWS_SECRET_ACCESS_KEY ?? ''",
+      }),
     };
   }
 
@@ -29,77 +75,64 @@ export function buildStorageAdapterFile(storage: StorageProviderId): {
     return {
       relativePath: 'src/lib/upload-storage.ts',
       description: 'Cloudflare R2 (S3-compatible) StorageAdapter configuration',
-      content: [
-        "import { createS3StorageAdapter } from 'img-upload-kit/storage';",
-        '',
-        "const accountId = process.env.R2_ACCOUNT_ID ?? '';",
-        '',
-        'export const uploadStorage = createS3StorageAdapter({',
-        "  region: 'auto',",
-        '  endpoint: `https://${accountId}.r2.cloudflarestorage.com`,',
-        "  bucket: process.env.R2_BUCKET ?? '',",
-        '  publicBaseUrl: process.env.R2_PUBLIC_URL,',
-        '  credentials: {',
-        "    accessKeyId: process.env.R2_ACCESS_KEY_ID ?? '',",
-        "    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? '',",
-        '  },',
-        '});',
-        '',
-      ].join('\n'),
+      content: renderS3AdapterContent({
+        preamble: ["const accountId = process.env.R2_ACCOUNT_ID ?? '';"],
+        regionExpr: "'auto'",
+        endpointExpr: '`https://${accountId}.r2.cloudflarestorage.com`',
+        bucketExpr: "process.env.R2_BUCKET ?? ''",
+        publicBaseUrlExpr: 'process.env.R2_PUBLIC_URL ?? `https://${accountId}.r2.dev`',
+        accessKeyExpr: "process.env.R2_ACCESS_KEY_ID ?? ''",
+        secretKeyExpr: "process.env.R2_SECRET_ACCESS_KEY ?? ''",
+      }),
     };
   }
 
   if (storage === 'minio' || storage === 'spaces' || storage === 'b2' || storage === 'custom-s3') {
-    const endpointEnv =
-      storage === 'minio'
-        ? 'MINIO_ENDPOINT'
-        : storage === 'spaces'
-          ? 'DO_SPACES_ENDPOINT'
-          : storage === 'b2'
-            ? 'B2_ENDPOINT'
-            : 'S3_ENDPOINT';
-    const bucketEnv =
-      storage === 'minio'
-        ? 'MINIO_BUCKET'
-        : storage === 'spaces'
-          ? 'DO_SPACES_BUCKET'
-          : storage === 'b2'
-            ? 'B2_BUCKET'
-            : 'S3_BUCKET';
-    const keyEnv =
-      storage === 'minio'
-        ? 'MINIO_ACCESS_KEY'
-        : storage === 'spaces'
-          ? 'DO_SPACES_KEY'
-          : storage === 'b2'
-            ? 'B2_KEY_ID'
-            : 'S3_ACCESS_KEY_ID';
-    const secretEnv =
-      storage === 'minio'
-        ? 'MINIO_SECRET_KEY'
-        : storage === 'spaces'
-          ? 'DO_SPACES_SECRET'
-          : storage === 'b2'
-            ? 'B2_APPLICATION_KEY'
-            : 'S3_SECRET_ACCESS_KEY';
+    const configByProvider = {
+      minio: {
+        regionExpr: "process.env.S3_REGION ?? 'us-east-1'",
+        endpointExpr: "process.env.MINIO_ENDPOINT ?? 'http://localhost:9000'",
+        bucketExpr: "process.env.MINIO_BUCKET ?? ''",
+        publicBaseUrlExpr:
+          "process.env.MINIO_PUBLIC_URL ?? process.env.MINIO_ENDPOINT ?? 'http://localhost:9000'",
+        accessKeyExpr: "process.env.MINIO_ACCESS_KEY ?? ''",
+        secretKeyExpr: "process.env.MINIO_SECRET_KEY ?? ''",
+        forcePathStyle: true,
+      },
+      spaces: {
+        regionExpr: "process.env.DO_SPACES_REGION ?? 'nyc3'",
+        endpointExpr: "process.env.DO_SPACES_ENDPOINT ?? ''",
+        bucketExpr: "process.env.DO_SPACES_BUCKET ?? ''",
+        publicBaseUrlExpr:
+          "process.env.DO_SPACES_PUBLIC_URL ?? process.env.DO_SPACES_ENDPOINT ?? ''",
+        accessKeyExpr: "process.env.DO_SPACES_KEY ?? ''",
+        secretKeyExpr: "process.env.DO_SPACES_SECRET ?? ''",
+        forcePathStyle: false,
+      },
+      b2: {
+        regionExpr: "process.env.B2_REGION ?? 'us-west-004'",
+        endpointExpr: "process.env.B2_ENDPOINT ?? ''",
+        bucketExpr: "process.env.B2_BUCKET ?? ''",
+        publicBaseUrlExpr: "process.env.B2_PUBLIC_URL ?? process.env.B2_ENDPOINT ?? ''",
+        accessKeyExpr: "process.env.B2_KEY_ID ?? ''",
+        secretKeyExpr: "process.env.B2_APPLICATION_KEY ?? ''",
+        forcePathStyle: false,
+      },
+      'custom-s3': {
+        regionExpr: "process.env.S3_REGION ?? 'us-east-1'",
+        endpointExpr: "process.env.S3_ENDPOINT ?? ''",
+        bucketExpr: "process.env.S3_BUCKET ?? ''",
+        publicBaseUrlExpr: "process.env.S3_PUBLIC_URL ?? process.env.S3_ENDPOINT ?? ''",
+        accessKeyExpr: "process.env.S3_ACCESS_KEY_ID ?? ''",
+        secretKeyExpr: "process.env.S3_SECRET_ACCESS_KEY ?? ''",
+        forcePathStyle: false,
+      },
+    }[storage];
+
     return {
       relativePath: 'src/lib/upload-storage.ts',
       description: `${storage} S3-compatible StorageAdapter configuration`,
-      content: [
-        "import { createS3StorageAdapter } from 'img-upload-kit/storage';",
-        '',
-        'export const uploadStorage = createS3StorageAdapter({',
-        "  region: process.env.S3_REGION ?? 'us-east-1',",
-        `  endpoint: process.env.${endpointEnv},`,
-        `  bucket: process.env.${bucketEnv} ?? '',`,
-        `  forcePathStyle: ${storage === 'minio' ? 'true' : 'false'},`,
-        '  credentials: {',
-        `    accessKeyId: process.env.${keyEnv} ?? '',`,
-        `    secretAccessKey: process.env.${secretEnv} ?? '',`,
-        '  },',
-        '});',
-        '',
-      ].join('\n'),
+      content: renderS3AdapterContent(configByProvider),
     };
   }
 
@@ -108,13 +141,15 @@ export function buildStorageAdapterFile(storage: StorageProviderId): {
       relativePath: 'src/lib/upload-storage.ts',
       description: 'Supabase StorageAdapter configuration',
       content: [
+        "import { createClient } from '@supabase/supabase-js';",
         "import { createSupabaseStorageAdapter } from 'img-upload-kit/storage';",
         '',
-        'export const uploadStorage = createSupabaseStorageAdapter({',
-        "  supabaseUrl: process.env.SUPABASE_URL ?? '',",
-        "  supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',",
-        "  bucket: process.env.SUPABASE_STORAGE_BUCKET ?? 'uploads',",
-        '});',
+        'const supabase = createClient(',
+        "  process.env.SUPABASE_URL ?? '',",
+        "  process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',",
+        ');',
+        '',
+        'export const uploadStorage = createSupabaseStorageAdapter(supabase);',
         '',
       ].join('\n'),
     };
@@ -170,7 +205,7 @@ export function buildStorageAdapterFile(storage: StorageProviderId): {
       '',
       'export const uploadStorage = createLocalFsStorageAdapter({',
       "  rootDir: process.env.UPLOAD_DIR ?? './public/uploads',",
-      "  publicBaseUrl: process.env.UPLOAD_PUBLIC_BASE_URL ?? '/uploads',",
+      "  baseUrl: process.env.UPLOAD_PUBLIC_BASE_URL ?? '/uploads',",
       '});',
       '',
     ].join('\n'),

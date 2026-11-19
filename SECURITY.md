@@ -6,9 +6,8 @@ Only the latest `2.x` release line of `img-upload-kit` receives security updates
 
 | Version | Supported |
 |---|---|
-| `2.2.x` | ✅ Supported |
-| `2.1.x` | ✅ Supported |
-| `< 2.1.0` | ❌ Upgrade to `>= 2.2.0` |
+| `2.x` | ✅ Supported |
+| `< 2.0.0` | ❌ Upgrade to `>= 2.x` |
 
 ---
 
@@ -20,7 +19,7 @@ Only the latest `2.x` release line of `img-upload-kit` receives security updates
 - **Defense-in-Depth Upload Verification**:
   - Magic-byte signature sniffing (`sniffImageFormat`) validates every upload buffer against allowed image formats before decoding.
   - SVG uploads are disabled by default (`allowSvg: false`) and sanitized through an allowlist sanitizer (`sanitizeSvg`) when explicitly enabled.
-  - Sharp pixel-bomb protection (`limitInputPixels: 50_000_000`) and bounded concurrency (`createSemaphore`) prevent memory exhaustion.
+  - Sharp pixel-bomb protection (`limitInputPixels: 50_000_000`) and bounded concurrency (`AsyncSemaphore`) prevent memory exhaustion.
   - Presigned upload tokens (`signUploadToken` / `verifyUploadToken`) use WebCrypto HMAC-SHA256 with constant-time comparison, short TTLs, and single-use replay protection.
 
 ---
