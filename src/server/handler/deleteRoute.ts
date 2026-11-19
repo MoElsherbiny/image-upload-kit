@@ -1,5 +1,5 @@
 import { parsePublicStorageUrl } from '../../storage/urlParser';
-import { checkAllowedOrigin, runAuthorize } from './guards';
+import { checkAllowedOrigin, kitErrorResponse, runAuthorize } from './guards';
 import type { AuthorizeContext, UploadHttpHandlerOptions } from './options';
 import { enforceRateLimit, resolveSubject } from './rateLimitGuard';
 import { handleUnexpectedError, jsonResponse } from './responses';
@@ -102,9 +102,11 @@ export function createDeleteHandler<TPreset extends string>(
             allowedBuckets.length > 0 &&
             !allowedBuckets.includes(parsedFromUrl.bucket)
           ) {
-            return jsonResponse(
-              { error: `Forbidden bucket "${parsedFromUrl.bucket}"` },
+            return kitErrorResponse(
+              `Forbidden bucket "${parsedFromUrl.bucket}"`,
+              'FORBIDDEN',
               403,
+              false,
             );
           }
           if (
@@ -112,15 +114,28 @@ export function createDeleteHandler<TPreset extends string>(
             allowedBucketSet.size > 0 &&
             !allowedBucketSet.has(parsedFromUrl.bucket)
           ) {
-            return jsonResponse(
-              { error: `Forbidden bucket "${parsedFromUrl.bucket}"` },
+            return kitErrorResponse(
+              `Forbidden bucket "${parsedFromUrl.bucket}"`,
+              'FORBIDDEN',
               403,
+              false,
             );
           }
         }
 
         const deleted = await uploader.deleteByUrl(url);
-        return jsonResponse({ success: deleted }, deleted ? 200 : 400);
+        if (!deleted) {
+          return jsonResponse(
+            {
+              success: false,
+              error: 'Image not found or could not be deleted',
+              code: 'INVALID_IMAGE',
+              retryable: false,
+            },
+            400,
+          );
+        }
+        return jsonResponse({ success: true }, 200);
       }
 
       if (bucketParam) {
@@ -129,9 +144,11 @@ export function createDeleteHandler<TPreset extends string>(
           allowedBuckets.length > 0 &&
           !allowedBuckets.includes(bucketParam)
         ) {
-          return jsonResponse(
-            { error: `Forbidden bucket "${bucketParam}"` },
+          return kitErrorResponse(
+            `Forbidden bucket "${bucketParam}"`,
+            'FORBIDDEN',
             403,
+            false,
           );
         }
         if (
@@ -139,17 +156,21 @@ export function createDeleteHandler<TPreset extends string>(
           allowedBucketSet.size > 0 &&
           !allowedBucketSet.has(bucketParam)
         ) {
-          return jsonResponse(
-            { error: `Forbidden bucket "${bucketParam}"` },
+          return kitErrorResponse(
+            `Forbidden bucket "${bucketParam}"`,
+            'FORBIDDEN',
             403,
+            false,
           );
         }
       }
 
       if (!storagePath) {
-        return jsonResponse(
-          { error: 'Missing required "path" or "url" query parameter' },
+        return kitErrorResponse(
+          'Missing required "path" or "url" query parameter',
+          'INVALID_IMAGE',
           400,
+          false,
         );
       }
 

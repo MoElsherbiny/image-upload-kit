@@ -6,12 +6,17 @@ import type {
   ImageUploadOptions,
 } from '../../types';
 import { resolveAspectRatio } from '../../types/aspectRatio';
-import { normalizeOverrides, sanitizeFolderSegment } from './guards';
+import {
+  kitErrorResponse,
+  normalizeOverrides,
+  resolveClientFolder,
+  sanitizeFolderSegment,
+  sanitizeMetadataRecord,
+} from './guards';
 import type {
   AuthorizeContext,
   UploadHttpHandlerOptions,
 } from './options';
-import { jsonResponse } from './responses';
 
 const ALLOWED_OUTPUT_FORMATS = new Set(['jpeg', 'png', 'webp', 'avif']);
 const ALLOWED_CROP_STRATEGIES = new Set<CropStrategy>(['attention', 'entropy', 'center']);
@@ -19,18 +24,11 @@ const ALLOWED_CROP_STRATEGIES = new Set<CropStrategy>(['attention', 'entropy', '
 function parseJsonRecord(raw: string | null): Record<string, string> | undefined {
   if (!raw) return undefined;
   try {
-    const parsed: unknown = JSON.parse(raw);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const clean: Record<string, string> = {};
-      for (const [k, v] of Object.entries(parsed)) {
-        if (v !== undefined && v !== null) clean[k] = String(v);
-      }
-      return Object.keys(clean).length > 0 ? clean : undefined;
-    }
+    return sanitizeMetadataRecord(JSON.parse(raw));
   } catch {
     // Ignore malformed metadata JSON
+    return undefined;
   }
-  return undefined;
 }
 
 export function peekUploadAuthContext<TPreset extends string>(
@@ -77,7 +75,7 @@ export function parseUploadForm<TPreset extends string>(
   options: UploadHttpHandlerOptions<TPreset>,
 ): ParsedUploadFormResult<TPreset> {
   if (!formData) {
-    return { errorResponse: jsonResponse({ error: 'No file provided' }, 400) };
+    return { errorResponse: kitErrorResponse('No file provided', 'INVALID_IMAGE', 400, false) };
   }
 
   const file = formData.get('file') as File | null;
@@ -86,10 +84,10 @@ export function parseUploadForm<TPreset extends string>(
     typeof file === 'string' ||
     (typeof file.size === 'number' && file.size === 0 && !file.name)
   ) {
-    return { errorResponse: jsonResponse({ error: 'No file provided' }, 400) };
+    return { errorResponse: kitErrorResponse('No file provided', 'INVALID_IMAGE', 400, false) };
   }
   if (typeof file.size === 'number' && file.size === 0) {
-    return { errorResponse: jsonResponse({ error: 'File is empty' }, 400) };
+    return { errorResponse: kitErrorResponse('File is empty', 'INVALID_IMAGE', 400, false) };
   }
 
   const { uploader, allowedPresets, allowClientBucketOverride = false, allowedBuckets } = options;
@@ -99,14 +97,18 @@ export function parseUploadForm<TPreset extends string>(
   if (preset) {
     if (allowedPresets && allowedPresets.length > 0 && !allowedPresets.includes(preset)) {
       return {
-        errorResponse: jsonResponse(
-          { error: `Invalid preset "${preset}". Allowed presets: ${allowedPresets.join(', ')}` },
+        errorResponse: kitErrorResponse(
+          `Invalid preset "${preset}". Allowed presets: ${allowedPresets.join(', ')}`,
+          'INVALID_IMAGE',
           400,
+          false,
         ),
       };
     }
     if (typeof uploader.resolvePreset === 'function' && !uploader.resolvePreset(preset)) {
-      return { errorResponse: jsonResponse({ error: `Invalid preset "${preset}".` }, 400) };
+      return {
+        errorResponse: kitErrorResponse(`Invalid preset "${preset}".`, 'INVALID_IMAGE', 400, false),
+      };
     }
   }
 
@@ -117,23 +119,16 @@ export function parseUploadForm<TPreset extends string>(
 
   const rawBucket = (formData.get('bucket') as string | null) || undefined;
   if (rawBucket && allowedBuckets && !allowedBuckets.includes(rawBucket)) {
-    return { errorResponse: jsonResponse({ error: `Bucket "${rawBucket}" is not allowed` }, 403) };
+    return {
+      errorResponse: kitErrorResponse(`Bucket "${rawBucket}" is not allowed`, 'FORBIDDEN', 403, false),
+    };
   }
   const bucket = allowClientBucketOverride ? rawBucket : undefined;
 
-  let folder: string | undefined;
   const rawFolder = (formData.get('folder') as string | null) || undefined;
-  if (rawFolder !== undefined) {
-    if (overrides?.folder === true) {
-      folder = sanitizeFolderSegment(rawFolder) || undefined;
-    } else if (typeof overrides?.folder === 'function') {
-      const scoped = overrides.folder(rawFolder, authCtx);
-      if (scoped === null) {
-        return { errorResponse: jsonResponse({ error: 'Invalid or disallowed folder' }, 400) };
-      }
-      folder = scoped ? sanitizeFolderSegment(scoped) : undefined;
-    }
-  }
+  const resolvedFolder = resolveClientFolder(rawFolder, overrides, authCtx);
+  if (resolvedFolder.errorResponse) return { errorResponse: resolvedFolder.errorResponse };
+  const folder = resolvedFolder.folder;
 
   const rawFilename = (formData.get('customFilename') as string | null) || undefined;
   const customFilename = overrides?.filename ? rawFilename : undefined;
@@ -141,9 +136,11 @@ export function parseUploadForm<TPreset extends string>(
   const outputFormatRaw = formData.get('outputFormat') as string | null;
   if (outputFormatRaw && !ALLOWED_OUTPUT_FORMATS.has(outputFormatRaw)) {
     return {
-      errorResponse: jsonResponse(
-        { error: `Invalid output format "${outputFormatRaw}". Allowed formats: jpeg, png, webp, avif` },
+      errorResponse: kitErrorResponse(
+        `Invalid output format "${outputFormatRaw}". Allowed formats: jpeg, png, webp, avif`,
+        'UNSUPPORTED_FORMAT',
         400,
+        false,
       ),
     };
   }
@@ -158,9 +155,11 @@ export function parseUploadForm<TPreset extends string>(
     const parsedQuality = Number(qualityRaw);
     if (!Number.isFinite(parsedQuality) || !Number.isInteger(parsedQuality) || parsedQuality < 1 || parsedQuality > 100) {
       return {
-        errorResponse: jsonResponse(
-          { error: `Invalid quality "${qualityRaw}". Must be an integer between 1 and 100.` },
+        errorResponse: kitErrorResponse(
+          `Invalid quality "${qualityRaw}". Must be an integer between 1 and 100.`,
+          'INVALID_IMAGE',
           400,
+          false,
         ),
       };
     }
@@ -176,7 +175,9 @@ export function parseUploadForm<TPreset extends string>(
     const w = Number(maxWidthRaw);
     const h = Number(maxHeightRaw);
     if (!Number.isFinite(w) || !Number.isFinite(h) || w < 1 || h < 1) {
-      return { errorResponse: jsonResponse({ error: 'Invalid maxWidth or maxHeight dimensions' }, 400) };
+      return {
+        errorResponse: kitErrorResponse('Invalid maxWidth or maxHeight dimensions', 'INVALID_IMAGE', 400, false),
+      };
     }
     if (overrides?.dimensions) {
       const cap = presetConfig?.maxDimensions;
@@ -193,7 +194,9 @@ export function parseUploadForm<TPreset extends string>(
     if (trimmedRatio !== 'auto') {
       const numericRatio = resolveAspectRatio(trimmedRatio);
       if (numericRatio === undefined) {
-        return { errorResponse: jsonResponse({ error: `Invalid aspectRatio "${aspectRatioRaw}"` }, 400) };
+        return {
+          errorResponse: kitErrorResponse(`Invalid aspectRatio "${aspectRatioRaw}"`, 'INVALID_IMAGE', 400, false),
+        };
       }
       if (overrides?.aspectRatio) {
         aspectRatio = (
@@ -209,9 +212,11 @@ export function parseUploadForm<TPreset extends string>(
     const trimmedCrop = cropRaw.trim() as CropStrategy;
     if (!ALLOWED_CROP_STRATEGIES.has(trimmedCrop)) {
       return {
-        errorResponse: jsonResponse(
-          { error: `Invalid crop "${cropRaw}". Allowed values: attention, entropy, center` },
+        errorResponse: kitErrorResponse(
+          `Invalid crop "${cropRaw}". Allowed values: attention, entropy, center`,
+          'INVALID_IMAGE',
           400,
+          false,
         ),
       };
     }
