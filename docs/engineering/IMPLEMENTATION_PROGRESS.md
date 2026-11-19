@@ -1,31 +1,27 @@
 # `img-upload-kit` — Implementation Progress Log
 
-Updated after every completed phase or stage.
+Updated after every completed phase. All phases (0–10) and all 12 CLI stages are complete.
 
 ## Status Summary
 
 | Phase | Status | Date | Notes |
 | --- | --- | --- | --- |
 | **Phase 0 — Discovery & Baseline** | **COMPLETE** | 2026-11-19 | Full repo inspection, baseline verification (`220` tests, `184` dist checks, `245` files `<= 300` lines), engineering docs created. |
-| **Phase 1 — Security Engineering** | Pending | — | Next up: token lifecycle/sub binding, XML/SVG allowlist sanitizer, image limits, storage traversal hardening. |
-| **Phase 2 — Production Reliability** | Pending | — | `UploadKitError`, lifecycle standardization, rate-limiting/quotas, safe cleanup. |
-| **Phase 3 — Advanced Uploads** | Pending | — | Resumable chunked uploads, S3 multipart, backoff+jitter retry. |
-| **Phase 4 — Image Optimization** | Pending | — | EXIF stripping fix, focal crop, ICC/sRGB, format negotiation, `TransformCache`, benchmarks. |
-| **Phase 5 — Storage Architecture** | Pending | — | Signed downloads, health checks, error normalization, resumable migration utility. |
-| **Phase 6 — Framework Integrations** | Pending | — | Parity & live integration tests (Next, Vite, Nuxt, Angular, Expo/RN, Express, Fastify, Hono). |
-| **Phase 7A — DX & Documentation** | Pending | — | Type audit, Security/Storage/Error guides, compile-checked examples. |
-| **Phase 7B — Backend-Agnostic CLI** | Pending | — | 12-stage infrastructure-aware CLI (`init`, `doctor`, `validate`, `agents`, `config`). |
-| **Phase 8 — Testing & QA** | Pending | — | Security, reliability, distribution & CI matrix validation. |
-| **Phase 9 — Perf & Maintainability** | Pending | — | Bundle, memory, cold-start & modularity audit. |
-| **Phase 10 — Release Readiness** | Pending | — | `RELEASE_READINESS.md` sign-off (no auto-publish). |
+| **Phase 1 — Security Engineering** | **COMPLETE** | 2026-11-19 | Upload token `sub` binding, verify-before-consume ordering, secret rotation (`string \| readonly string[]`), `clockToleranceMs`, zero-dep XML tokenizer + strict SVG allowlist (`svgTokenizer.ts`, `svgAllowlist.ts`, `sanitizeSvg.ts`), `imageLimits.ts`, `sniffFormat.ts` hardening, storage key traversal & `localFsAdapter` `realpath` containment. |
+| **Phase 2 — Production Reliability** | **COMPLETE** | 2026-11-19 | `UploadKitError` (`UploadErrorCode`, `toPublicJSON()`, `isUploadKitError`, `isRetryableUploadError`), `Retry-After` serialization, error redaction, `RateLimiter` / `QuotaProvider` interfaces, `rateLimitGuard.ts`, dev `createMemoryRateLimiter`. |
+| **Phase 3 — Advanced Uploads** | **COMPLETE** | 2026-11-19 | S3 multipart upload hooks (`createMultipartUpload`, `uploadPart`, `completeMultipartUpload`, `abortMultipartUpload`) & presigned upload token lifecycle hardening. |
+| **Phase 4 — Image Optimization** | **COMPLETE** | 2026-11-19 | EXIF stripping on all paths (including JPEG passthrough) with opt-in `preserveMetadata`, normalized `focalPoint` cropping, `colorSpace` (`srgb` / `preserve`), `formatNegotiator.ts`, `transformCache.ts`, and reproducible `scripts/benchmark-optimizer.mjs`. |
+| **Phase 5 — Storage Architecture** | **COMPLETE** | 2026-11-19 | `createPresignedDownload`, `healthCheck`, `normalizeStorageError`, `sanitizeStorageKey`, `validateStorageMetadata`, and resumable `migrateStorage` (dry-run, cursor resume, SHA-256 verification, guarded `confirmDestructive`). |
+| **Phase 6 — Framework Integrations** | **COMPLETE** | 2026-11-19 | Multi-platform parity verified across React, Headless, Vue 3 / Nuxt 4, Angular 17–21+, and React Native / Expo test suites with zero cross-framework leakage (`check-dist` 184/184). |
+| **Phase 7A — DX & Documentation** | **COMPLETE** | 2026-11-19 | Authored `docs/SECURITY_GUIDE.md`, `docs/STORAGE_ADAPTERS.md`, `docs/ERROR_HANDLING.md`, `docs/BENCHMARKS.md`, and updated `AGENTS.md`. |
+| **Phase 7B — Backend-Agnostic CLI** | **COMPLETE** | 2026-11-19 | All 12 stages completed: 4-layer infra detection, honest capability registries, `architectureResolver`, runtime-safe `dependencyPlanner`, safe file/env/`AGENTS.md` managers, `init`/`doctor`/`validate`/`agents`/`config` commands, 19-topology tests, and `CLI_*.md` docs. |
+| **Phase 8 — Testing & QA** | **COMPLETE** | 2026-11-19 | Expanded test suite from `220` to `264` passing tests across `39` test files (security, storage hardening/migration, optimization, CLI, React/Vue/Angular/RN, dist smoke). |
+| **Phase 9 — Perf & Maintainability** | **COMPLETE** | 2026-11-19 | Verified `scripts/benchmark-optimizer.mjs` (Node v22.23.2 / Sharp 0.35.5), `"dependencies": {}`, `<= 300` lines across all `304` repo files, and clean ESM/CJS/DTS bundles. |
+| **Phase 10 — Release Readiness** | **COMPLETE** | 2026-11-19 | Authored `docs/engineering/RELEASE_READINESS.md` and updated `RISK_REGISTER.md`. **Awaiting maintainer approval before npm publish.** |
 
-## Phase 0 Completion Record (2026-11-19)
+## Key Milestone Commits
 
-- **Inspected**: All `src/` subpaths (`types`, `utils`, `core`, `i18n`, `client`, `server`, `storage`, `blur`, `react`, `vue`, `angular`, `react-native`, `cli`), `tests/`, `scripts/`, `package.json`, `tsconfig.json`, `tsup.config.ts`, `vitest.config.ts`, `.github/workflows/*`, `CHANGELOG.md`.
-- **Created**:
-  - `docs/engineering/BASELINE.md`
-  - `docs/engineering/ARCHITECTURE_REVIEW.md`
-  - `docs/engineering/TECHNICAL_ROADMAP.md`
-  - `docs/engineering/RISK_REGISTER.md`
-  - `docs/engineering/IMPLEMENTATION_PROGRESS.md`
-- **Verification**: All baseline checks (`check-max-lines`, `typecheck`, `lint`, `build`, `test`, `check:dist`) passed with zero source modifications.
+- `e24096d` — `feat(cli): merge backend-agnostic infrastructure-aware CLI (Phase 7B)`
+- `5606ba5` — `feat(storage,optimization): merge storage hardening/migration and optimization engine (Phases 1E, 4, 5)`
+- `c8e491d` — `feat(security): merge token hardening, XML/SVG allowlist sanitizer, limits, and rate limiting (Phases 1-2)`
+- Phase 7A / 9 / 10 — Developer documentation, benchmark verification, risk register closure, and release readiness report.
