@@ -5,11 +5,37 @@ export * from './generator';
 export * from './validation';
 export * from './tui';
 export * from './init';
+export * from './types/detection';
+export * from './types/architecture';
+export * from './capabilities/storageRegistry';
+export * from './capabilities/runtimeRegistry';
+export * from './detection/envInspector';
+export * from './detection/layerDetectors';
+export * from './detection/projectDetector';
+export * from './recommendations/architectureResolver';
+export * from './recommendations/dependencyPlanner';
+export * from './filesystem/fileManager';
+export * from './filesystem/envManager';
+export * from './filesystem/agentsManager';
+export * from './generators/envTemplate';
+export * from './generators/agentsTemplate';
+export * from './generators/storageTemplates';
+export * from './generators/frameworkTemplates';
+export * from './generators/scaffoldPlanner';
+export * from './validation/projectValidator';
+export * from './validation/doctorEngine';
+export * from './commands/doctorCommand';
+export * from './commands/validateCommand';
+export * from './commands/agentsCommand';
+export * from './commands/configCommand';
 export { createCliProgram };
 
 const CLI_SUBCOMMANDS = new Set([
   'init',
   'setup',
+  'doctor',
+  'agents',
+  'config',
   'generate',
   'validate',
   'sync',

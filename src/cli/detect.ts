@@ -1,10 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { SelectOption } from './tui';
+import type { PackageManagerName } from './types/detection';
 
+export type { PackageManagerName };
 export type InitFramework = 'react' | 'vue' | 'angular' | 'react-native' | 'server' | 'client';
 export type InitStorageAdapter = 'local' | 's3' | 'supabase' | 'memory';
-export type PackageManagerName = 'npm' | 'pnpm' | 'yarn' | 'bun';
 
 export interface DetectedEnvironment {
   pm: PackageManagerName;
