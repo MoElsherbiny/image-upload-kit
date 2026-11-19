@@ -6,6 +6,15 @@ import type {
   ImageOutputFormat,
 } from '../../types';
 
+export interface FocalPoint {
+  /** Normalized horizontal coordinate in [0, 1] (0 = left, 0.5 = center, 1 = right) */
+  x: number;
+  /** Normalized vertical coordinate in [0, 1] (0 = top, 0.5 = center, 1 = bottom) */
+  y: number;
+}
+
+export type OutputColorSpace = 'srgb' | 'preserve';
+
 export interface OptimizedImageResult {
   buffer: Buffer;
   width: number;
@@ -28,12 +37,24 @@ export interface OptimizeImageOptions {
   aspectRatio?: Exclude<ImageAspectRatio, 'auto'>;
   /** Smart crop focus strategy when `aspectRatio` is configured. Defaults to `'attention'`. */
   crop?: CropStrategy;
+  /** Normalized [0, 1] focal point for aspect-ratio cropping (overrides `crop` position when set). */
+  focalPoint?: FocalPoint;
   /** Explicit output format; omit for smart size-guarded AVIF/WebP selection */
   outputFormat?: ExplicitOutputFormat;
   /** 1–100 compression quality. Defaults to smart photo/graphic heuristic (85–88). */
   quality?: number;
   /** Maximum input pixel count allowed by Sharp (defaults to 50 MP = 50,000,000) */
   limitInputPixels?: number;
+  /** Maximum allowed oriented input width in pixels before rejecting with validation error. */
+  maxWidth?: number;
+  /** Maximum allowed oriented input height in pixels before rejecting with validation error. */
+  maxHeight?: number;
+  /** Maximum allowed animation frames/pages before rejecting with validation error. */
+  maxFrames?: number;
+  /** Output color space conversion (`'srgb'` normalizes wide-gamut/CMYK to sRGB; `'preserve'` keeps source). */
+  colorSpace?: OutputColorSpace;
+  /** Preserve EXIF/ICC metadata instead of stripping it. Defaults to `false`. */
+  preserveMetadata?: boolean;
   /** AVIF/WebP encoding effort (defaults to 6) */
   effort?: number;
 }

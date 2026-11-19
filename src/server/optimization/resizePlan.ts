@@ -4,12 +4,21 @@ import {
   type ImageAspectRatio,
   resolveAspectRatio,
 } from '../../types/aspectRatio';
+import type { FocalPoint } from './types';
+
+export interface ExtractRegion {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
 
 export interface CoverResizePlan {
   width: number;
   height: number;
   fit: 'cover';
   position: CropStrategy;
+  extract?: ExtractRegion;
 }
 
 export interface InsideResizePlan {
@@ -28,6 +37,7 @@ export interface BuildResizePlanOptions {
   maxDimensions: ImageDimensions;
   aspectRatio?: ImageAspectRatio;
   crop?: CropStrategy;
+  focalPoint?: FocalPoint;
 }
 
 export function needsAspectCrop(
@@ -41,6 +51,37 @@ export function needsAspectCrop(
   return Math.abs(srcWidth / srcHeight - r) > 0.01;
 }
 
+function computeFocalExtract(
+  srcWidth: number,
+  srcHeight: number,
+  targetRatio: number,
+  focalPoint: FocalPoint,
+): ExtractRegion {
+  const fx = Math.max(0, Math.min(1, Number.isFinite(focalPoint.x) ? focalPoint.x : 0.5));
+  const fy = Math.max(0, Math.min(1, Number.isFinite(focalPoint.y) ? focalPoint.y : 0.5));
+
+  let cropWidth: number;
+  let cropHeight: number;
+  if (srcWidth / srcHeight > targetRatio) {
+    cropHeight = srcHeight;
+    cropWidth = Math.max(1, Math.min(srcWidth, Math.round(srcHeight * targetRatio)));
+  } else {
+    cropWidth = srcWidth;
+    cropHeight = Math.max(1, Math.min(srcHeight, Math.round(srcWidth / targetRatio)));
+  }
+
+  const left = Math.max(
+    0,
+    Math.min(srcWidth - cropWidth, Math.round(fx * srcWidth - cropWidth / 2)),
+  );
+  const top = Math.max(
+    0,
+    Math.min(srcHeight - cropHeight, Math.round(fy * srcHeight - cropHeight / 2)),
+  );
+
+  return { left, top, width: cropWidth, height: cropHeight };
+}
+
 export function buildResizePlan(
   sourceOrOptions:
     | { width?: number; height?: number }
@@ -48,6 +89,7 @@ export function buildResizePlan(
   maxDimensionsArg?: ImageDimensions,
   aspectRatioArg?: ImageAspectRatio,
   cropArg?: CropStrategy,
+  focalPointArg?: FocalPoint,
 ): ResizePlan {
   const isOptionsObj =
     maxDimensionsArg === undefined &&
@@ -71,6 +113,9 @@ export function buildResizePlan(
   const crop = isOptionsObj
     ? (sourceOrOptions as BuildResizePlanOptions).crop
     : cropArg;
+  const focalPoint = isOptionsObj
+    ? (sourceOrOptions as BuildResizePlanOptions).focalPoint
+    : focalPointArg;
 
   const r = resolveAspectRatio(aspectRatio);
   if (r === undefined) {
@@ -111,10 +156,16 @@ export function buildResizePlan(
     );
   }
 
+  const extract =
+    focalPoint && srcWidth && srcHeight && srcWidth > 0 && srcHeight > 0
+      ? computeFocalExtract(srcWidth, srcHeight, r, focalPoint)
+      : undefined;
+
   return {
     width: targetWidth,
     height: targetHeight,
     fit: 'cover' as const,
     position: crop || 'attention',
+    ...(extract ? { extract } : {}),
   };
 }

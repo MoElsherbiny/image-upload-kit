@@ -38,6 +38,60 @@ export interface StorageDownloadOptions {
   maxBytes?: number;
 }
 
+export interface StoragePresignedDownloadOptions {
+  expiresInSeconds?: number;
+}
+
+export interface StoragePresignedDownloadResult {
+  url: string;
+  expiresAt?: string;
+}
+
+export interface StorageHealthCheckResult {
+  ok: boolean;
+  latencyMs: number;
+  message?: string;
+}
+
+export interface StorageMultipartCreateParams {
+  bucket: string;
+  path: string;
+  contentType: string;
+  metadata?: Record<string, string>;
+}
+
+export interface StorageMultipartCreateResult {
+  uploadId: string;
+  bucket: string;
+  path: string;
+}
+
+export interface StorageMultipartPartParams {
+  bucket: string;
+  path: string;
+  uploadId: string;
+  partNumber: number;
+  data: Buffer | Uint8Array;
+}
+
+export interface StorageMultipartPartResult {
+  partNumber: number;
+  etag: string;
+}
+
+export interface StorageMultipartCompleteParams {
+  bucket: string;
+  path: string;
+  uploadId: string;
+  parts: StorageMultipartPartResult[];
+}
+
+export interface StorageMultipartAbortParams {
+  bucket: string;
+  path: string;
+  uploadId: string;
+}
+
 export interface StorageFileEntry {
   name: string;
   id?: string;
@@ -122,6 +176,38 @@ export interface StorageAdapter {
     path: string,
     options?: StorageDownloadOptions,
   ): Promise<Uint8Array>;
+
+  /**
+   * Optional: Generate a short-lived signed download URL for private objects.
+   */
+  createPresignedDownload?(
+    bucket: string,
+    path: string,
+    options?: StoragePresignedDownloadOptions,
+  ): Promise<StoragePresignedDownloadResult>;
+
+  /**
+   * Optional: Probe storage connectivity and measure round-trip latency.
+   */
+  healthCheck?(): Promise<StorageHealthCheckResult>;
+
+  /** Optional: Initiate a multipart upload session. */
+  createMultipartUpload?(
+    params: StorageMultipartCreateParams,
+  ): Promise<StorageMultipartCreateResult>;
+
+  /** Optional: Upload an individual part within an active multipart session. */
+  uploadPart?(
+    params: StorageMultipartPartParams,
+  ): Promise<StorageMultipartPartResult>;
+
+  /** Optional: Finalize an active multipart upload and return the stored object. */
+  completeMultipartUpload?(
+    params: StorageMultipartCompleteParams,
+  ): Promise<StorageUploadResult>;
+
+  /** Optional: Abort an active multipart upload session and discard uploaded parts. */
+  abortMultipartUpload?(params: StorageMultipartAbortParams): Promise<void>;
 }
 
 export type UploadRecordHook = (

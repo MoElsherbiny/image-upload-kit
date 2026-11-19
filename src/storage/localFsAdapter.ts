@@ -1,9 +1,11 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { normalizeStorageError } from './errorNormalizer';
 import {
   type StorageAdapter,
   type StorageDownloadOptions,
   type StorageFileEntry,
+  type StorageHealthCheckResult,
   type StorageListOptions,
   type StoragePaginatedListResult,
   type StorageUploadParams,
@@ -43,6 +45,36 @@ function assertContainedInRoot(resolvedRoot: string, targetPath: string): void {
   }
 }
 
+async function resolveDeepestRealPath(targetPath: string): Promise<string> {
+  let current = targetPath;
+  while (true) {
+    try {
+      const realCurrent = await fs.realpath(current);
+      const remaining = path.relative(current, targetPath);
+      return remaining ? path.resolve(realCurrent, remaining) : realCurrent;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      const parent = path.dirname(current);
+      if (parent === current) return targetPath;
+      current = parent;
+    }
+  }
+}
+
+async function assertRealPathContained(resolvedRoot: string, targetPath: string): Promise<void> {
+  assertContainedInRoot(resolvedRoot, targetPath);
+  const realRoot = await resolveDeepestRealPath(resolvedRoot);
+  try {
+    if ((await fs.lstat(targetPath)).isSymbolicLink()) {
+      const resolvedLink = path.resolve(path.dirname(targetPath), await fs.readlink(targetPath));
+      assertContainedInRoot(realRoot, await resolveDeepestRealPath(resolvedLink));
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+  }
+  assertContainedInRoot(realRoot, await resolveDeepestRealPath(targetPath));
+}
+
 export interface LocalFsStorageAdapter extends StorageAdapter {
   exists(bucket: string, relativePath: string): Promise<boolean>;
   stat(bucket: string, relativePath: string): Promise<{ size: number; contentType?: string } | null>;
@@ -51,6 +83,7 @@ export interface LocalFsStorageAdapter extends StorageAdapter {
   deleteByUrl(url: string): Promise<boolean>;
   parseUrl(url: string): { bucket?: string; path: string } | null;
   download(bucket: string, relativePath: string, options?: StorageDownloadOptions): Promise<Uint8Array>;
+  healthCheck(): Promise<StorageHealthCheckResult>;
 }
 
 export function createLocalFsStorageAdapter(options: LocalFsStorageOptions): LocalFsStorageAdapter {
@@ -107,12 +140,10 @@ export function createLocalFsStorageAdapter(options: LocalFsStorageOptions): Loc
   return {
     async upload(params: StorageUploadParams): Promise<StorageUploadResult> {
       validateStorageMetadata(params.metadata);
-      const { diskPath, cleanRel } = resolveDiskTarget(
-        params.bucket,
-        params.path,
-      );
-
+      const { diskPath, cleanRel } = resolveDiskTarget(params.bucket, params.path);
+      await assertRealPathContained(resolvedRoot, diskPath);
       await fs.mkdir(path.dirname(diskPath), { recursive: true });
+      await assertRealPathContained(resolvedRoot, diskPath);
 
       try {
         await fs.writeFile(
@@ -130,28 +161,23 @@ export function createLocalFsStorageAdapter(options: LocalFsStorageOptions): Loc
         }
         throw err;
       }
-
-      return {
-        bucket: params.bucket,
-        path: cleanRel,
-        url: getPublicUrl(params.bucket, cleanRel),
-      };
+      return { bucket: params.bucket, path: cleanRel, url: getPublicUrl(params.bucket, cleanRel) };
     },
 
     async delete(bucket: string, relativePath: string): Promise<void> {
       const { diskPath } = resolveDiskTarget(bucket, relativePath);
+      await assertRealPathContained(resolvedRoot, diskPath);
       try {
         await fs.unlink(diskPath);
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-          throw err;
-        }
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
       }
     },
 
     async exists(bucket: string, relativePath: string): Promise<boolean> {
       try {
         const { diskPath } = resolveDiskTarget(bucket, relativePath);
+        await assertRealPathContained(resolvedRoot, diskPath);
         return (await fs.stat(diskPath)).isFile();
       } catch {
         return false;
@@ -161,6 +187,7 @@ export function createLocalFsStorageAdapter(options: LocalFsStorageOptions): Loc
     async stat(bucket: string, relativePath: string) {
       try {
         const { diskPath } = resolveDiskTarget(bucket, relativePath);
+        await assertRealPathContained(resolvedRoot, diskPath);
         const fileStat = await fs.stat(diskPath);
         return fileStat.isFile() ? { size: fileStat.size } : null;
       } catch {
@@ -177,12 +204,11 @@ export function createLocalFsStorageAdapter(options: LocalFsStorageOptions): Loc
       downloadOptions?: StorageDownloadOptions,
     ): Promise<Uint8Array> {
       const { diskPath } = resolveDiskTarget(bucket, relativePath);
+      await assertRealPathContained(resolvedRoot, diskPath);
       if (downloadOptions?.maxBytes !== undefined) {
         const fileStat = await fs.stat(diskPath);
         if (fileStat.size > downloadOptions.maxBytes) {
-          const err = new Error('Staged file size exceeds maximum allowed bytes') as Error & {
-            status?: number;
-          };
+          const err = new Error('Staged file size exceeds maximum allowed bytes') as Error & { status?: number };
           err.status = 400;
           throw err;
         }
@@ -194,14 +220,13 @@ export function createLocalFsStorageAdapter(options: LocalFsStorageOptions): Loc
     async deleteByUrl(url: string): Promise<boolean> {
       const parsed = parseUrl(url);
       if (!parsed) return false;
-
       try {
         const subSegments =
           includeBucket && parsed.bucket
             ? [parsed.bucket, ...parsed.path.split('/')]
             : parsed.path.split('/');
         const diskPath = path.resolve(resolvedRoot, ...subSegments);
-        assertContainedInRoot(resolvedRoot, diskPath);
+        await assertRealPathContained(resolvedRoot, diskPath);
         await fs.unlink(diskPath);
         return true;
       } catch {
@@ -216,18 +241,12 @@ export function createLocalFsStorageAdapter(options: LocalFsStorageOptions): Loc
     ): Promise<StoragePaginatedListResult> {
       const cleanBucket = sanitizeRelativePath(bucket);
       const cleanFolder = folder ? sanitizeRelativePath(folder) : '';
-      const targetDir = path.resolve(
-        resolvedRoot,
-        includeBucket ? cleanBucket : '',
-        cleanFolder,
-      );
-
-      assertContainedInRoot(resolvedRoot, targetDir);
+      const targetDir = path.resolve(resolvedRoot, includeBucket ? cleanBucket : '', cleanFolder);
+      await assertRealPathContained(resolvedRoot, targetDir);
 
       try {
         const dirEntries = await fs.readdir(targetDir, { withFileTypes: true });
         const results: StorageFileEntry[] = [];
-
         for (const entry of dirEntries) {
           if (!entry.isFile()) continue;
           const full = path.join(targetDir, entry.name);
@@ -239,24 +258,30 @@ export function createLocalFsStorageAdapter(options: LocalFsStorageOptions): Loc
             size: stat.size,
           });
         }
-
         const offset = listOptions?.cursor ? Number(listOptions.cursor) || 0 : 0;
         const limit = listOptions?.limit ?? results.length;
         const sliced =
-          listOptions?.limit !== undefined || offset > 0
-            ? results.slice(offset, offset + limit)
-            : results;
+          listOptions?.limit !== undefined || offset > 0 ? results.slice(offset, offset + limit) : results;
         const nextCursor =
           listOptions?.limit !== undefined && offset + sliced.length < results.length
             ? String(offset + sliced.length)
             : undefined;
-
         return toPaginatedListResult(sliced, nextCursor);
       } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-          return toPaginatedListResult([]);
-        }
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return toPaginatedListResult([]);
         throw err;
+      }
+    },
+
+    async healthCheck(): Promise<StorageHealthCheckResult> {
+      const start = Date.now();
+      try {
+        await fs.mkdir(resolvedRoot, { recursive: true });
+        await fs.access(resolvedRoot, fs.constants.R_OK | fs.constants.W_OK);
+        return { ok: true, latencyMs: Date.now() - start };
+      } catch (err) {
+        const normalized = normalizeStorageError(err, { provider: 'local-fs', operation: 'healthCheck' });
+        return { ok: false, latencyMs: Date.now() - start, message: normalized.message };
       }
     },
   };
