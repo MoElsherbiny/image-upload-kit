@@ -5,8 +5,13 @@ import type {
   ImageDimensions,
 } from '../../types';
 import { resolveAspectRatio } from '../../types/aspectRatio';
-import { UploadKitError } from '../../types/errors';
-import { checkAllowedOrigin, normalizeOverrides, runAuthorize } from './guards';
+import {
+  checkAllowedOrigin,
+  kitErrorResponse,
+  normalizeOverrides,
+  runAuthorize,
+  sanitizeMetadataRecord,
+} from './guards';
 import type {
   AuthorizeContext,
   UploadHttpHandlerOptions,
@@ -18,24 +23,11 @@ import {
   recordQuotaUsage,
   resolveSubject,
 } from './rateLimitGuard';
-import {
-  errorResponseFromKitError,
-  handleUnexpectedError,
-  jsonResponse,
-} from './responses';
+import { handleUnexpectedError, jsonResponse } from './responses';
 import { consumeUploadToken, verifyUploadToken } from './uploadToken';
 
 const ALLOWED_OUTPUT_FORMATS = new Set(['jpeg', 'png', 'webp', 'avif']);
 const ALLOWED_CROP_STRATEGIES = new Set<CropStrategy>(['attention', 'entropy', 'center']);
-
-function sanitizeMetadataObject(raw: unknown): Record<string, string> | undefined {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
-  const clean: Record<string, string> = {};
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-    if (v !== undefined && v !== null) clean[k] = String(v);
-  }
-  return Object.keys(clean).length > 0 ? clean : undefined;
-}
 
 export async function handleFinalizeRequest<TPreset extends string>(
   request: Request,
@@ -45,9 +37,11 @@ export async function handleFinalizeRequest<TPreset extends string>(
 
   try {
     if (!presigned || !presigned.secret) {
-      return jsonResponse(
-        { error: 'Presigned uploads are not enabled on this endpoint' },
+      return kitErrorResponse(
+        'Presigned uploads are not enabled on this endpoint',
+        'FORBIDDEN',
         404,
+        false,
       );
     }
 
@@ -59,7 +53,7 @@ export async function handleFinalizeRequest<TPreset extends string>(
 
     const rawToken = typeof body.token === 'string' ? body.token : '';
     if (!rawToken) {
-      return jsonResponse({ error: 'Missing required upload token' }, 400);
+      return kitErrorResponse('Missing required upload token', 'INVALID_UPLOAD_TOKEN', 400, false);
     }
 
     // 1. Verify signature, claims & expiry WITHOUT consuming jti yet
@@ -90,12 +84,7 @@ export async function handleFinalizeRequest<TPreset extends string>(
     // 3. Enforce subject binding when token carries `sub`
     const currentSubject = await resolveSubject(options.getSubject, authCtx);
     if (tokenPayload.sub !== undefined && currentSubject !== tokenPayload.sub) {
-      return errorResponseFromKitError(
-        new UploadKitError('Upload token subject mismatch', {
-          code: 'FORBIDDEN',
-          status: 403,
-        }),
-      );
+      return kitErrorResponse('Upload token subject mismatch', 'FORBIDDEN', 403, false);
     }
 
     // 4. Enforce rate limit before consuming token
@@ -117,9 +106,11 @@ export async function handleFinalizeRequest<TPreset extends string>(
 
     const storage = uploader.getStorage?.() ?? uploader.storage;
     if (!storage || typeof storage.download !== 'function') {
-      return jsonResponse(
-        { error: 'Storage adapter does not support download for presigned finalize' },
+      return kitErrorResponse(
+        'Storage adapter does not support download for presigned finalize',
+        'STORAGE_ERROR',
         501,
+        false,
       );
     }
 
@@ -127,11 +118,11 @@ export async function handleFinalizeRequest<TPreset extends string>(
       if (typeof storage.stat === 'function') {
         const meta = await storage.stat(tokenPayload.bucket, tokenPayload.path);
         if (meta && meta.size > tokenPayload.maxBytes) {
-          return jsonResponse(
-            {
-              error: `Staged file size (${meta.size} bytes) exceeds maximum allowed (${tokenPayload.maxBytes} bytes)`,
-            },
+          return kitErrorResponse(
+            `Staged file size (${meta.size} bytes) exceeds maximum allowed (${tokenPayload.maxBytes} bytes)`,
+            'FILE_TOO_LARGE',
             400,
+            false,
           );
         }
       }
@@ -143,20 +134,20 @@ export async function handleFinalizeRequest<TPreset extends string>(
         });
       } catch (err) {
         if (err instanceof Error && err.message.includes('exceeds maximum allowed')) {
-          return jsonResponse({ error: err.message }, 400);
+          return kitErrorResponse(err.message, 'FILE_TOO_LARGE', 400, false);
         }
-        return jsonResponse({ error: 'Staged upload object not found' }, 400);
+        return kitErrorResponse('Staged upload object not found', 'INVALID_IMAGE', 400, false);
       }
 
       if (!stagedBytes || stagedBytes.byteLength === 0) {
-        return jsonResponse({ error: 'Staged file is empty' }, 400);
+        return kitErrorResponse('Staged file is empty', 'INVALID_IMAGE', 400, false);
       }
       if (stagedBytes.byteLength > tokenPayload.maxBytes) {
-        return jsonResponse(
-          {
-            error: `Staged file size (${stagedBytes.byteLength} bytes) exceeds maximum allowed (${tokenPayload.maxBytes} bytes)`,
-          },
+        return kitErrorResponse(
+          `Staged file size (${stagedBytes.byteLength} bytes) exceeds maximum allowed (${tokenPayload.maxBytes} bytes)`,
+          'FILE_TOO_LARGE',
           400,
+          false,
         );
       }
 
@@ -185,9 +176,11 @@ export async function handleFinalizeRequest<TPreset extends string>(
       let outputFormat: ExplicitOutputFormat | undefined;
       if (typeof body.outputFormat === 'string' && body.outputFormat) {
         if (!ALLOWED_OUTPUT_FORMATS.has(body.outputFormat)) {
-          return jsonResponse(
-            { error: `Invalid output format "${body.outputFormat}". Allowed formats: jpeg, png, webp, avif` },
+          return kitErrorResponse(
+            `Invalid output format "${body.outputFormat}". Allowed formats: jpeg, png, webp, avif`,
+            'UNSUPPORTED_FORMAT',
             400,
+            false,
           );
         }
         if (overrides?.format) {
@@ -199,9 +192,11 @@ export async function handleFinalizeRequest<TPreset extends string>(
       if (body.quality !== undefined && body.quality !== null) {
         const q = Number(body.quality);
         if (!Number.isFinite(q) || !Number.isInteger(q) || q < 1 || q > 100) {
-          return jsonResponse(
-            { error: `Invalid quality "${body.quality}". Must be an integer between 1 and 100.` },
+          return kitErrorResponse(
+            `Invalid quality "${body.quality}". Must be an integer between 1 and 100.`,
+            'INVALID_IMAGE',
             400,
+            false,
           );
         }
         if (overrides?.quality) {
@@ -215,7 +210,7 @@ export async function handleFinalizeRequest<TPreset extends string>(
         const w = Number(dims.width);
         const h = Number(dims.height);
         if (!Number.isFinite(w) || !Number.isFinite(h) || w < 1 || h < 1) {
-          return jsonResponse({ error: 'Invalid maxWidth or maxHeight dimensions' }, 400);
+          return kitErrorResponse('Invalid maxWidth or maxHeight dimensions', 'INVALID_IMAGE', 400, false);
         }
         if (overrides?.dimensions) {
           const cap = presetConfig?.maxDimensions;
@@ -229,7 +224,7 @@ export async function handleFinalizeRequest<TPreset extends string>(
       if (body.aspectRatio !== undefined && body.aspectRatio !== null && body.aspectRatio !== 'auto') {
         const numericRatio = resolveAspectRatio(body.aspectRatio as ImageAspectRatio);
         if (numericRatio === undefined) {
-          return jsonResponse({ error: `Invalid aspectRatio "${String(body.aspectRatio)}"` }, 400);
+          return kitErrorResponse(`Invalid aspectRatio "${String(body.aspectRatio)}"`, 'INVALID_IMAGE', 400, false);
         }
         if (overrides?.aspectRatio) {
           aspectRatio = body.aspectRatio as Exclude<ImageAspectRatio, 'auto'>;
@@ -240,15 +235,17 @@ export async function handleFinalizeRequest<TPreset extends string>(
       if (typeof body.crop === 'string' && body.crop) {
         const trimmedCrop = body.crop.trim() as CropStrategy;
         if (!ALLOWED_CROP_STRATEGIES.has(trimmedCrop)) {
-          return jsonResponse(
-            { error: `Invalid crop "${body.crop}". Allowed values: attention, entropy, center` },
+          return kitErrorResponse(
+            `Invalid crop "${body.crop}". Allowed values: attention, entropy, center`,
+            'INVALID_IMAGE',
             400,
+            false,
           );
         }
         if (overrides?.aspectRatio || overrides?.crop) crop = trimmedCrop;
       }
 
-      const metadata = sanitizeMetadataObject(body.metadata);
+      const metadata = sanitizeMetadataRecord(body.metadata);
 
       const result = await uploader.uploadImage(
         {

@@ -10,6 +10,14 @@ import {
   createMemoryRateLimiter,
   type MemoryRateLimiterOptions,
 } from './memoryRateLimiter';
+import {
+  createMemoryMultipartSessionStore,
+  createMultipartUploadHandler,
+  type MemoryMultipartSessionStoreOptions,
+  type MultipartSessionRecord,
+  type MultipartSessionStore,
+  type MultipartUploadHandlerOptions,
+} from './multipartRoute';
 import type {
   AllowClientOverrides,
   AuthorizeContext,
@@ -33,16 +41,17 @@ import {
   UploadValidationError,
 } from './responses';
 import {
-  createMultipartUploadHandler,
-  type MultipartUploadHandlerOptions,
-} from './multipartRoute';
-import {
   createMemoryResumableSessionStore,
   createResumableUploadHandler,
+  type MemoryResumableSessionStoreOptions,
   type ResumableSessionRecord,
   type ResumableSessionStore,
   type ResumableUploadHandlerOptions,
 } from './resumableRoute';
+import {
+  type BoundedStreamBytesResult,
+  readBoundedStreamBytes,
+} from './streamBody';
 import {
   consumeUploadToken,
   type PresignTokenPayload,
@@ -56,18 +65,25 @@ import {
 export {
   type AllowClientOverrides,
   type AuthorizeContext,
+  type BoundedStreamBytesResult,
   consumeUploadToken,
+  createMemoryMultipartSessionStore,
   createMemoryRateLimiter,
   createMemoryResumableSessionStore,
   createMultipartUploadHandler,
   createResumableUploadHandler,
   errorResponseFromKitError,
   isClientValidationError,
+  type MemoryMultipartSessionStoreOptions,
   type MemoryRateLimiterOptions,
+  type MemoryResumableSessionStoreOptions,
+  type MultipartSessionRecord,
+  type MultipartSessionStore,
   type MultipartUploadHandlerOptions,
   type PresignedHandlerOptions,
   type PresignTokenPayload,
   type PresignTokenStore,
+  readBoundedStreamBytes,
   type ResumableSessionRecord,
   type ResumableSessionStore,
   type ResumableUploadHandlerOptions,

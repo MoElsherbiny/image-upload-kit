@@ -3,52 +3,25 @@ import { DEFAULT_ALLOWED_FORMATS } from '../../types';
 import { validateImageFileStrict } from '../../utils/validators';
 import {
   checkAllowedOrigin,
+  generateId,
+  kitErrorResponse,
+  mimeToExtension,
   normalizeOverrides,
+  resolveClientFolder,
   runAuthorize,
   sanitizeFolderSegment,
 } from './guards';
-import type {
-  AuthorizeContext,
-  UploadHttpHandlerOptions,
-} from './options';
+import type { AuthorizeContext, UploadHttpHandlerOptions } from './options';
 import {
   enforceQuota,
   enforceRateLimit,
   resolveSubject,
 } from './rateLimitGuard';
 import { handleUnexpectedError, jsonResponse } from './responses';
+import { readBoundedJsonBody } from './streamBody';
 import { type PresignTokenPayload, signUploadToken } from './uploadToken';
 
-export async function readBoundedJsonBody(
-  request: Request,
-  maxBytes = 16_384,
-): Promise<{ body?: Record<string, unknown>; errorResponse?: Response }> {
-  const contentLengthRaw = request.headers.get('content-length');
-  if (contentLengthRaw !== null && contentLengthRaw.trim() !== '') {
-    const contentLength = Number(contentLengthRaw);
-    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-      return { errorResponse: jsonResponse({ error: 'Request body too large' }, 413) };
-    }
-  }
-  let rawText: string;
-  try {
-    rawText = await request.text();
-  } catch {
-    return { errorResponse: jsonResponse({ error: 'Invalid JSON request body' }, 400) };
-  }
-  if (rawText.length > maxBytes) {
-    return { errorResponse: jsonResponse({ error: 'Request body too large' }, 413) };
-  }
-  try {
-    const parsed = JSON.parse(rawText);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      return { errorResponse: jsonResponse({ error: 'Invalid JSON request body' }, 400) };
-    }
-    return { body: parsed as Record<string, unknown> };
-  } catch {
-    return { errorResponse: jsonResponse({ error: 'Invalid JSON request body' }, 400) };
-  }
-}
+export { readBoundedJsonBody };
 
 export async function sweepStagedUploads(options: {
   storage: StorageAdapter;
@@ -76,28 +49,6 @@ export async function sweepStagedUploads(options: {
   return { deleted };
 }
 
-function generateUuid(): string {
-  if (typeof globalThis.crypto?.randomUUID === 'function') {
-    return globalThis.crypto.randomUUID();
-  }
-  const bytes = new Uint8Array(16);
-  globalThis.crypto.getRandomValues(bytes);
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-function mimeToStagingExtension(contentType: string): string {
-  const clean = contentType.toLowerCase().trim();
-  if (clean === 'image/jpeg' || clean === 'image/jpg') return 'jpg';
-  if (clean === 'image/png') return 'png';
-  if (clean === 'image/webp') return 'webp';
-  if (clean === 'image/avif') return 'avif';
-  if (clean === 'image/svg+xml') return 'svg';
-  return 'bin';
-}
-
 export async function handlePresignRequest<TPreset extends string>(
   request: Request,
   options: UploadHttpHandlerOptions<TPreset>,
@@ -109,7 +60,12 @@ export async function handlePresignRequest<TPreset extends string>(
 
   try {
     if (!presigned || !presigned.secret) {
-      return jsonResponse({ error: 'Presigned uploads are not enabled on this endpoint' }, 404);
+      return kitErrorResponse(
+        'Presigned uploads are not enabled on this endpoint',
+        'FORBIDDEN',
+        404,
+        false,
+      );
     }
 
     const originError = checkAllowedOrigin(request, allowedOrigins);
@@ -174,32 +130,25 @@ export async function handlePresignRequest<TPreset extends string>(
 
     if (preset) {
       if (allowedPresets && allowedPresets.length > 0 && !allowedPresets.includes(preset)) {
-        return jsonResponse(
-          { error: `Invalid preset "${preset}". Allowed presets: ${allowedPresets.join(', ')}` },
+        return kitErrorResponse(
+          `Invalid preset "${preset}". Allowed presets: ${allowedPresets.join(', ')}`,
+          'INVALID_IMAGE',
           400,
+          false,
         );
       }
       if (typeof uploader.resolvePreset === 'function' && !presetConfig) {
-        return jsonResponse({ error: `Invalid preset "${preset}".` }, 400);
+        return kitErrorResponse(`Invalid preset "${preset}".`, 'INVALID_IMAGE', 400, false);
       }
     }
 
     if (rawBucket && allowedBuckets && !allowedBuckets.includes(rawBucket)) {
-      return jsonResponse({ error: `Bucket "${rawBucket}" is not allowed` }, 403);
+      return kitErrorResponse(`Bucket "${rawBucket}" is not allowed`, 'FORBIDDEN', 403, false);
     }
 
-    let folder: string | undefined;
-    if (rawFolder !== undefined) {
-      if (overrides?.folder === true) {
-        folder = sanitizeFolderSegment(rawFolder);
-      } else if (typeof overrides?.folder === 'function') {
-        const scoped = overrides.folder(rawFolder, authCtx);
-        if (scoped === null) {
-          return jsonResponse({ error: 'Invalid or disallowed folder' }, 400);
-        }
-        folder = scoped ? sanitizeFolderSegment(scoped) : undefined;
-      }
-    }
+    const resolvedFolder = resolveClientFolder(rawFolder, overrides, authCtx);
+    if (resolvedFolder.errorResponse) return resolvedFolder.errorResponse;
+    const folder = resolvedFolder.folder;
 
     const limits =
       typeof uploader.resolveUploadLimits === 'function'
@@ -216,10 +165,10 @@ export async function handlePresignRequest<TPreset extends string>(
           };
 
     if (!contentType) {
-      return jsonResponse({ error: 'Missing required "contentType" field' }, 400);
+      return kitErrorResponse('Missing required "contentType" field', 'INVALID_IMAGE', 400, false);
     }
     if (size !== undefined && (!Number.isFinite(size) || size <= 0)) {
-      return jsonResponse({ error: 'File is empty' }, 400);
+      return kitErrorResponse('File is empty', 'INVALID_IMAGE', 400, false);
     }
 
     const fileCheck = validateImageFileStrict(
@@ -228,14 +177,19 @@ export async function handlePresignRequest<TPreset extends string>(
       limits.allowedFormats,
     );
     if (!fileCheck.valid) {
-      return jsonResponse({ error: fileCheck.error }, 400);
+      const code = fileCheck.error?.includes('exceeds maximum')
+        ? 'FILE_TOO_LARGE'
+        : 'UNSUPPORTED_FORMAT';
+      return kitErrorResponse(fileCheck.error || 'Invalid file', code, 400, false);
     }
 
     const storage = uploader.getStorage?.() ?? uploader.storage;
     if (!storage || typeof storage.createPresignedUpload !== 'function') {
-      return jsonResponse(
-        { error: 'Storage adapter does not support presigned uploads' },
+      return kitErrorResponse(
+        'Storage adapter does not support presigned uploads',
+        'STORAGE_ERROR',
         501,
+        false,
       );
     }
 
@@ -249,8 +203,8 @@ export async function handlePresignRequest<TPreset extends string>(
     const rawPrefix = (presigned.stagingPrefix ?? '_staging/').replace(/^\/+/, '');
     const stagingPrefix =
       rawPrefix && !rawPrefix.endsWith('/') ? `${rawPrefix}/` : rawPrefix;
-    const jti = generateUuid();
-    const ext = mimeToStagingExtension(contentType);
+    const jti = generateId();
+    const ext = mimeToExtension(contentType);
     const stagingPath = `${stagingPrefix}${jti}.${ext}`;
     const expiresInSeconds = presigned.expiresInSeconds ?? 300;
     const maxBytes = Math.floor(limits.maxSizeMB * 1024 * 1024);
