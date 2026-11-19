@@ -9,7 +9,7 @@ Reference guide for AI agents and developers working on `img-upload-kit`.
 - **Author**: Mo Elsherbiny (`https://www.buildwithsherbo.com/`, GitHub: `@MoElsherbiny`).
 - **Strict Hard Constraint**: **Every file across the entire repository MUST remain <= 300 lines**. Enforced by ESLint `max-lines` and `scripts/check-max-lines.mjs`. Never create or modify a file to exceed 300 lines.
 - **Strict Type Safety (Zero `any`)**: Never use `any` or `eslint-disable` for `@typescript-eslint/no-explicit-any` anywhere in the repository (`@typescript-eslint/no-explicit-any` is enforced as `'error'`). Always use strict TypeScript types (`unknown`, generics, or explicit interfaces).
-- **Zero Framework Lock-in & Zero Runtime Dependencies**: Keep `package.json` `"dependencies": {}` empty (`blurhash` is bundled into `dist/`, and `sharp` / `lqip-modern` are optional peer dependencies loaded lazily on the server). React components must never import `next/*` directly; Vue components in `src/vue` use peer `vue`; Angular controllers in `src/angular` must not require `@angular/core` at runtime; React Native components in `src/react-native` must never reference DOM globals (`window`, `document`, `HTMLImageElement`).
+- **Zero Framework Lock-in & Zero Runtime Dependencies**: Keep `package.json` `"dependencies": {}` empty (`blurhash` is bundled into `dist/`, and `sharp` is an optional peer dependency loaded lazily on the server). React components must never import `next/*` directly; Vue components in `src/vue` use peer `vue`; Angular controllers in `src/angular` must not require `@angular/core` at runtime; React Native components in `src/react-native` must never reference DOM globals (`window`, `document`, `HTMLImageElement`).
 
 ## 2. Architecture & Subpath Structure
 
@@ -76,14 +76,14 @@ src/
     ├── pickers.ts            # createExpoImagePickerAdapter, createRnImagePickerAdapter, createExpoManipulatorResizeTransform
     ├── hooks/                # useNativeUpload, useNativeSingleUpload, useNativeMultiUpload
     ├── components/           # AnimatedImage, SingleImageUpload, MultiImageUpload
-    └── theme.ts              # defaultNativeTheme, lightNativeTheme, darkNativeTheme
+    └── theme.ts              # defaultNativeTheme, darkNativeTheme, nativeThemes, resolveNativeTheme
 ```
 
 ## 3. Presets, Security & Storage Contracts
 
 - **No Domain Categories**: Never hardcode app-specific categories like `'homepage'`, `'brochure'`, or `'admin-profile'`. Use standard visual roles: `thumbnail`, `avatar`, `card`, `cover`, `hero`, `logo`, `original`, `square` (`1:1`), `portrait` (`4:5`), `story` (`9:16`).
-- **Security by Default**: SVG is disabled unless `allowSvg: true` (sanitized via zero-dep XML tokenizer + strict allowlist in `svgTokenizer.ts`, `svgAllowlist.ts`, `sanitizeSvg.ts`, with optional `customSanitizer` hook). Every upload is checked with `sniffImageFormat` and `assertImageMetadataLimits`. Client `FormData` overrides require `allowClientOverrides` in `createUploadHttpHandler`. Presigned `finalize` verifies signature/expiry, `authorize`, and `sub` ownership *before* consuming `jti`.
-- **Storage**: Implementations adhere strictly to `StorageAdapter`: `upload(params)`, `delete(bucket, path)`, optional `exists?`, `stat?`, `getPublicUrl?`, `list?`, `deleteByUrl?`, `parseUrl?`, `createPresignedUpload?`, `download?`, `createPresignedDownload?`, `healthCheck?`, and multipart hooks (`createMultipartUpload?`, `uploadPart?`, `completeMultipartUpload?`, `abortMultipartUpload?`). Built-in adapters enforce `sanitizeStorageKey` and `validateStorageMetadata`.
+- **Security by Default**: SVG is disabled unless `allowSvg: true` (sanitized via zero-dep XML tokenizer + strict allowlist in `svgTokenizer.ts`, `svgAllowlist.ts`, `sanitizeSvg.ts`, with optional `customSanitizer` hook). Direct, presigned-finalize, and resumable uploads through `createImageUploader` run `sniffImageFormat` and `assertImageMetadataLimits`; `createMultipartUploadHandler` defaults to server-generated keys, image-only MIME types, a `100 MB` byte cap, and post-complete magic-byte verification (`validateOnComplete: true` when `storage.download` is supported, without Sharp re-encoding). Rate-limit IP fallback ignores `X-Forwarded-For` unless `trustProxy` is explicitly configured. Client `FormData` overrides require `allowClientOverrides` in `createUploadHttpHandler`. Presigned `finalize` verifies signature/expiry, `authorize`, and `sub` ownership *before* consuming `jti`.
+- **Storage**: Implementations adhere strictly to `StorageAdapter`: `upload(params)`, `delete(bucket, path)`, optional `exists?`, `stat?`, `getPublicUrl?`, `list?`, `deleteByUrl?`, `parseUrl?`, `createPresignedUpload?`, `download?`, `createPresignedDownload?`, `healthCheck?`, and multipart hooks (`createMultipartUpload?`, `uploadPart?`, `completeMultipartUpload?`, `abortMultipartUpload?`). Built-in adapters (including `memoryAdapter`) enforce `sanitizeStorageKey` and `validateStorageMetadata`.
 
 ## 4. The 4 UI Styling Tiers & Multi-Platform Parity
 

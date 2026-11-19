@@ -36,6 +36,37 @@ export const { POST, DELETE } = createUploadHttpHandler({
 
 > **Note:** Client-supplied FormData overrides (`folder`, `filename`, `dimensions`, `format`, `quality`, `aspectRatio`, `crop`) and `bucket` overrides are ignored by default unless explicitly opted in via `allowClientOverrides` / `allowClientBucketOverride`.
 
+### Delete Ownership & Per-User Folder Scoping
+
+A simple session check (such as checking that a cookie exists) is **not sufficient** when `DELETE` is mounted: without an ownership check, any signed-in user could delete another user's image by passing its `path`. Scope uploads to a per-user prefix via `allowClientOverrides.folder` (e.g. `<SingleImageUpload folder="avatars" />` on the client) and verify `ctx.path` ownership on `delete`:
+
+```ts
+import { createUploadHttpHandler, type AuthorizeContext } from 'img-upload-kit/server/handler';
+
+const verifiedUsers = new WeakMap<Request, string>();
+
+export const { POST, DELETE } = createUploadHttpHandler({
+  uploader,
+  authorize: async (ctx: AuthorizeContext) => {
+    const userId = await getUserId(ctx.request); // your session / JWT helper
+    if (!userId) return false;
+    verifiedUsers.set(ctx.request, userId);
+    return ctx.action !== 'delete' || Boolean(ctx.path?.startsWith(`users/${userId}/`));
+  },
+  getSubject: (ctx) => verifiedUsers.get(ctx.request),
+  allowClientOverrides: {
+    folder: (rawFolder, ctx) => {
+      const userId = verifiedUsers.get(ctx.request);
+      if (!userId) return null;
+      const sub = rawFolder.replace(/[^a-zA-Z0-9/_-]/g, '').replace(/^\/+|\/+$/g, '');
+      return sub ? `users/${userId}/${sub}` : `users/${userId}`;
+    },
+  },
+});
+```
+
+If uploads do not send a `folder` field (or use opaque keys), check your application database inside `authorize` when `ctx.action === 'delete'` to confirm the authenticated user owns `ctx.path`.
+
 ## 2. Presigned Upload Token Security
 
 Two-phase presigned uploads (`?action=presign` -> direct storage PUT/POST -> `?action=finalize`) use stateless WebCrypto HMAC-SHA256 tokens (`signUploadToken` / `verifyUploadToken`).
@@ -64,20 +95,38 @@ export function createRedisTokenStore(redis: {
 }
 ```
 
-Pass it via `presigned`:
+Pass it via `presigned` alongside a dedicated private `stagingBucket`:
 
 ```ts
+import { createUploadHttpHandler, sweepStagedUploads } from 'img-upload-kit/server/handler';
+
 createUploadHttpHandler({
   uploader,
   getSubject,
   presigned: {
     secret: [process.env.UPLOAD_TOKEN_SECRET_CURRENT!, process.env.UPLOAD_TOKEN_SECRET_PREV!],
+    stagingBucket: process.env.UPLOAD_STAGING_BUCKET!, // private, non-CDN bucket
+    stagingPrefix: '_staging/',
     expiresInSeconds: 300,
     clockToleranceMs: 5_000,
     tokenStore: createRedisTokenStore(redis),
   },
 });
+
+// Scheduled cron / background worker cleanup for abandoned staged uploads:
+await sweepStagedUploads(storage, {
+  bucket: process.env.UPLOAD_STAGING_BUCKET!,
+  stagingPrefix: '_staging/',
+  maxAgeMs: 60 * 60 * 1000,
+});
 ```
+
+### Private Staging Bucket & Orphan Cleanup
+
+When `presigned.stagingBucket` is omitted, staged bytes land in the resolved target bucket (which is often publicly readable via a CDN) until `finalize` runs or cleanup sweeps them. In production:
+1. **Use a private `presigned.stagingBucket`** with public read disabled and no public CDN origin so unverified client bytes can never be fetched publicly before magic-byte sniffing and Sharp re-encoding.
+2. **Add a bucket lifecycle rule** on the staging bucket expiring objects under `_staging/` after **1 day** so abandoned browser uploads are reclaimed automatically by S3/R2/GCS.
+3. **Schedule `sweepStagedUploads`** (e.g. hourly) for defense-in-depth cleanup on providers without prefix lifecycle rules.
 
 ## 3. SVG Security
 
@@ -136,10 +185,13 @@ export const { POST, DELETE } = createUploadHttpHandler({
   uploader,
   allowedOrigins: ['https://app.example.com'],
   maxBodyBytes: 12 * 1024 * 1024,
+  getSubject: async (ctx) => (await resolveSession(ctx.request))?.userId,
   rateLimiter: createMemoryRateLimiter({ limit: 30, windowMs: 60_000 }), // dev/single-instance only
-  rateLimitKey: (req, subject) => (subject ? `user:${subject}` : req.headers.get('x-forwarded-for') ?? 'anon'),
+  rateLimitKey: (_req, subject) => (subject ? `sub:${subject}` : 'anon'),
   onError: (err, ctx) => console.error(`[upload:${ctx.action}]`, err),
 });
 ```
+
+- **Proxy-aware IP fallback (`trustProxy`)**: Never key rate limits directly on raw `X-Forwarded-For` headers — any client can spoof `X-Forwarded-For` on every request to bypass limits. Prefer authenticated `getSubject` (`sub:<id>`) keys. For unauthenticated IP fallback behind a reverse proxy, `trustProxy?: boolean | number` defaults to `false` (ignoring `X-Forwarded-For`); when set (`true` for `1` hop, or a hop count `N`), the handler extracts the `X-Forwarded-For` entry `N` hops from the right appended by your proxy. Never enable `trustProxy` unless every request passes through a proxy you control.
 
 - **Error redaction**: All `UploadKitError` instances serialize via `toPublicJSON()`, exposing only `{ error, code, retryable, metadata? }`. Internal `cause` objects, storage SDK internals, and stack traces are never sent to clients and are forwarded exclusively to `onError` for server-side logging.
