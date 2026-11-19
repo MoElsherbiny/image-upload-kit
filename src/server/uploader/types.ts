@@ -10,7 +10,13 @@ import type {
   UploadedImageData,
   UploadPresetConfig,
 } from '../../types';
-import type { BlurHashResult, OptimizedImageResult } from '../optimization';
+import type {
+  BlurHashResult,
+  FocalPoint,
+  OptimizedImageResult,
+  OutputColorSpace,
+  TransformCache,
+} from '../optimization';
 import {
   computeDedupeKey,
   createMemoryDedupeStore,
@@ -42,6 +48,14 @@ export interface ProcessImageBufferOptions {
   optimizationTimeoutMs?: number;
   blurTimeoutMs?: number;
   limitInputPixels?: number;
+  maxWidth?: number;
+  maxHeight?: number;
+  maxFrames?: number;
+  focalPoint?: FocalPoint;
+  colorSpace?: OutputColorSpace;
+  preserveMetadata?: boolean;
+  svgSanitizer?: (svg: string) => string;
+  transformCache?: TransformCache;
   effort?: number;
   allowSvg?: boolean;
   precomputedHash?: string;
@@ -93,6 +107,22 @@ export interface ImageUploaderOptions<
   allowSvg?: boolean;
   /** Maximum input pixel count allowed by Sharp (defaults to `50_000_000` = 50 MP) */
   limitInputPixels?: number;
+  /** Default maximum allowed oriented input width in pixels before rejecting */
+  maxWidth?: number;
+  /** Default maximum allowed oriented input height in pixels before rejecting */
+  maxHeight?: number;
+  /** Default maximum allowed animation frames/pages before rejecting */
+  maxFrames?: number;
+  /** Default normalized [0, 1] focal point for aspect-ratio cropping */
+  focalPoint?: FocalPoint;
+  /** Default output color space conversion (`'srgb'` or `'preserve'`) */
+  colorSpace?: OutputColorSpace;
+  /** Preserve EXIF/ICC metadata by default instead of stripping it (defaults to `false`) */
+  preserveMetadata?: boolean;
+  /** Default custom SVG sanitizer hook invoked before the built-in strict XML allowlist pass */
+  svgSanitizer?: (svg: string) => string;
+  /** Optional transform result cache shared across image optimization calls */
+  transformCache?: TransformCache;
   /** Default AVIF/WebP encoding effort (defaults to `6`) */
   effort?: number;
   /**

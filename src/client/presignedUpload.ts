@@ -1,4 +1,5 @@
 import type { UploadedImageData } from '../types';
+import { isUploadKitError, UploadKitError } from '../types/errors';
 import {
   appendAssetToFormData,
   getAssetMimeType,
@@ -6,14 +7,16 @@ import {
   getAssetSize,
   isNativeAsset,
 } from './asset';
+import { createNetworkUploadError } from './errors';
 import type {
   PresignedUploadTarget,
   PresignResponsePayload,
   UploadableAsset,
 } from './types';
 import {
+  createHttpUploadError,
   createUploadAbortError,
-  parseErrorPayload,
+  isUploadAbortError,
   type UploadFormFields,
   type XhrUploadOptions,
 } from './xhrUpload';
@@ -21,6 +24,24 @@ import {
 function buildActionUrl(endpoint: string, action: 'presign' | 'finalize'): string {
   const separator = endpoint.includes('?') ? '&' : '?';
   return `${endpoint}${separator}action=${action}`;
+}
+
+async function fetchWithUploadErrors(
+  url: string,
+  init: RequestInit,
+  networkLabel: string,
+  abortedLabel?: string,
+  signal?: AbortSignal,
+): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (err: unknown) {
+    if (signal?.aborted || isUploadAbortError(err)) {
+      throw createUploadAbortError(abortedLabel);
+    }
+    if (isUploadKitError(err)) throw err;
+    throw createNetworkUploadError(networkLabel, err);
+  }
 }
 
 async function uploadDirectToStorageTarget(
@@ -31,24 +52,26 @@ async function uploadDirectToStorageTarget(
   if (options.signal?.aborted) {
     throw createUploadAbortError(options.abortedErrorLabel);
   }
+  const networkLabel =
+    options.networkErrorLabel || 'Network error during direct storage upload';
 
   if (typeof XMLHttpRequest === 'undefined') {
     if (target.method === 'POST') {
       const fd = new FormData();
       if (target.fields) {
-        for (const [k, v] of Object.entries(target.fields)) {
-          fd.append(k, v);
-        }
+        for (const [k, v] of Object.entries(target.fields)) fd.append(k, v);
       }
       appendAssetToFormData(fd, 'file', asset);
-      const res = await fetch(target.url, {
-        method: 'POST',
-        body: fd,
-        signal: options.signal,
-      });
+      const res = await fetchWithUploadErrors(
+        target.url,
+        { method: 'POST', body: fd, signal: options.signal },
+        networkLabel,
+        options.abortedErrorLabel,
+        options.signal,
+      );
       if (!res.ok) {
         const text = await res.text().catch(() => '');
-        throw new Error(parseErrorPayload(res.status, text, 'Direct storage upload failed'));
+        throw createHttpUploadError(res.status, text, 'Direct storage upload failed');
       }
       options.onUploadProgress?.(85);
       return;
@@ -56,23 +79,35 @@ async function uploadDirectToStorageTarget(
 
     let body: BodyInit;
     if (isNativeAsset(asset)) {
-      const fetched = await fetch(asset.uri, { signal: options.signal });
+      const fetched = await fetchWithUploadErrors(
+        asset.uri,
+        { signal: options.signal },
+        networkLabel,
+        options.abortedErrorLabel,
+        options.signal,
+      );
       body = await fetched.blob();
     } else {
       body = asset;
     }
-    const res = await fetch(target.url, {
-      method: 'PUT',
-      headers: {
-        'content-type': getAssetMimeType(asset),
-        ...(target.headers ?? {}),
+    const res = await fetchWithUploadErrors(
+      target.url,
+      {
+        method: 'PUT',
+        headers: {
+          'content-type': getAssetMimeType(asset),
+          ...(target.headers ?? {}),
+        },
+        body,
+        signal: options.signal,
       },
-      body,
-      signal: options.signal,
-    });
+      networkLabel,
+      options.abortedErrorLabel,
+      options.signal,
+    );
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(parseErrorPayload(res.status, text, 'Direct storage upload failed'));
+      throw createHttpUploadError(res.status, text, 'Direct storage upload failed');
     }
     options.onUploadProgress?.(85);
     return;
@@ -102,12 +137,10 @@ async function uploadDirectToStorageTarget(
         resolve();
       } else {
         reject(
-          new Error(
-            parseErrorPayload(
-              xhr.status,
-              xhr.responseText,
-              'Direct storage upload failed',
-            ),
+          createHttpUploadError(
+            xhr.status,
+            xhr.responseText,
+            'Direct storage upload failed',
           ),
         );
       }
@@ -115,11 +148,7 @@ async function uploadDirectToStorageTarget(
 
     xhr.onerror = () => {
       cleanup();
-      reject(
-        new Error(
-          options.networkErrorLabel || 'Network error during direct storage upload',
-        ),
-      );
+      reject(createNetworkUploadError(networkLabel));
     };
 
     xhr.onabort = () => {
@@ -130,9 +159,7 @@ async function uploadDirectToStorageTarget(
     if (target.method === 'POST') {
       const fd = new FormData();
       if (target.fields) {
-        for (const [k, v] of Object.entries(target.fields)) {
-          fd.append(k, v);
-        }
+        for (const [k, v] of Object.entries(target.fields)) fd.append(k, v);
       }
       appendAssetToFormData(fd, 'file', asset);
       xhr.send(fd);
@@ -143,9 +170,7 @@ async function uploadDirectToStorageTarget(
       'content-type': getAssetMimeType(asset),
       ...(target.headers ?? {}),
     };
-    for (const [k, v] of Object.entries(headers)) {
-      xhr.setRequestHeader(k, v);
-    }
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
 
     if (isNativeAsset(asset)) {
       fetch(asset.uri, { signal: options.signal })
@@ -153,7 +178,11 @@ async function uploadDirectToStorageTarget(
         .then((blob) => xhr.send(blob))
         .catch((err) => {
           cleanup();
-          reject(err);
+          reject(
+            options.signal?.aborted || isUploadAbortError(err)
+              ? createUploadAbortError(options.abortedErrorLabel)
+              : createNetworkUploadError(networkLabel, err),
+          );
         });
     } else {
       xhr.send(asset);
@@ -177,28 +206,35 @@ export async function uploadViaPresignedUrl(
   if (options.signal?.aborted) {
     throw createUploadAbortError(options.abortedErrorLabel);
   }
+  const networkLabel =
+    options.networkErrorLabel || 'Network error during image upload';
 
   const presignUrl = buildActionUrl(endpoint, 'presign');
-  const presignRes = await fetch(presignUrl, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...(options.headers ?? {}),
+  const presignRes = await fetchWithUploadErrors(
+    presignUrl,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(options.headers ?? {}) },
+      credentials: options.withCredentials ? 'include' : 'same-origin',
+      signal: options.signal,
+      body: JSON.stringify({
+        filename: getAssetName(asset),
+        contentType: getAssetMimeType(asset),
+        size: getAssetSize(asset),
+        ...fields,
+      }),
     },
-    credentials: options.withCredentials ? 'include' : 'same-origin',
-    signal: options.signal,
-    body: JSON.stringify({
-      filename: getAssetName(asset),
-      contentType: getAssetMimeType(asset),
-      size: getAssetSize(asset),
-      ...fields,
-    }),
-  });
+    networkLabel,
+    options.abortedErrorLabel,
+    options.signal,
+  );
 
   const presignText = await presignRes.text();
   if (!presignRes.ok) {
-    throw new Error(
-      parseErrorPayload(presignRes.status, presignText, options.fallbackErrorLabel),
+    throw createHttpUploadError(
+      presignRes.status,
+      presignText,
+      options.fallbackErrorLabel,
     );
   }
 
@@ -206,47 +242,54 @@ export async function uploadViaPresignedUrl(
   try {
     presignPayload = JSON.parse(presignText) as PresignResponsePayload;
   } catch {
-    throw new Error(
+    throw new UploadKitError(
       options.invalidResponseLabel || 'Invalid JSON response from presign endpoint',
+      { code: 'PROCESSING_FAILED', status: presignRes.status || 502, retryable: false },
     );
   }
 
   await uploadDirectToStorageTarget(presignPayload.upload, asset, options);
 
   const finalizeUrl = buildActionUrl(endpoint, 'finalize');
-  const finalizeRes = await fetch(finalizeUrl, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...(options.headers ?? {}),
+  const finalizeRes = await fetchWithUploadErrors(
+    finalizeUrl,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(options.headers ?? {}) },
+      credentials: options.withCredentials ? 'include' : 'same-origin',
+      signal: options.signal,
+      body: JSON.stringify({
+        token: presignPayload.token,
+        altText: fields.altText,
+        quality: fields.quality,
+        outputFormat: fields.outputFormat,
+        maxDimensions: fields.maxDimensions,
+        aspectRatio: fields.aspectRatio,
+        crop: fields.crop,
+        customFilename: fields.customFilename,
+        metadata: fields.metadata,
+      }),
     },
-    credentials: options.withCredentials ? 'include' : 'same-origin',
-    signal: options.signal,
-    body: JSON.stringify({
-      token: presignPayload.token,
-      altText: fields.altText,
-      quality: fields.quality,
-      outputFormat: fields.outputFormat,
-      maxDimensions: fields.maxDimensions,
-      aspectRatio: fields.aspectRatio,
-      crop: fields.crop,
-      customFilename: fields.customFilename,
-      metadata: fields.metadata,
-    }),
-  });
+    networkLabel,
+    options.abortedErrorLabel,
+    options.signal,
+  );
 
   const finalizeText = await finalizeRes.text();
   if (!finalizeRes.ok) {
-    throw new Error(
-      parseErrorPayload(finalizeRes.status, finalizeText, options.fallbackErrorLabel),
+    throw createHttpUploadError(
+      finalizeRes.status,
+      finalizeText,
+      options.fallbackErrorLabel,
     );
   }
 
   try {
     return JSON.parse(finalizeText) as UploadedImageData;
   } catch {
-    throw new Error(
+    throw new UploadKitError(
       options.invalidResponseLabel || 'Invalid JSON response from finalize endpoint',
+      { code: 'PROCESSING_FAILED', status: finalizeRes.status || 502, retryable: false },
     );
   }
 }
