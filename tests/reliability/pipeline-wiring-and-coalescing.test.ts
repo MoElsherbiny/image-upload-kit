@@ -217,11 +217,13 @@ describe('G-07: In-flight deduplication coalescing', () => {
       uploader.uploadImage({ buffer: buf, name: 'b.png', type: 'image/png' }, { altText: 'B' }),
       uploader.uploadImage({ buffer: buf, name: 'c.png', type: 'image/png' }, { altText: 'C' }),
     ]);
+    const all = [first, second, third];
     expect(uploadCalls).toBe(1);
-    expect(first.deduplicated).toBeUndefined();
-    expect(second.deduplicated).toBe(true);
-    expect(third.deduplicated).toBe(true);
+    expect(all.filter((r) => r.deduplicated === undefined)).toHaveLength(1);
+    expect(all.filter((r) => r.deduplicated === true)).toHaveLength(2);
     expect(second.url).toBe(first.url);
+    expect(third.url).toBe(first.url);
+    expect(first.altText).toBe('A');
     expect(second.altText).toBe('B');
     expect(third.altText).toBe('C');
 

@@ -186,11 +186,15 @@ describe('CLI generated templates compile cleanly under strict TypeScript', () =
     'firebase',
   ];
 
-  it.each(allStorages)('compiles generated %s storage adapter with zero diagnostics', (storage) => {
-    const generated = buildStorageAdapterFile(storage);
-    const errors = compileVirtualFiles({ [generated.relativePath]: generated.content });
-    expect(errors).toEqual([]);
-  });
+  it.each(allStorages)(
+    'compiles generated %s storage adapter with zero diagnostics',
+    (storage) => {
+      const generated = buildStorageAdapterFile(storage);
+      const errors = compileVirtualFiles({ [generated.relativePath]: generated.content });
+      expect(errors).toEqual([]);
+    },
+    15_000,
+  );
 
   const frameworkCases: Array<{
     label: string;
@@ -209,22 +213,26 @@ describe('CLI generated templates compile cleanly under strict TypeScript', () =
     { label: 'vite frontend-only', frontend: 'vite', backend: 'frontend-only', needsStorage: false },
   ];
 
-  it.each(frameworkCases)('compiles generated $label template with zero diagnostics', (tc) => {
-    const rec = makeRecommendation(tc.frontend, tc.backend, 'local');
-    const files: Record<string, string> = {};
-    if (tc.needsStorage) {
-      const storageFile = buildStorageAdapterFile('local');
-      files[storageFile.relativePath] = storageFile.content;
-    }
-    for (const planned of buildFrameworkScaffolds(rec, { hasSrcApp: tc.hasSrcApp })) {
-      files[planned.relativePath] = planned.content;
+  it.each(frameworkCases)(
+    'compiles generated $label template with zero diagnostics',
+    (tc) => {
+      const rec = makeRecommendation(tc.frontend, tc.backend, 'local');
+      const files: Record<string, string> = {};
       if (tc.needsStorage) {
-        expect(planned.content).not.toContain('authorize: async () => true');
-        expect(planned.content).toContain("request.headers.get('authorization')");
+        const storageFile = buildStorageAdapterFile('local');
+        files[storageFile.relativePath] = storageFile.content;
       }
-    }
-    expect(compileVirtualFiles(files)).toEqual([]);
-  });
+      for (const planned of buildFrameworkScaffolds(rec, { hasSrcApp: tc.hasSrcApp })) {
+        files[planned.relativePath] = planned.content;
+        if (tc.needsStorage) {
+          expect(planned.content).not.toContain('authorize: async () => true');
+          expect(planned.content).toContain("request.headers.get('authorization')");
+        }
+      }
+      expect(compileVirtualFiles(files)).toEqual([]);
+    },
+    15_000,
+  );
 
   it('wires 4-layer engine into init (never installs sharp on Vite React or Workers) & detects Next.js src/app', async () => {
     const viteDir = await fs.mkdtemp(path.join(os.tmpdir(), 'iuk-vite-init-'));

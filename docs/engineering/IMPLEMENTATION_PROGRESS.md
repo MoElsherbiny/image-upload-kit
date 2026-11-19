@@ -15,9 +15,9 @@ Updated after every completed phase. All phases (0–10) and all 12 CLI stages a
 | **Phase 6 — Framework Integrations** | **COMPLETE** | 2026-11-19 | Multi-platform parity verified across React, Headless, Vue 3 / Nuxt 4, Angular 17–21+, and React Native / Expo test suites with zero cross-framework leakage (`check-dist` 184/184). |
 | **Phase 7A — DX & Documentation** | **COMPLETE** | 2026-11-19 | Authored `docs/SECURITY_GUIDE.md`, `docs/STORAGE_ADAPTERS.md`, `docs/ERROR_HANDLING.md`, `docs/BENCHMARKS.md`, and updated `AGENTS.md`. |
 | **Phase 7B — Backend-Agnostic CLI** | **COMPLETE** | 2026-11-19 | All 12 stages completed: 4-layer infra detection, honest capability registries, `architectureResolver`, runtime-safe `dependencyPlanner`, safe file/env/`AGENTS.md` managers, `init`/`doctor`/`validate`/`agents`/`config` commands, 19-topology tests, and `CLI_*.md` docs. |
-| **Phase 8 — Testing & QA** | **COMPLETE** | 2026-11-19 | Expanded test suite from `220` to `264` passing tests across `39` test files (security, storage hardening/migration, optimization, CLI, React/Vue/Angular/RN, dist smoke). |
-| **Phase 9 — Perf & Maintainability** | **COMPLETE** | 2026-11-19 | Verified `scripts/benchmark-optimizer.mjs` (Node v22.23.2 / Sharp 0.35.5), `"dependencies": {}`, `<= 300` lines across all `304` repo files, and clean ESM/CJS/DTS bundles. |
-| **Phase 10 — Release Readiness** | **COMPLETE** | 2026-11-19 | Authored `docs/engineering/RELEASE_READINESS.md` and updated `RISK_REGISTER.md`. **Awaiting maintainer approval before npm publish.** |
+| **Phase 8 — Testing & QA** | **COMPLETE** | 2026-11-19 | Expanded test suite from `220` to `328` passing tests across `48` test files (security, route hardening, storage hardening/migration, optimization, CLI template `tsc` compile + 19 topologies, consumer `NodeNext`/`Node16`/`Bundler`, React/Vue/Angular/RN, dist smoke). |
+| **Phase 9 — Perf & Maintainability** | **COMPLETE** | 2026-11-19 | Verified `scripts/benchmark-optimizer.mjs` (Node v22.23.2 / Sharp 0.35.5), `"dependencies": {}`, `<= 300` lines across all `321` repo files, in-flight dedupe coalescing, and clean ESM/CJS/DTS bundles. |
+| **Phase 10 — Release Readiness** | **COMPLETE** | 2026-11-19 | Authored `docs/engineering/RELEASE_READINESS.md`, closed `R-01`–`R-07` & audit gaps `G-01`–`G-09`, added Windows CI, updated `README.md`/`CHANGELOG.md`/`SECURITY.md`. **Awaiting maintainer approval before npm publish.** |
 
 ## Key Milestone Commits
 

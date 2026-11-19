@@ -21,8 +21,8 @@
   - Added `docs/SECURITY_GUIDE.md`, `docs/STORAGE_ADAPTERS.md`, `docs/ERROR_HANDLING.md`, `docs/BENCHMARKS.md`, and updated `AGENTS.md`.
 - **Phase 7B (Backend-Agnostic CLI — All 12 Stages)**:
   - 4-layer infra detection (`detection/`), honest runtime & storage capability registries (`capabilities/`), pure `architectureResolver`, runtime-safe `dependencyPlanner`, safe file/env/`AGENTS.md` managers (`--dry-run`, rollback), `init`/`doctor`/`validate`/`agents`/`config` commands, 19-topology fixture tests, and `docs/engineering/CLI_*.md`.
-- **Phases 8–10 (QA, Performance, Release Readiness)**:
-  - Expanded automated coverage from `220` to `292` passing tests across `44` test suites (including live Node HTTP server integration, cross-framework parity, dual ESM/CJS/CLI distribution verification, adversarial security, and reliability suites); closed `R-01` through `R-07` in `docs/engineering/RISK_REGISTER.md`.
+- **Phases 8–10 & Deep Production-Readiness Audit (`G-01`–`G-09`)**:
+  - Expanded automated coverage from `220` to `328` passing tests across `48` test suites — including strict `tsc` compilation verification of every generated CLI template (`21` tests), consumer `NodeNext`/`Node16`/`Bundler` resolution against `dist/`, live Node HTTP server integration, streaming body overflow `413` & concurrent double-complete `409` hardening, in-flight dedupe coalescing, end-to-end `UploadKitError` pass-through, and Windows CI (`windows-latest`); closed `R-01`–`R-07` and `G-01`–`G-09`.
 
 ## 2. Outstanding Risks & Honest Limitations
 
@@ -42,10 +42,10 @@
 | Metric | Verified Value | Guardrail |
 | --- | --- | --- |
 | Runtime `dependencies` | `0` (`"dependencies": {}`) | Must be empty |
-| Repository file line cap | `316` files checked — **all `<= 300` lines** | `<= 300` lines (`check-max-lines.mjs` + ESLint) |
+| Repository file line cap | `321` files checked — **all `<= 300` lines** | `<= 300` lines (`check-max-lines.mjs` + ESLint) |
 | TypeScript `any` violations | `0` | `@typescript-eslint/no-explicit-any: error` |
-| Core ESM bundle sizes | `index.js` `1.97 KB`, `client.js` `1.65 KB`, `server-handler.js` `927 B`, `storage.js` `37.41 KB`, `server.js` `99.89 KB` | Zero cross-framework leakage |
-| Tarball footprint (`npm pack`) | `147` files, `577.5 kB` packed (`2.7 MB` unpacked) | Zero `.map` files in tarball |
+| Core ESM bundle sizes | `index.js` `1.97 KB`, `client.js` `1.70 KB`, `server-handler.js` `1.03 KB`, `storage.js` `37.41 KB`, `server.js` `103.36 KB` | Zero cross-framework leakage |
+| Tarball footprint (`npm pack`) | `149` files, `590.7 kB` packed (`2.7 MB` unpacked) | Zero `.map` files in tarball |
 | Optimizer benchmark (`WebP q80`, `1600x1066` JPEG) | `118.4 ms` single / `127.4 ms` x4 parallel (`63.5%` size savings) | Node `v22.23.2`, Sharp `0.35.5` |
 
 ## 5. Verification Evidence
@@ -54,13 +54,13 @@ All verification gates passed cleanly on the merged `main` branch:
 
 | Command | Result |
 | --- | --- |
-| `node scripts/check-max-lines.mjs` | Passed (`316` files verified, all `<= 300` lines) |
+| `node scripts/check-max-lines.mjs` | Passed (`321` files verified, all `<= 300` lines) |
 | `npm run typecheck` | Passed (`0` TypeScript errors) |
 | `npm run lint` | Passed (`0` ESLint errors + `check-max-lines`) |
-| `npm run build` | Passed (ESM `516ms`, CJS `519ms`, CLI `95ms`, DTS `2.14s`, CSS) |
+| `npm run build` | Passed (ESM `525ms`, CJS `536ms`, CLI `425ms`, DTS `2.67s`, CSS) |
 | `npm run check:dist` | Passed (`184` passed, `0` failed) |
-| `npm test` | Passed (`44` test files, `292` tests passed in `7.47s`) |
-| `npm pack --dry-run` | Passed (`147` files, `577.5 kB` packed) |
+| `npm test` | Passed (`48` test files, `328` tests passed) |
+| `npm pack --dry-run` | Passed (`149` files, `590.7 kB` packed) |
 | `node scripts/benchmark-optimizer.mjs` | Passed (8 scenarios measured; recorded in `docs/BENCHMARKS.md`) |
 
 **Final Status**: Ready for maintainer review and approval. **Awaiting maintainer approval before npm publish.**
