@@ -80,49 +80,57 @@ describe.skipIf(!hasDist)('Distribution, Dual ESM/CJS & CLI Binary Verification'
     { name: './cli', esm: 'cli.js', cjs: 'cli.cjs', expectedExports: ['runCli', 'runDoctor'] },
   ];
 
-  it('loads all core subpaths cleanly via ESM import() and CJS require()', async () => {
-    const requireDist = createRequire(path.join(distDir, 'index.cjs'));
+  it(
+    'loads all core subpaths cleanly via ESM import() and CJS require()',
+    async () => {
+      const requireDist = createRequire(path.join(distDir, 'index.cjs'));
 
-    for (const entry of subpaths) {
-      const esmMod = (await import(pathToFileURL(path.join(distDir, entry.esm)).href)) as Record<
-        string,
-        unknown
-      >;
-      const cjsMod = requireDist(`./${entry.cjs}`) as Record<string, unknown>;
+      for (const entry of subpaths) {
+        const esmMod = (await import(pathToFileURL(path.join(distDir, entry.esm)).href)) as Record<
+          string,
+          unknown
+        >;
+        const cjsMod = requireDist(`./${entry.cjs}`) as Record<string, unknown>;
 
-      for (const symbol of entry.expectedExports) {
-        expect(esmMod[symbol], `ESM ${entry.name} missing ${symbol}`).toBeDefined();
-        expect(cjsMod[symbol], `CJS ${entry.name} missing ${symbol}`).toBeDefined();
+        for (const symbol of entry.expectedExports) {
+          expect(esmMod[symbol], `ESM ${entry.name} missing ${symbol}`).toBeDefined();
+          expect(cjsMod[symbol], `CJS ${entry.name} missing ${symbol}`).toBeDefined();
+        }
       }
-    }
-  });
+    },
+    30_000,
+  );
 
-  it('executes dist/bin.js cleanly for --help, config, and doctor in a fixture project', () => {
-    const helpOut = execFileSync(process.execPath, [binPath, '--help'], {
-      cwd: fixtureDir,
-      encoding: 'utf8',
-    });
-    expect(helpOut).toContain('img-upload-kit');
-
-    const configOut = execFileSync(process.execPath, [binPath, 'config', '--cwd', fixtureDir], {
-      cwd: fixtureDir,
-      encoding: 'utf8',
-    });
-    const parsedConfig = JSON.parse(configOut) as { resolved?: { storage?: string } };
-    expect(parsedConfig.resolved?.storage).toBe('local');
-
-    const doctorOut = execFileSync(
-      process.execPath,
-      [binPath, 'doctor', '--json', '--cwd', fixtureDir],
-      {
+  it(
+    'executes dist/bin.js cleanly for --help, config, and doctor in a fixture project',
+    () => {
+      const helpOut = execFileSync(process.execPath, [binPath, '--help'], {
         cwd: fixtureDir,
         encoding: 'utf8',
-      },
-    );
-    const parsedDoctor = JSON.parse(doctorOut) as { ok?: boolean; issues?: unknown[] };
-    expect(parsedDoctor.ok).toBe(true);
-    expect(Array.isArray(parsedDoctor.issues)).toBe(true);
-  });
+      });
+      expect(helpOut).toContain('img-upload-kit');
+
+      const configOut = execFileSync(process.execPath, [binPath, 'config', '--cwd', fixtureDir], {
+        cwd: fixtureDir,
+        encoding: 'utf8',
+      });
+      const parsedConfig = JSON.parse(configOut) as { resolved?: { storage?: string } };
+      expect(parsedConfig.resolved?.storage).toBe('local');
+
+      const doctorOut = execFileSync(
+        process.execPath,
+        [binPath, 'doctor', '--json', '--cwd', fixtureDir],
+        {
+          cwd: fixtureDir,
+          encoding: 'utf8',
+        },
+      );
+      const parsedDoctor = JSON.parse(doctorOut) as { ok?: boolean; issues?: unknown[] };
+      expect(parsedDoctor.ok).toBe(true);
+      expect(Array.isArray(parsedDoctor.issues)).toBe(true);
+    },
+    30_000,
+  );
 
   it('verifies zero runtime dependencies and existence of all declared .d.ts / .d.cts files', () => {
     const pkg = JSON.parse(

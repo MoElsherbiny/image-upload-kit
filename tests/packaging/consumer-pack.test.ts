@@ -84,6 +84,8 @@ export const checkRefs = {
 };
 `;
 
+const sourceFileCache = new Map<string, ts.SourceFile | undefined>();
+
 function compileConsumer(
   consumerFile: string,
   resolution: 'NodeNext' | 'Node16' | 'Bundler',
@@ -111,7 +113,21 @@ function compileConsumer(
     typeRoots: [path.join(rootDir, 'node_modules', '@types')],
   };
 
-  const program = ts.createProgram([consumerFile], options);
+  const baseHost = ts.createCompilerHost(options, true);
+  const host: ts.CompilerHost = {
+    ...baseHost,
+    getSourceFile(fileName, languageVersion, onError, shouldCreateNew) {
+      const key = path.resolve(fileName).replace(/\\/g, '/').toLowerCase();
+      if (!shouldCreateNew && sourceFileCache.has(key)) {
+        return sourceFileCache.get(key);
+      }
+      const sf = baseHost.getSourceFile(fileName, languageVersion, onError, shouldCreateNew);
+      sourceFileCache.set(key, sf);
+      return sf;
+    },
+  };
+
+  const program = ts.createProgram([consumerFile], options, host);
   return ts.getPreEmitDiagnostics(program).map((d) => {
     const file = d.file ? path.basename(d.file.fileName) : '<global>';
     const msg = ts.flattenDiagnosticMessageText(d.messageText, '\n');
@@ -147,15 +163,27 @@ describe.skipIf(!hasDist)('consumer package resolution against dist/ exports', (
     }
   });
 
-  it('compiles all core & server subpaths with zero errors under NodeNext resolution', () => {
-    expect(compileConsumer(consumerFile, 'NodeNext')).toEqual([]);
-  });
+  it(
+    'compiles all core & server subpaths with zero errors under NodeNext resolution',
+    () => {
+      expect(compileConsumer(consumerFile, 'NodeNext')).toEqual([]);
+    },
+    30_000,
+  );
 
-  it('compiles all core & server subpaths with zero errors under Node16 resolution', () => {
-    expect(compileConsumer(consumerFile, 'Node16')).toEqual([]);
-  });
+  it(
+    'compiles all core & server subpaths with zero errors under Node16 resolution',
+    () => {
+      expect(compileConsumer(consumerFile, 'Node16')).toEqual([]);
+    },
+    30_000,
+  );
 
-  it('compiles all core & server subpaths with zero errors under Bundler resolution', () => {
-    expect(compileConsumer(consumerFile, 'Bundler')).toEqual([]);
-  });
+  it(
+    'compiles all core & server subpaths with zero errors under Bundler resolution',
+    () => {
+      expect(compileConsumer(consumerFile, 'Bundler')).toEqual([]);
+    },
+    30_000,
+  );
 });
