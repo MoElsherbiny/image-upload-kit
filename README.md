@@ -36,12 +36,10 @@ Most upload libraries stop at "the file reached the server". This one handles ev
 
 ## Quick start
 
-### 1. Install (`npx` CLI)
+### 1. Install ([`npx` CLI guide](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/CLI.md))
 
 ```bash
-# Interactive setup (React, Vue/Nuxt, Angular, React Native, Node/Edge & storage):
-npx img-upload-kit@latest init
-# Non-interactive setup + diagnostics/tooling (`doctor`, `validate`, `agents`, `config`):
+npx img-upload-kit@latest init                        # Interactive framework + storage setup
 npx img-upload-kit@latest init --yes && npx img-upload-kit doctor
 ```
 
@@ -89,11 +87,8 @@ That's it. Every upload returns an `UploadedImageData` you can store in your dat
 
 ```ts
 {
-  url: "/uploads/images/…/avatar.avif",
-  width: 512, height: 512, format: "avif", size: 18342,
-  blurDataUrl: "data:image/webp;base64,UklGR…", // tiny inline WebP placeholder
-  blurColor: "#a3b1c2",                         // dominant 4-edge ambient color
-  contentHash: "3f9c1a…"                        // SHA-256 content hash
+  url: "/uploads/images/…/avatar.avif", width: 512, height: 512, format: "avif", size: 18342,
+  blurDataUrl: "data:image/webp;base64,UklGR…", blurColor: "#a3b1c2", contentHash: "3f9c1a…"
 }
 ```
 
@@ -112,7 +107,8 @@ That's it. Every upload returns an `UploadedImageData` you can store in your dat
 | Avoid storing the same image twice | `deduplicate: { store }` | [Presigned & dedupe](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/presigned-and-dedupe.md) |
 | Pick from camera or gallery on mobile | `img-upload-kit/react-native` + Expo picker | [React Native](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/react-native.md) |
 | Use my own design system | `unstyled`, slot `classNames`, or headless hooks | [Custom styling](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/CUSTOM_STYLING.md) |
-| Store files in S3, R2, Supabase or on disk | Storage adapters | [Recipes](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/FRAMEWORK_RECIPES.md) |
+| Store files in S3, R2, Supabase or on disk | Storage adapters & `migrateStorage` | [Storage](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/STORAGE_ADAPTERS.md) · [Recipes](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/FRAMEWORK_RECIPES.md) |
+| Scaffold routes, diagnose setups, or generate static blur manifests | `npx img-upload-kit init \| doctor \| generate` | [CLI guide](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/CLI.md) |
 
 ## Framework examples
 
@@ -151,7 +147,6 @@ import { createImageUpload } from 'img-upload-kit/vue';
 import 'img-upload-kit/styles.css';
 app.use(createImageUpload({ endpoint: '/api/upload' }));
 ```
-
 ```vue
 <script setup lang="ts">
 import { ref } from 'vue';
@@ -160,16 +155,13 @@ import { SingleImageUpload, MultiImageUpload } from 'img-upload-kit/vue';
 const avatar = ref<UploadedImageData | null>(null);
 const gallery = ref<UploadedImageData[]>([]);
 </script>
-
 <template>
   <SingleImageUpload v-model="avatar" preset="avatar" />
   <MultiImageUpload v-model="gallery" preset="square" reorderable :max-images="8" />
 </template>
 ```
-
 Full guide: [docs/vue.md](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/vue.md)
 </details>
-
 <details>
 <summary><b>Angular 17+ (signals, zoneless-ready)</b></summary>
 
@@ -178,7 +170,6 @@ Full guide: [docs/vue.md](https://github.com/MoElsherbiny/image-upload-kit/blob/
 import { provideImageUploadConfig } from 'img-upload-kit/angular';
 export const appConfig = { providers: [provideImageUploadConfig({ endpoint: '/api/upload' })] };
 ```
-
 ```ts
 // cover-upload.component.ts
 import { Component, DestroyRef, inject, signal } from '@angular/core';
@@ -198,17 +189,14 @@ export class CoverUploadComponent {
     createSingleUpload({ ...resolveImageUploadConfig(), preset: 'cover' }),
     { signal, destroyRef: inject(DestroyRef) },
   );
-
   pick(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (file) void this.upload.selectFile(file);
   }
 }
 ```
-
 Full guide: [docs/angular.md](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/angular.md)
 </details>
-
 <details>
 <summary><b>React Native / Expo</b></summary>
 
@@ -219,7 +207,6 @@ import type { UploadedImageData } from 'img-upload-kit';
 import { NativeImageUploadProvider, SingleImageUpload, createExpoImagePickerAdapter } from 'img-upload-kit/react-native';
 
 const picker = createExpoImagePickerAdapter(ImagePicker, { quality: 0.9 });
-
 export function ProfileScreen() {
   const [photo, setPhoto] = useState<UploadedImageData | null>(null);
   return (
@@ -229,15 +216,12 @@ export function ProfileScreen() {
   );
 }
 ```
-
 Full guide: [docs/react-native.md](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/react-native.md)
 </details>
-
 <details>
 <summary><b>Production storage: S3 / Cloudflare R2 / Supabase</b></summary>
 
 Swap the local disk adapter for any storage backend. The SDK stays your own dependency, so `img-upload-kit` never pins a version.
-
 ```ts
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { createS3StorageAdapter } from 'img-upload-kit/storage';
@@ -282,16 +266,17 @@ Import only what you need. Each entry point is tree-shakeable and ships ESM + CJ
 | `img-upload-kit/vue` | Browser / SSR | Vue plugin, components, composables |
 | `img-upload-kit/angular` | Browser | Signal controllers and DOM helpers |
 | `img-upload-kit/react-native` | iOS / Android | Native components, hooks, Expo & RN picker adapters |
-| `img-upload-kit/client` | Any JS runtime | Framework-agnostic upload engine, resize, presigned flow |
-| `img-upload-kit/server` | Node.js 20+ | Uploader, Sharp optimizer, HTTP handler, dedupe |
-| `img-upload-kit/server/handler` | Node / Edge | Edge-safe HTTP handler (no Sharp at import time) |
-| `img-upload-kit/storage` | Node / Edge | S3/R2, Supabase, local disk and in-memory adapters |
+| `img-upload-kit/client` | Any JS runtime | Framework-agnostic upload engine, resize, presigned/resumable/multipart |
+| `img-upload-kit/server` | Node.js 20+ | Uploader, Sharp optimizer, HTTP handlers, dedupe |
+| `img-upload-kit/server/handler` | Node / Edge | Edge-safe HTTP handlers (no Sharp at import time) |
+| `img-upload-kit/storage` | Node / Edge | S3/R2, Supabase, local disk, memory & `migrateStorage` |
 | `img-upload-kit/blur` | Any | BlurHash decoding and placeholder helpers |
+| `img-upload-kit/cli` | Node.js 20+ | 4-layer setup CLI, `doctor`, scaffolds & blur manifest tools |
 | `img-upload-kit/styles.css` | Browser | Default theme (`--iuk-*` tokens, dark mode, RTL) |
 
 ## Documentation
 
-- **Frameworks & Guides:** [Vue & Nuxt](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/vue.md) · [Angular](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/angular.md) · [React Native & Expo](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/react-native.md) · [E-commerce & social cropping](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ecommerce-social.md) · [Presigned uploads, resize & dedupe](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/presigned-and-dedupe.md) · [AnimatedImage](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ANIMATED_IMAGE.md)
+- **Frameworks & Guides:** [CLI & setup (`npx`)](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/CLI.md) · [Vue & Nuxt](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/vue.md) · [Angular](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/angular.md) · [React Native & Expo](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/react-native.md) · [E-commerce & social cropping](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ecommerce-social.md) · [Presigned uploads, resize & dedupe](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/presigned-and-dedupe.md) · [AnimatedImage](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ANIMATED_IMAGE.md)
 - **Production & Operations:** [Security guide](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/SECURITY_GUIDE.md) · [Storage adapters](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/STORAGE_ADAPTERS.md) · [Error handling](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ERROR_HANDLING.md) · [Benchmarks](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/BENCHMARKS.md)
 - **Customizing & Project:** [Styling & headless tiers](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/CUSTOM_STYLING.md) · [Framework & storage recipes](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/FRAMEWORK_RECIPES.md) · [Architecture](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ARCHITECTURE.md) · [Changelog](https://github.com/MoElsherbiny/image-upload-kit/blob/main/CHANGELOG.md) · [Migration from v1](https://github.com/MoElsherbiny/image-upload-kit/blob/main/MIGRATION.md) · [Roadmap](https://github.com/MoElsherbiny/image-upload-kit/blob/main/ROADMAP.md) · [Security policy](https://github.com/MoElsherbiny/image-upload-kit/blob/main/SECURITY.md)
 

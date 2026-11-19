@@ -18,8 +18,13 @@ All built-in adapters enforce `sanitizeStorageKey` (blocking `\0`, `.`, and `..`
 | --- | --- | --- |
 | **LocalFS** (`createLocalFsStorageAdapter`) | Rejects `:` / `\0` / `..`; verifies `fs.realpath` containment to block symlink escapes. | Serve uploads from a dedicated static path with `X-Content-Type-Options: nosniff`; unsuitable for ephemeral/serverless filesystems; no presigned upload/download URLs. |
 | **S3 & S3-Compatible** (`createS3StorageAdapter`) | Key traversal rejection, `IfNoneMatch: '*'` when `upsert: false`, normalized `UploadKitError` codes. | Scope IAM credentials to specific bucket prefixes; configure bucket CORS for browser presigned PUTs; enable lifecycle rules to sweep `_staging/` objects. |
-| **Supabase** (`createSupabaseStorageAdapter`) | Key traversal rejection, metadata validation, signed upload/download support. | Keep the service-role key strictly server-side; configure RLS policies and bucket public/private visibility appropriately. |
-| **Memory** (`createMemoryStorageAdapter`) | Process-local `Map` with full `StorageAdapter` parity. | **Development and unit testing only** — data is volatile and not shared across instances. |
+| **Supabase** (`createSupabaseStorageAdapter`) | Key traversal rejection, metadata validation, normalized `UploadKitError` codes, signed upload/download support. | Keep the service-role key strictly server-side; configure RLS policies and bucket public/private visibility appropriately. |
+| **Memory** (`createMemoryStorageAdapter`) | Enforces `sanitizeStorageKey` (rejecting `\0`, `.`, `..` across all read/write/presign/multipart ops) and `validateStorageMetadata` in a process-local `Map`. | **Development and unit testing only** — data is volatile and not shared across instances. |
+
+### Cancellation (`signal`) & Normalized Errors
+
+- **`StorageUploadParams.signal?: AbortSignal`**: Passed from `createImageUploader` (and forwarded as `abortSignal` by `createS3StorageAdapter`) so cancelled requests abort in-flight transport writes cleanly and roll back written objects.
+- **Normalized `UploadKitError` (`normalizeStorageError`)**: Built-in adapters wrap SDK and OS failures across `upload`, `delete`, `download`, and `deleteByUrl` into safe `UploadKitError` codes (`STORAGE_ERROR`, `RATE_LIMITED`, `FORBIDDEN`, `RESOURCE_LIMIT_EXCEEDED`, `FILE_TOO_LARGE`) without leaking credentials, filesystem paths, or stack traces.
 
 ## 3. Health Checks, Presigned Downloads & Multipart Hooks
 
