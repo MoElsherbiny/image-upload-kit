@@ -33,6 +33,17 @@ import {
   UploadValidationError,
 } from './responses';
 import {
+  createMultipartUploadHandler,
+  type MultipartUploadHandlerOptions,
+} from './multipartRoute';
+import {
+  createMemoryResumableSessionStore,
+  createResumableUploadHandler,
+  type ResumableSessionRecord,
+  type ResumableSessionStore,
+  type ResumableUploadHandlerOptions,
+} from './resumableRoute';
+import {
   consumeUploadToken,
   type PresignTokenPayload,
   type PresignTokenStore,
@@ -47,12 +58,19 @@ export {
   type AuthorizeContext,
   consumeUploadToken,
   createMemoryRateLimiter,
+  createMemoryResumableSessionStore,
+  createMultipartUploadHandler,
+  createResumableUploadHandler,
   errorResponseFromKitError,
   isClientValidationError,
   type MemoryRateLimiterOptions,
+  type MultipartUploadHandlerOptions,
   type PresignedHandlerOptions,
   type PresignTokenPayload,
   type PresignTokenStore,
+  type ResumableSessionRecord,
+  type ResumableSessionStore,
+  type ResumableUploadHandlerOptions,
   signUploadToken,
   sweepStagedUploads,
   type UploadErrorContext,

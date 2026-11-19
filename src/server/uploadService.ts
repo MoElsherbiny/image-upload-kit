@@ -1,4 +1,12 @@
 export { processImageBuffer } from './uploader/bufferProcessor';
+export {
+  cleanupAbandonedResumableSessions,
+  cleanupExpiredStagingObjects,
+  type CleanupResumableSessionsOptions,
+  type CleanupResumableSessionsResult,
+  type CleanupStagingObjectsOptions,
+  type CleanupStagingObjectsResult,
+} from './uploader/cleanup';
 export { createImageUploader } from './uploader/createImageUploader';
 export {
   computeDedupeKey,
