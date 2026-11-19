@@ -39,10 +39,10 @@ Most upload libraries stop at "the file reached the server". This one handles ev
 ### 1. Install (`npx` CLI)
 
 ```bash
-# Interactive terminal menu (choose React, Vue/Nuxt, Angular, React Native & storage with ↑/↓ arrows):
+# Interactive setup (React, Vue/Nuxt, Angular, React Native, Node/Edge & storage):
 npx img-upload-kit@latest init
-# Or non-interactive setup (auto-detects your framework, package manager & installs dependencies):
-npx img-upload-kit@latest init --yes
+# Non-interactive setup + diagnostics/tooling (`doctor`, `validate`, `agents`, `config`):
+npx img-upload-kit@latest init --yes && npx img-upload-kit doctor
 ```
 
 ### 2. Add an upload route
@@ -291,6 +291,7 @@ Import only what you need. Each entry point is tree-shakeable and ships ESM + CJ
 ## Documentation
 
 - **Frameworks & Guides:** [Vue & Nuxt](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/vue.md) · [Angular](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/angular.md) · [React Native & Expo](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/react-native.md) · [E-commerce & social cropping](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ecommerce-social.md) · [Presigned uploads, resize & dedupe](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/presigned-and-dedupe.md) · [AnimatedImage](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ANIMATED_IMAGE.md)
+- **Production & Operations:** [Security guide](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/SECURITY_GUIDE.md) · [Storage adapters](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/STORAGE_ADAPTERS.md) · [Error handling](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ERROR_HANDLING.md) · [Benchmarks](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/BENCHMARKS.md)
 - **Customizing & Project:** [Styling & headless tiers](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/CUSTOM_STYLING.md) · [Framework & storage recipes](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/FRAMEWORK_RECIPES.md) · [Architecture](https://github.com/MoElsherbiny/image-upload-kit/blob/main/docs/ARCHITECTURE.md) · [Changelog](https://github.com/MoElsherbiny/image-upload-kit/blob/main/CHANGELOG.md) · [Migration from v1](https://github.com/MoElsherbiny/image-upload-kit/blob/main/MIGRATION.md) · [Roadmap](https://github.com/MoElsherbiny/image-upload-kit/blob/main/ROADMAP.md) · [Security policy](https://github.com/MoElsherbiny/image-upload-kit/blob/main/SECURITY.md)
 
 ## Contributing & License

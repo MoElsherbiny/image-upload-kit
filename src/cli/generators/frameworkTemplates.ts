@@ -1,18 +1,36 @@
 import type { ArchitectureRecommendation, PlannedFile } from '../types/architecture';
 
+export interface FrameworkScaffoldOptions {
+  /** True when a Next.js workspace uses `src/app` instead of root `app/`. */
+  hasSrcApp?: boolean;
+}
+
+const FAIL_CLOSED_AUTHORIZE_LINES = [
+  '  authorize: async ({ request }) => {',
+  '    // TODO: replace with your session/JWT verification (e.g. Auth.js, Clerk, Supabase Auth)',
+  "    return Boolean(request.headers.get('authorization') || request.headers.get('cookie'));",
+  '  },',
+];
+
 export function buildFrameworkScaffolds(
   rec: ArchitectureRecommendation,
+  options: FrameworkScaffoldOptions = {},
 ): PlannedFile[] {
   const files: PlannedFile[] = [];
 
   if (rec.backend === 'nextjs-node') {
+    const useSrcApp = Boolean(options.hasSrcApp);
+    const routePath = useSrcApp ? 'src/app/api/upload/route.ts' : 'app/api/upload/route.ts';
+    const storageImport = useSrcApp
+      ? '../../../lib/upload-storage'
+      : '../../../src/lib/upload-storage';
     files.push({
-      relativePath: 'app/api/upload/route.ts',
+      relativePath: routePath,
       description: 'Next.js App Router Node.js upload handler',
       mode: 'create',
       content: [
         "import { createImageUploader, createUploadHttpHandler } from 'img-upload-kit/server';",
-        "import { uploadStorage } from '../../../src/lib/upload-storage';",
+        `import { uploadStorage } from '${storageImport}';`,
         '',
         "export const runtime = 'nodejs';",
         '',
@@ -20,10 +38,7 @@ export function buildFrameworkScaffolds(
         '',
         'export const { POST, DELETE } = createUploadHttpHandler({',
         '  uploader,',
-        '  authorize: async () => {',
-        '    // TODO: verify authenticated user session',
-        '    return true;',
-        '  },',
+        ...FAIL_CLOSED_AUTHORIZE_LINES,
         '});',
         '',
       ].join('\n'),
@@ -33,15 +48,28 @@ export function buildFrameworkScaffolds(
 
   if (rec.backend === 'nuxt-server') {
     files.push({
-      relativePath: 'server/api/upload.post.ts',
+      relativePath: 'server/api/upload.ts',
       description: 'Nuxt / Nitro Node upload endpoint',
       mode: 'create',
       content: [
+        "import { defineEventHandler, toWebRequest } from 'h3';",
         "import { createImageUploader, createUploadHttpHandler } from 'img-upload-kit/server';",
         "import { uploadStorage } from '../../src/lib/upload-storage';",
         '',
         'const uploader = createImageUploader({ storage: uploadStorage });',
-        'export const uploadHandler = createUploadHttpHandler({ uploader });',
+        '',
+        'const { POST, DELETE } = createUploadHttpHandler({',
+        '  uploader,',
+        ...FAIL_CLOSED_AUTHORIZE_LINES,
+        '});',
+        '',
+        'export default defineEventHandler(async (event) => {',
+        '  const request = toWebRequest(event);',
+        "  if (request.method === 'DELETE') {",
+        '    return DELETE(request);',
+        '  }',
+        '  return POST(request);',
+        '});',
         '',
       ].join('\n'),
     });
@@ -71,7 +99,7 @@ export function buildFrameworkScaffolds(
         '',
         'export const uploadHttpHandler = createUploadHttpHandler({',
         '  uploader: imageUploader,',
-        '  authorize: async () => true,',
+        ...FAIL_CLOSED_AUTHORIZE_LINES,
         '});',
         '',
       ].join('\n'),
@@ -106,7 +134,7 @@ export function buildFrameworkScaffolds(
       content: [
         "import { createExpoImagePickerAdapter } from 'img-upload-kit/react-native';",
         '',
-        'export const uploadEndpoint = process.env.EXPO_PUBLIC_UPLOAD_ENDPOINT ?? \'/api/upload\';',
+        "export const uploadEndpoint = process.env.EXPO_PUBLIC_UPLOAD_ENDPOINT ?? '/api/upload';",
         'export { createExpoImagePickerAdapter };',
         '',
       ].join('\n'),
@@ -123,7 +151,7 @@ export function buildFrameworkScaffolds(
         "import { provideImageUploadConfig } from 'img-upload-kit/angular';",
         '',
         'export const imageUploadProvider = provideImageUploadConfig({',
-        "  uploadEndpoint: '/api/upload',",
+        "  endpoint: '/api/upload',",
         '});',
         '',
       ].join('\n'),

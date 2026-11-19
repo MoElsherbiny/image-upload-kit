@@ -1,3 +1,5 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { planAgentsMdUpdate } from '../filesystem/agentsManager';
 import { planEnvTemplateMerge } from '../filesystem/envManager';
 import type {
@@ -10,6 +12,14 @@ import { buildAgentsManagedSection } from './agentsTemplate';
 import { buildEnvEntriesForRecommendation } from './envTemplate';
 import { buildFrameworkScaffolds } from './frameworkTemplates';
 import { buildStorageAdapterFile } from './storageTemplates';
+
+async function hasDirectory(targetPath: string): Promise<boolean> {
+  try {
+    return (await fs.stat(targetPath)).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 export interface ScaffoldPlanOptions {
   includeStorage?: boolean;
@@ -44,7 +54,11 @@ export async function buildScaffoldPlan(
   }
 
   if (includeFrameworkFiles) {
-    files.push(...buildFrameworkScaffolds(rec));
+    const hasSrcApp =
+      rec.backend === 'nextjs-node'
+        ? await hasDirectory(path.join(report.cwd, 'src', 'app'))
+        : false;
+    files.push(...buildFrameworkScaffolds(rec, { hasSrcApp }));
   }
 
   if (includeEnv) {

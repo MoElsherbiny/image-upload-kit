@@ -5,6 +5,33 @@ All notable changes to `img-upload-kit` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- Hardened generated Next.js, Nuxt, and Node server scaffolds to use fail-closed `authorize` checks (`authorization` / `cookie` header presence) instead of unconditional `() => true`.
+- Hardened upload token verification, secret rotation, `sub` ownership enforcement before `jti` replay consumption, SVG allowlist sanitization, and binary magic-byte/metadata limits.
+
+### Added & Changed
+
+- **Backend-Agnostic 4-Layer CLI Engine**:
+  - Wired `detectProject` + `resolveArchitecture` + `planDependencies` directly into `runInteractiveInit` so frontend-only Vite projects and Edge runtimes (Cloudflare Workers / Vercel Edge) never receive `sharp` in their install plan.
+  - Added `doctor`, `validate`, `agents`, and `config` CLI commands with secret redaction, non-destructive `.env.example` / `AGENTS.md` merging, and transactional file writes.
+  - Added `windows-latest` (Node 22) CI verification alongside the Ubuntu Node 20/22/24 matrix and consumer TypeScript package resolution checks (`NodeNext`, `Node16`, and `Bundler`).
+- **Storage, Optimization & Reliability**:
+  - Expanded storage adapter contracts with health checks, presigned downloads, multipart hooks, key/metadata validation, and normalized error handling (`UploadKitError`).
+  - Improved Sharp optimization concurrency (`AsyncSemaphore`), format negotiation, transform caching, and production documentation (`docs/SECURITY_GUIDE.md`, `docs/STORAGE_ADAPTERS.md`, `docs/ERROR_HANDLING.md`, `docs/BENCHMARKS.md`).
+
+### Fixed
+
+- Fixed all generated CLI storage and framework scaffolds to match real `img-upload-kit` TypeScript signatures:
+  - S3/R2/MinIO/Spaces/B2/custom-S3 templates now construct `S3Client` and forward `PutObjectCommand`, `DeleteObjectCommand`, `GetObjectCommand`, and `HeadObjectCommand` to `createS3StorageAdapter`.
+  - Supabase templates now instantiate `@supabase/supabase-js` via `createClient` and pass it to `createSupabaseStorageAdapter`.
+  - LocalFS templates now pass `baseUrl` (instead of `publicBaseUrl`) to `createLocalFsStorageAdapter`.
+  - Angular templates now pass `endpoint` (instead of `uploadEndpoint`) to `provideImageUploadConfig`.
+  - Nuxt templates now export a valid Nitro `defineEventHandler` using `toWebRequest(event)` for `POST` and `DELETE`.
+  - Next.js scaffolds now detect `src/app` vs root `app/` for accurate route paths and relative storage imports.
+
 ## [2.2.5] - 2026-11-09
 
 ### Fixed
