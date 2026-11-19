@@ -279,11 +279,18 @@
     "check:dist": "node scripts/check-dist.mjs",
     "prepublishOnly": "npm run typecheck && npm run lint && npm run build && npm run test && npm run check:dist"
   },
+  "packageManager": "pnpm@9.15.0",
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild",
       "sharp"
-    ]
+    ],
+    "overrides": {
+      "esbuild": ">=0.28.1",
+      "glob": ">=14.0.2",
+      "minimatch": ">=11.0.1",
+      "tinypool": ">=2.1.2"
+    }
   },
   "dependencies": {},
   "peerDependencies": {

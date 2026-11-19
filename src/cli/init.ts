@@ -2,10 +2,11 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Readable, Writable } from 'node:stream';
+import { STORAGE_CAPABILITIES } from './capabilities/storageRegistry';
 import {
-  BASE_FRAMEWORK_OPTIONS, buildInstallCommand, buildStarterSnippet,
+  BASE_FRAMEWORK_OPTIONS, buildInstallCommand, buildStarterSnippet, buildStorageChoices,
   type InitFramework, type InitStorageAdapter, normalizeFrameworkOption,
-  normalizePmOption, normalizeStorageOption, type PackageManagerName, STORAGE_OPTIONS,
+  normalizePmOption, normalizeStorageOption, type PackageManagerName,
 } from './detect';
 import { detectProject } from './detection/projectDetector';
 import { applyFileWrites } from './filesystem/fileManager';
@@ -81,6 +82,7 @@ function mapDetectedToInitFramework(r: ProjectDetectionReport): {
 function mapStorageToInitStorage(storage: StorageProviderId): InitStorageAdapter {
   if (S3_PROVIDERS.has(storage)) return 's3';
   if (storage === 'supabase' || storage === 'memory') return storage;
+  if (STORAGE_CAPABILITIES[storage]?.requiresCustomAdapter) return 'custom';
   return 'local';
 }
 
@@ -197,9 +199,14 @@ export async function runInteractiveInit(opts: RunInitOptions = {}): Promise<Run
 
   let selectedStorage: InitStorageAdapter = explicitStorage ?? defaultStorage;
   if (!explicitStorage && needsStoragePrompt) {
+    const storageChoices = buildStorageChoices(
+      defaultStorage,
+      detected.storage.detected !== 'unknown',
+      prelimRec.storageCapability.displayName,
+    );
     const chosenStorage = await promptSelect<InitStorageAdapter>({
       message: 'Select your server storage adapter:',
-      options: STORAGE_OPTIONS,
+      options: storageChoices,
       initialValue: defaultStorage,
       input,
       output,
@@ -210,8 +217,10 @@ export async function runInteractiveInit(opts: RunInitOptions = {}): Promise<Run
   }
 
   const finalStorage: StorageProviderId | undefined =
-    explicitStorage ?? (selectedStorage !== defaultStorage ? selectedStorage : undefined);
+    explicitStorage ??
+    (selectedStorage !== defaultStorage && selectedStorage !== 'custom' ? selectedStorage : undefined);
   const rec = resolveArchitecture(detected, { ...prelimOverrides, storage: finalStorage });
+  const reportedStorage = mapStorageToInitStorage(rec.storage);
   const depPlan = planDependencies(detected, rec, pm);
   const packages = depPlan.toInstall;
   const installCommand =
@@ -254,10 +263,15 @@ export async function runInteractiveInit(opts: RunInitOptions = {}): Promise<Run
     }
   }
 
+  const snippetLines = buildStarterSnippet(
+    selectedFramework,
+    reportedStorage,
+    rec.storageCapability.displayName,
+  );
   const c = createAnsiPalette(Boolean(output.isTTY));
   renderCliNote(
     'Quick Start Imports',
-    [c.brightCyan(`$ ${installCommand}`), '', ...buildStarterSnippet(selectedFramework, selectedStorage).map((l) => c.green(l))],
+    [c.brightCyan(`$ ${installCommand}`), '', ...snippetLines.map((l) => c.green(l))],
     output,
   );
   renderCliOutro(
@@ -272,7 +286,7 @@ export async function runInteractiveInit(opts: RunInitOptions = {}): Promise<Run
   return {
     cancelled: false,
     framework: selectedFramework,
-    storage: selectedStorage,
+    storage: reportedStorage,
     pm,
     packages,
     installCommand,

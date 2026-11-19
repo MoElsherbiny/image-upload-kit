@@ -5,22 +5,30 @@ All notable changes to `img-upload-kit` will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased] — targeted as 2.3.0 (minor, additive)
+
+> Note: `package.json` `version` remains `2.2.5` pending maintainer release sign-off; next release is targeted as **`2.3.0`** (minor, additive) due to new CLI, storage, optimization, and handler capabilities.
 
 ### Security
 
+- Hardened `createMultipartUploadHandler` defaults (`H-1`, `H-2`, `L-7`): server-generated object keys by default (`allowClientPathOverride: false`), image-only default allowed MIME types (dropped `application/octet-stream`), `100 MB` default `maxTotalBytes` with accurate byte accounting when parts are re-uploaded, and post-completion magic-byte verification (`validateOnComplete: true`).
+- Fixed `createResumableUploadHandler` (`H-3`) so sessions persist and upload to the exact bucket resolved and authorized during `init` (honoring preset buckets instead of falling back to `defaultBucket`).
+- Hardened rate-limit client IP extraction (`M-1`): `X-Forwarded-For` is ignored by default unless `trustProxy?: boolean | number` is explicitly configured (extracting the entry `N` hops from the right).
+- Documented per-user delete ownership & folder scoping (`M-4`) and dedicated private `presigned.stagingBucket` + 1-day `_staging/` lifecycle cleanup (`M-5`) in `docs/SECURITY_GUIDE.md`, `docs/presigned-and-dedupe.md`, and `README.md`.
+- Hardened `createMemoryStorageAdapter` (`L-4`) with `sanitizeStorageKey` and `validateStorageMetadata` parity across all built-in storage adapters.
 - Hardened generated Next.js, Nuxt, and Node server scaffolds to use fail-closed `authorize` checks (`authorization` / `cookie` header presence) instead of unconditional `() => true`.
-- Hardened upload token verification, secret rotation, `sub` ownership enforcement before `jti` replay consumption, SVG allowlist sanitization, and binary magic-byte/metadata limits.
+- Hardened upload token verification, secret rotation, `sub` ownership enforcement before `jti` replay consumption, SVG allowlist sanitization (preserving `xmlns` on namespace-prefixed `<svg:svg>` roots, `L-5`), and binary magic-byte/metadata limits.
 
 ### Added & Changed
 
 - **Backend-Agnostic 4-Layer CLI Engine**:
-  - Wired `detectProject` + `resolveArchitecture` + `planDependencies` directly into `runInteractiveInit` so frontend-only Vite projects and Edge runtimes (Cloudflare Workers / Vercel Edge) never receive `sharp` in their install plan.
+  - Wired `detectProject` + `resolveArchitecture` + `planDependencies` directly into `runInteractiveInit` so frontend-only Vite projects and Edge runtimes (Cloudflare Workers / Vercel Edge) never receive `sharp` in their install plan, and detected cloud/custom-adapter providers (GCS, Azure Blob, Firebase, S3/R2, Supabase) are reported accurately in `RunInitResult.storage` and Quick Start snippets (`L-6`).
   - Added `doctor`, `validate`, `agents`, and `config` CLI commands with secret redaction, non-destructive `.env.example` / `AGENTS.md` merging, and transactional file writes.
-  - Added `windows-latest` (Node 22) CI verification alongside the Ubuntu Node 20/22/24 matrix and consumer TypeScript package resolution checks (`NodeNext`, `Node16`, and `Bundler`).
+  - Added reproducible Corepack + `pnpm install --frozen-lockfile` (`packageManager: "pnpm@9.15.0"`) across Ubuntu Node 20/22/24 and `windows-latest` CI/Release workflows and resolved dev-dependency `pnpm audit` advisories (`M-8`).
 - **Storage, Optimization & Reliability**:
-  - Expanded storage adapter contracts with health checks, presigned downloads, multipart hooks, key/metadata validation, and normalized error handling (`UploadKitError`).
-  - Improved Sharp optimization concurrency (`AsyncSemaphore`), format negotiation, transform caching, and production documentation (`docs/SECURITY_GUIDE.md`, `docs/STORAGE_ADAPTERS.md`, `docs/ERROR_HANDLING.md`, `docs/BENCHMARKS.md`).
+  - Expanded storage adapter contracts with health checks, presigned downloads, multipart hooks, key/metadata validation, and normalized error handling (`UploadKitError`) across `upload`, `delete`, and `download` (`M-3`).
+  - Isolated per-caller `AbortSignal` waiting in in-flight deduplication coalescing (`M-2`), preserved resumable sessions and staged presigned tokens/objects on retryable storage failures (`M-6`), propagated `AbortSignal` through storage/variant/hook steps (`L-1`), routed cleanup errors to `onError` (`L-2`), and removed unsafe handler option casts (`L-3`).
+  - Improved Sharp optimization concurrency (`AsyncSemaphore`), format negotiation, transform caching, and production documentation (`docs/SECURITY_GUIDE.md`, `docs/STORAGE_ADAPTERS.md`, `docs/ERROR_HANDLING.md`, `docs/BENCHMARKS.md`), backed by automated isolated TypeScript verification of every documentation `ts`/`tsx` code block (`M-7`).
 
 ### Fixed
 

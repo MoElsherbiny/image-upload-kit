@@ -50,6 +50,8 @@ const { url, expiresAt } = await storage.createPresignedDownload!('private-media
 - `completeMultipartUpload(params)` -> `{ bucket, path, url }`
 - `abortMultipartUpload(params)` -> `Promise<void>`
 
+When exposing HTTP multipart uploads via `createMultipartUploadHandler`, hardened defaults apply automatically: keys are **server-generated** (`allowClientPathOverride` defaults to `false`), allowed MIME types are restricted to **image-only formats** (never `application/octet-stream` by default), total upload size is bounded by a **`100 MB` default `maxTotalBytes`** cap (with accurate byte replacement on re-uploaded part numbers), and **`validateOnComplete: true`** inspects assembled object magic bytes (and deletes invalid objects) before completion succeeds.
+
 ## 4. Resumable Storage Migration (`migrateStorage`)
 
 `migrateStorage` copies objects between any two `StorageAdapter` instances with cursor pagination, dry-run planning, SHA-256 post-copy integrity verification, and guarded source deletion.

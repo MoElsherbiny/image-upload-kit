@@ -60,7 +60,8 @@ const uploader = createImageUploader({
 
 export const { POST, DELETE } = createUploadHttpHandler({
   uploader,
-  authorize: async ({ request }) => Boolean(request.headers.get('cookie')), // plug in your auth
+  // Placeholder only! Replace with real session verification AND a per-user path ownership check when `action === 'delete'` (see docs/SECURITY_GUIDE.md)
+  authorize: async ({ request }) => Boolean(request.headers.get('cookie')),
 });
 ```
 

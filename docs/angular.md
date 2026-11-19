@@ -127,8 +127,8 @@ export class CoverUploadComponent {
   onDrop(event: DragEvent) {
     event.preventDefault();
     this.upload.setDragging(false);
-    if (event.dataTransfer?.files?.length) {
-      void this.upload.selectFiles(event.dataTransfer.files);
+    if (event.dataTransfer?.files?.[0]) {
+      void this.upload.selectFile(event.dataTransfer.files[0]);
     }
   }
 
@@ -164,7 +164,7 @@ const gallery = createMultiUpload({
 });
 
 // Add files from an <input type="file" multiple> or drop event:
-await gallery.selectFiles(fileList); // or gallery.addFiles(fileList)
+await gallery.addFiles(fileList);
 
 // Reorder tiles or promote any image to index 0 (Primary Cover):
 gallery.move(2, 0);

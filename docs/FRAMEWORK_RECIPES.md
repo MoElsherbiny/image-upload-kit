@@ -18,7 +18,8 @@ export const runtime = 'nodejs'; // Required for Sharp native processing
 
 export const { POST, DELETE } = createUploadHttpHandler({
   uploader,
-  authorize: async (req) => Boolean(req.headers.get('cookie')),
+  // Replace with real session verification + delete path ownership (see docs/SECURITY_GUIDE.md)
+  authorize: async (ctx) => Boolean(ctx.request.headers.get('cookie')),
 });
 ```
 

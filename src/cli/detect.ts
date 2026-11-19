@@ -5,7 +5,12 @@ import type { PackageManagerName } from './types/detection';
 
 export type { PackageManagerName };
 export type InitFramework = 'react' | 'vue' | 'angular' | 'react-native' | 'server' | 'client';
-export type InitStorageAdapter = 'local' | 's3' | 'supabase' | 'memory';
+export type BuiltinInitStorageAdapter = 'local' | 's3' | 'supabase' | 'memory';
+/**
+ * `'custom'` is reported when the detector finds a provider without a built-in adapter
+ * (GCS, Azure Blob, Firebase) and the scaffold uses a custom `StorageAdapter`.
+ */
+export type InitStorageAdapter = BuiltinInitStorageAdapter | 'custom';
 
 export interface DetectedEnvironment {
   pm: PackageManagerName;
@@ -73,7 +78,7 @@ export function normalizeFrameworkOption(raw?: string): InitFramework | undefine
   );
 }
 
-export function normalizeStorageOption(raw?: string): InitStorageAdapter | undefined {
+export function normalizeStorageOption(raw?: string): BuiltinInitStorageAdapter | undefined {
   if (!raw) return undefined;
   const v = raw.trim().toLowerCase();
   if (v === 'local' || v === 'fs' || v === 'disk' || v === 'filesystem') return 'local';
@@ -204,12 +209,36 @@ export function buildInstallCommand(
   return `npm i ${list}`;
 }
 
+export function buildStorageChoices(
+  defaultStorage: InitStorageAdapter,
+  hasDetectedStorage: boolean,
+  customProviderName?: string,
+): ReadonlyArray<SelectOption<InitStorageAdapter>> {
+  if (defaultStorage === 'custom') {
+    return [
+      {
+        value: 'custom',
+        label: `${customProviderName ?? 'Detected provider'} (Custom StorageAdapter)`,
+        badge: 'Detected',
+        hint: 'no built-in adapter — uses custom StorageAdapter contract',
+      },
+      ...STORAGE_OPTIONS,
+    ];
+  }
+  return STORAGE_OPTIONS.map((opt) =>
+    hasDetectedStorage && opt.value === defaultStorage ? { ...opt, badge: 'Detected' } : opt,
+  );
+}
+
 export function buildStarterSnippet(
   framework: InitFramework,
   storage: InitStorageAdapter,
+  customProviderName?: string,
 ): string[] {
   const storageImport =
-    storage === 's3'
+    storage === 'custom'
+      ? `import type { StorageAdapter } from 'img-upload-kit/storage'; // ${customProviderName ?? 'Detected provider'}: no built-in adapter — implement a custom StorageAdapter (docs/STORAGE_ADAPTERS.md)`
+      : storage === 's3'
       ? "import { createS3StorageAdapter } from 'img-upload-kit/storage';"
       : storage === 'supabase'
         ? "import { createSupabaseStorageAdapter } from 'img-upload-kit/storage';"

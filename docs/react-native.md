@@ -124,8 +124,8 @@ export function CustomCarouselPicker() {
 
   return (
     <View>
-      <Pressable onPress={() => void ctrl.pickFromLibrary()}>
-        <Text>Choose from Photos ({ctrl.remainingCount} left)</Text>
+      <Pressable disabled={!ctrl.canAddMore} onPress={() => void ctrl.pickFromLibrary()}>
+        <Text>Choose from Photos ({5 - ctrl.items.length} left)</Text>
       </Pressable>
       <Pressable onPress={() => void ctrl.takePhoto()}>
         <Text>Take Camera Shot</Text>
@@ -142,12 +142,12 @@ export function CustomCarouselPicker() {
             </Pressable>
           )}
           {item.isUploading && (
-            <Pressable onPress={() => ctrl.cancel(item.id)}>
+            <Pressable onPress={() => ctrl.cancelItem(item.id)}>
               <Text>Cancel</Text>
             </Pressable>
           )}
           {item.error && (
-            <Pressable onPress={() => void ctrl.retry(item.id)}>
+            <Pressable onPress={() => void ctrl.retryItem(item.id)}>
               <Text>Retry</Text>
             </Pressable>
           )}
@@ -187,17 +187,14 @@ export function SocialPostCard({ photo }: { photo: UploadedImageData }) {
 
 ## 6. Native Theme Tokens (`defaultNativeTheme`)
 
-Customize colors and radii via `defaultNativeTheme`, `lightNativeTheme`, or `darkNativeTheme` on `<NativeImageUploadProvider theme={...}>`:
+Customize colors and radii via `defaultNativeTheme`, `darkNativeTheme`, or `nativeThemes` on `<NativeImageUploadProvider theme={...}>`:
 
 ```ts
-import { darkNativeTheme, type NativeTheme } from 'img-upload-kit/react-native';
+import { darkNativeTheme, type NativeUploadTheme } from 'img-upload-kit/react-native';
 
-export const brandTheme: NativeTheme = {
+export const brandTheme: NativeUploadTheme = {
   ...darkNativeTheme,
-  colors: {
-    ...darkNativeTheme.colors,
-    primary: '#38bdf8',
-    surface: '#0f172a',
-  },
+  primary: '#38bdf8',
+  surface: '#0f172a',
 };
 ```

@@ -162,9 +162,10 @@ export const storage = createS3StorageAdapter({
 });
 ```
 
-> **Tip — Storage Size Caps & Orphaned Staging Cleanup**:
+> **Security & Storage Hygiene — Private Staging Bucket, Size Caps & Lifecycle Cleanup**:
+> - **Isolate staging in a private bucket (`presigned.stagingBucket`)**: By default (`stagingBucket` omitted), `_staging/` objects land in the target bucket. Point `presigned.stagingBucket` to a **dedicated private bucket** (no public read policy or CDN origin) so unverified raw uploads are never publicly reachable before `finalize` runs magic-byte sniffing and Sharp re-encoding.
+> - **Expire `_staging/` via a 1-day bucket lifecycle rule + `sweepStagedUploads`**: Configure an S3 / Cloudflare R2 / GCS bucket lifecycle expiration rule to delete objects under `_staging/` after **1 day**, and run a scheduled `sweepStagedUploads` job (below) for defense-in-depth orphan cleanup.
 > - **Enforce size limits at the storage layer**: In `presignUpload`, you can use `@aws-sdk/s3-presigned-post` (`createPresignedPost(s3, { Bucket: bucket, Key: path, Conditions: [['content-length-range', 1, maxBytes]], Fields: { 'Content-Type': contentType }, Expires: expiresInSeconds ?? 300 })`) and return `{ method: 'POST', url, fields }`. On finalize, `createS3StorageAdapter` also checks `headObject` (`ContentLength`) and enforces `maxBytes` during stream download before buffering into RAM.
-> - **Expire abandoned `_staging/` objects**: Configure an S3 / Cloudflare R2 bucket lifecycle expiration rule on the `_staging/` prefix (e.g. expire after 1 day), and/or schedule `sweepStagedUploads(storage, { bucket: 'media', stagingPrefix: '_staging/', maxAgeMs: 3600_000 })` from `'img-upload-kit/server'` for defense-in-depth cleanup.
 
 ### Step 2: Enable `presigned` on `createUploadHttpHandler`
 
@@ -175,13 +176,21 @@ export const { POST, DELETE } = createUploadHttpHandler({
   uploader,
   presigned: {
     secret: process.env.UPLOAD_PRESIGN_SECRET!, // >= 16 chars HMAC-SHA256 secret
+    stagingBucket: process.env.UPLOAD_STAGING_BUCKET!, // dedicated private staging bucket
+    stagingPrefix: '_staging/',
     expiresInSeconds: 300,
-    stagingPrefix: '_staging',
     // Optional distributed replay store (Redis / KV) for multi-instance deployments:
     // tokenStore: {
     //   consume: async (jti, ttlMs) => (await redis.set(`iuk:jti:${jti}`, '1', 'PX', ttlMs, 'NX')) === 'OK',
     // },
   },
+});
+
+// Run periodically (e.g. hourly cron) alongside a 1-day `_staging/` bucket lifecycle rule:
+await sweepStagedUploads(storage, {
+  bucket: process.env.UPLOAD_STAGING_BUCKET!,
+  stagingPrefix: '_staging/',
+  maxAgeMs: 60 * 60 * 1000,
 });
 ```
 
