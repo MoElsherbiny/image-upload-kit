@@ -16,6 +16,11 @@ import {
   resolvePackagesToInstall,
   STORAGE_OPTIONS,
 } from './detect';
+import { detectProject } from './detection/projectDetector';
+import { applyFileWrites } from './filesystem/fileManager';
+import { buildScaffoldPlan } from './generators/scaffoldPlanner';
+import { resolveArchitecture } from './recommendations/architectureResolver';
+import { planDependencies } from './recommendations/dependencyPlanner';
 import {
   createAnsiPalette,
   promptSelect,
@@ -34,6 +39,8 @@ export interface RunInitOptions {
   pm?: PackageManagerName;
   yes?: boolean;
   install?: boolean;
+  dryRun?: boolean;
+  scaffold?: boolean;
   version?: string;
   input?: Readable & { isTTY?: boolean; setRawMode?: (mode: boolean) => void };
   output?: Writable & { isTTY?: boolean };
@@ -52,6 +59,8 @@ export interface RunInitResult {
   packages: string[];
   installCommand: string;
   installed: boolean;
+  dryRun?: boolean;
+  scaffoldedFiles?: string[];
 }
 
 const SAFE_PKG_SPEC_RE = /^[@a-z0-9._/-]+$/i;
@@ -228,7 +237,7 @@ export async function runInteractiveInit(
   }
 
   let installed = false;
-  if (shouldInstall) {
+  if (shouldInstall && !opts.dryRun) {
     const createdPkg = await ensurePackageJson(cwd);
     if (createdPkg) {
       renderCliStep('Initialized project', 'created package.json', output);
@@ -237,6 +246,25 @@ export async function runInteractiveInit(
     const runner = opts.execInstall ?? defaultExecInstall;
     await runner(pm, packages, cwd);
     installed = true;
+  } else if (shouldInstall && opts.dryRun) {
+    renderCliStep('Dry run', `would run "${installCommand}"`, output);
+  }
+
+  let scaffoldedFiles: string[] | undefined;
+  if (opts.scaffold) {
+    const detected = await detectProject(cwd);
+    const rec = resolveArchitecture(detected, { storage: selectedStorage });
+    const depPlan = planDependencies(detected, rec, pm);
+    const planned = await buildScaffoldPlan(detected, rec, depPlan);
+    const writeRes = await applyFileWrites(cwd, planned, { dryRun: Boolean(opts.dryRun) });
+    scaffoldedFiles = writeRes.written;
+    if (writeRes.written.length > 0) {
+      renderCliStep(
+        opts.dryRun ? 'Dry run scaffold' : 'Scaffolded files',
+        writeRes.written.join(', '),
+        output,
+      );
+    }
   }
 
   const c = createAnsiPalette(Boolean(output.isTTY));
@@ -252,7 +280,9 @@ export async function runInteractiveInit(
   renderCliOutro(
     installed
       ? `Installed ${packages.join(', ')} for ${selectedFramework}!`
-      : `Ready! Run "npx img-upload-kit@latest init --yes" to install dependencies.`,
+      : opts.dryRun
+        ? 'Dry run complete (no files or packages were modified).'
+        : `Ready! Run "npx img-upload-kit@latest init --yes" to install dependencies.`,
     output,
   );
 
@@ -264,5 +294,7 @@ export async function runInteractiveInit(
     packages,
     installCommand,
     installed,
+    dryRun: Boolean(opts.dryRun),
+    ...(scaffoldedFiles ? { scaffoldedFiles } : {}),
   };
 }

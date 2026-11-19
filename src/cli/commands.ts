@@ -3,6 +3,10 @@ import path from 'node:path';
 import { normalizeImagePath } from '../blur/pathMapper';
 import type { BlurManifestData, BlurManifestEntry } from '../blur/types';
 import { ZeroDepCliProgram } from './argv';
+import { runAgentsCommand } from './commands/agentsCommand';
+import { runConfigCommand } from './commands/configCommand';
+import { runDoctorCommand } from './commands/doctorCommand';
+import { runValidateCommand } from './commands/validateCommand';
 import { generateBlurManifest } from './generator';
 import {
   type InitFramework,
@@ -14,7 +18,6 @@ import {
   autoSyncCheck,
   cleanupOrphanedHashes,
   generateHealthReport,
-  validateBlurHashFile,
 } from './validation';
 
 declare const __PKG_VERSION__: string | undefined;
@@ -49,18 +52,20 @@ export function createCliProgram(): ZeroDepCliProgram {
 
   program
     .name('img-upload-kit')
-    .description('Interactive framework setup + LQIP, BlurHash & dominant color CLI')
+    .description('Infrastructure-aware framework setup, diagnostics & LQIP/BlurHash CLI')
     .version(CLI_VERSION);
 
   const registerInitCommand = (cmdName: string) => {
     program
       .command(cmdName)
-      .description('Interactive terminal dropdown to select framework, storage, and install packages')
+      .description('Interactive setup for framework, storage, dependencies, and optional scaffolds')
       .option('-f, --framework <fw>', 'Target framework (react|vue|angular|react-native|server|client)')
       .option('-s, --storage <adapter>', 'Storage adapter (local|s3|supabase|memory)')
       .option('-p, --pm <pm>', 'Package manager (npm|pnpm|yarn|bun)')
       .option('-y, --yes', 'Accept detected defaults without interactive prompts', false)
       .option('--no-install', 'Print install command and starter imports without running install')
+      .option('--dry-run', 'Preview planned setup actions without writing files or installing', false)
+      .option('--scaffold', 'Generate starter storage, route/client, env template, and AGENTS.md files', false)
       .action(
         async (opts: {
           framework?: InitFramework;
@@ -68,6 +73,8 @@ export function createCliProgram(): ZeroDepCliProgram {
           pm?: PackageManagerName;
           yes?: boolean;
           install?: boolean;
+          dryRun?: boolean;
+          scaffold?: boolean;
         }) => {
           await runInteractiveInit({
             framework: opts.framework,
@@ -75,6 +82,8 @@ export function createCliProgram(): ZeroDepCliProgram {
             pm: opts.pm,
             yes: Boolean(opts.yes),
             install: opts.install === false ? false : undefined,
+            dryRun: Boolean(opts.dryRun),
+            scaffold: Boolean(opts.scaffold),
             version: CLI_VERSION,
           });
         },
@@ -83,6 +92,35 @@ export function createCliProgram(): ZeroDepCliProgram {
 
   registerInitCommand('init');
   registerInitCommand('setup');
+
+  program
+    .command('doctor')
+    .description('Diagnose img-upload-kit setup, runtime Sharp compatibility, env leaks & AGENTS.md')
+    .option('--fix', 'Safely apply non-destructive fixes (env template keys & AGENTS.md)', false)
+    .option('--dry-run', 'Preview fixes without writing files', false)
+    .option('--json', 'Output machine-readable JSON diagnostics', false)
+    .option('--cwd <dir>', 'Target project directory')
+    .action(async (opts: { fix?: boolean; dryRun?: boolean; json?: boolean; cwd?: string }) => {
+      await runDoctorCommand(opts);
+    });
+
+  program
+    .command('agents')
+    .description('Generate or safely update root AGENTS.md with img-upload-kit managed markers')
+    .option('--update', 'Update existing AGENTS.md managed section without touching user content', false)
+    .option('--dry-run', 'Preview AGENTS.md changes without writing', false)
+    .option('--cwd <dir>', 'Target project directory')
+    .action(async (opts: { update?: boolean; dryRun?: boolean; cwd?: string }) => {
+      await runAgentsCommand(opts);
+    });
+
+  program
+    .command('config')
+    .description('Display detected & resolved architecture configuration with secret redaction')
+    .option('--cwd <dir>', 'Target project directory')
+    .action(async (opts: { cwd?: string }) => {
+      await runConfigCommand(opts);
+    });
 
   program
     .command('generate')
@@ -114,17 +152,12 @@ export function createCliProgram(): ZeroDepCliProgram {
 
   program
     .command('validate')
-    .description('Validate a blur manifest JSON file')
-    .option('-f, --file <file>', 'Manifest JSON path', DEFAULT_MANIFEST_FILE)
-    .action(async (opts: { file: string }) => {
-      const result = await validateBlurHashFile(opts.file);
-      for (const warning of result.warnings) console.warn(`Warning: ${warning}`);
-      if (!result.valid) {
-        for (const error of result.errors) console.error(`Error: ${error}`);
-        process.exitCode = 1;
-        return;
-      }
-      console.log(`Manifest is valid (${result.totalEntries} entries).`);
+    .description('Validate project integration (or a blur manifest when -f/--manifest is passed)')
+    .option('-f, --file <file>', 'Blur manifest JSON path')
+    .option('--manifest <file>', 'Alias for -f/--file blur manifest JSON path')
+    .option('--cwd <dir>', 'Target project directory')
+    .action(async (opts: { file?: string; manifest?: string; cwd?: string }) => {
+      await runValidateCommand(opts);
     });
 
   program
@@ -152,9 +185,7 @@ export function createCliProgram(): ZeroDepCliProgram {
         }
         if (sync.orphanedKeys.length > 0) {
           const cleaned = await cleanupOrphanedHashes(opts.dir, opts.file);
-          console.log(
-            `Synced manifest (removed ${cleaned.removedCount} orphaned entries).`,
-          );
+          console.log(`Synced manifest (removed ${cleaned.removedCount} orphaned entries).`);
           return;
         }
       }
