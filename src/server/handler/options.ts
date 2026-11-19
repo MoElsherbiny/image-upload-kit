@@ -109,9 +109,16 @@ export interface UploadHttpHandlerOptions<TPreset extends string = string> {
    */
   quotaProvider?: QuotaProvider;
   /**
-   * Optional custom key extractor for rate limiting. Defaults to `sub:<subject>` or client IP.
+   * Optional custom key extractor for rate limiting. Defaults to `sub:<subject>`, then the
+   * proxy-derived client IP (only when `trustProxy` is enabled), then `'anonymous'`.
    */
   rateLimitKey?: (req: Request, subject?: string) => string;
+  /**
+   * Trust reverse-proxy client-IP headers for the default rate-limit / quota key. Defaults to `false`:
+   * `X-Forwarded-For`, `X-Real-IP` and `CF-Connecting-IP` are never read (they are client-spoofable).
+   * `true` trusts 1 proxy hop; a number `N` trusts N hops and uses the XFF entry N positions from the right.
+   */
+  trustProxy?: boolean | number;
   /**
    * Hook invoked when an unexpected 500 internal error occurs. Raw error details are never sent to clients.
    */

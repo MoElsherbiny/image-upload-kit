@@ -30,6 +30,8 @@ import { handlePresignRequest, sweepStagedUploads } from './presignRoute';
 import {
   enforceQuota,
   enforceRateLimit,
+  type QuotaGuardOptions,
+  type RateLimitGuardOptions,
   recordQuotaUsage,
   resolveSubject,
 } from './rateLimitGuard';
@@ -56,6 +58,7 @@ import {
   consumeUploadToken,
   type PresignTokenPayload,
   type PresignTokenStore,
+  releaseUploadToken,
   signUploadToken,
   type UploadTokenSecret,
   type VerifyUploadTokenOptions,
@@ -83,7 +86,10 @@ export {
   type PresignedHandlerOptions,
   type PresignTokenPayload,
   type PresignTokenStore,
+  type QuotaGuardOptions,
+  type RateLimitGuardOptions,
   readBoundedStreamBytes,
+  releaseUploadToken,
   type ResumableSessionRecord,
   type ResumableSessionStore,
   type ResumableUploadHandlerOptions,

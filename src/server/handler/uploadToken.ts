@@ -5,6 +5,8 @@ export type UploadTokenSecret = string | readonly string[];
 export interface PresignTokenStore {
   /** Atomically marks `jti` as consumed until `expMs`. Returns `true` if newly consumed, or `false` if already consumed. */
   consume(jti: string, expMs: number): Promise<boolean> | boolean;
+  /** Optional: unmarks `jti` after a retryable finalize failure so the client can retry before token expiry. */
+  release?(jti: string): Promise<void> | void;
 }
 
 export interface PresignTokenPayload {
@@ -157,6 +159,18 @@ export async function consumeUploadToken(
   }
 }
 
+/** Releases a previously consumed token `jti` so `finalize` can be retried after a retryable error. */
+export async function releaseUploadToken(
+  jti: string,
+  tokenStore?: PresignTokenStore,
+): Promise<void> {
+  if (tokenStore) {
+    await tokenStore.release?.(jti);
+  } else {
+    consumedTokens.delete(jti);
+  }
+}
+
 /**
  * Signs a stateless `PresignTokenPayload` using WebCrypto HMAC-SHA256.
  * When `secret` is an array (rotation), signs with the first (active) secret.
@@ -184,17 +198,13 @@ export async function verifyUploadToken(
   options?: VerifyUploadTokenOptions,
 ): Promise<PresignTokenPayload> {
   if (!token || typeof token !== 'string') {
-    throw new UploadValidationError('Invalid upload token', {
-      code: 'INVALID_UPLOAD_TOKEN',
-    });
+    throw new UploadValidationError('Invalid upload token', { code: 'INVALID_UPLOAD_TOKEN' });
   }
   const secrets = normalizeSecrets(secret, true);
 
   const parts = token.split('.');
   if (parts.length !== 2 || !parts[0] || !parts[1]) {
-    throw new UploadValidationError('Malformed upload token', {
-      code: 'INVALID_UPLOAD_TOKEN',
-    });
+    throw new UploadValidationError('Malformed upload token', { code: 'INVALID_UPLOAD_TOKEN' });
   }
 
   const [payloadB64, sigB64] = parts;
@@ -202,22 +212,16 @@ export async function verifyUploadToken(
   try {
     actualSig = fromBase64Url(sigB64);
   } catch {
-    throw new UploadValidationError('Invalid upload token encoding', {
-      code: 'INVALID_UPLOAD_TOKEN',
-    });
+    throw new UploadValidationError('Invalid upload token encoding', { code: 'INVALID_UPLOAD_TOKEN' });
   }
 
   let signatureValid = false;
   for (const candidate of secrets) {
     const expectedSig = await computeHmacSha256(payloadB64, candidate);
-    if (constantTimeEqual(expectedSig, actualSig)) {
-      signatureValid = true;
-    }
+    if (constantTimeEqual(expectedSig, actualSig)) signatureValid = true;
   }
   if (!signatureValid) {
-    throw new UploadValidationError('Invalid upload token signature', {
-      code: 'INVALID_UPLOAD_TOKEN',
-    });
+    throw new UploadValidationError('Invalid upload token signature', { code: 'INVALID_UPLOAD_TOKEN' });
   }
 
   let parsed: unknown;
@@ -225,9 +229,7 @@ export async function verifyUploadToken(
     const jsonBytes = fromBase64Url(payloadB64);
     parsed = JSON.parse(textDecoder.decode(jsonBytes));
   } catch {
-    throw new UploadValidationError('Invalid upload token payload', {
-      code: 'INVALID_UPLOAD_TOKEN',
-    });
+    throw new UploadValidationError('Invalid upload token payload', { code: 'INVALID_UPLOAD_TOKEN' });
   }
 
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
