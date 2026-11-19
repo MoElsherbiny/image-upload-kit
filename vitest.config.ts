@@ -10,7 +10,7 @@ export default defineConfig({
           name: 'node',
           environment: 'node',
           include: ['tests/**/*.test.{ts,tsx}'],
-          exclude: [...configDefaults.exclude, 'tests/dom/**'],
+          exclude: [...configDefaults.exclude, 'tests/**/*.dom.test.{ts,tsx}'],
           setupFiles: ['./tests/setup.ts'],
         },
       },
@@ -19,7 +19,7 @@ export default defineConfig({
         test: {
           name: 'dom',
           environment: 'jsdom',
-          include: ['tests/dom/**/*.test.{ts,tsx}'],
+          include: ['tests/**/*.dom.test.{ts,tsx}'],
           setupFiles: ['./tests/setup.ts', './tests/setup-dom.ts'],
         },
       },
