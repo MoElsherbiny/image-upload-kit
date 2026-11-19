@@ -25,7 +25,7 @@ declare const __PKG_VERSION__: string | undefined;
 const CLI_VERSION =
   typeof __PKG_VERSION__ === 'string' && __PKG_VERSION__.length > 0
     ? __PKG_VERSION__
-    : '2.2.5';
+    : '2.3.0';
 
 const DEFAULT_IMAGES_DIR = 'public/images';
 const DEFAULT_MANIFEST_FILE = 'src/blur-hashes.json';
