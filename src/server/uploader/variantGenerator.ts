@@ -1,18 +1,14 @@
+import { hasStorageErrorMetadata, normalizeStorageError } from '../../storage/errorNormalizer';
 import type { StorageAdapter, UploadRecordHook } from '../../storage/types';
 import type {
-  CropStrategy,
-  ImageAspectRatio,
-  ImageOutputFormat,
-  ImageUploadRecord,
-  ImageVariant,
-  UploadPresetConfig,
+  CropStrategy, ImageAspectRatio, ImageOutputFormat, ImageUploadRecord, ImageVariant, UploadPresetConfig,
 } from '../../types';
 import { resolveAspectRatio, SVG_MIME_TYPE } from '../../types';
-import {
-  DEFAULT_LIMIT_INPUT_PIXELS,
-  PRIMARY_AVIF_EFFORT,
-} from '../optimization';
+import { isUploadKitError } from '../../types/errors';
+import { DEFAULT_LIMIT_INPUT_PIXELS, PRIMARY_AVIF_EFFORT } from '../optimization';
 import { loadSharp } from '../optimization/loadSharp';
+import { safeReportUploaderError, throwIfAborted } from './inFlightCoalescer';
+import type { UploaderErrorHook } from './types';
 import { deleteMirroredFiles, mirrorBufferLocally } from './uploadRetry';
 
 export interface GenerateImageVariantsParams {
@@ -36,6 +32,8 @@ export interface GenerateImageVariantsParams {
   metadata?: Record<string, string>;
   mirrorDir?: string;
   publicUrlBase?: string;
+  signal?: AbortSignal;
+  onError?: UploaderErrorHook;
 }
 
 export interface GeneratedVariantsResult {
@@ -71,6 +69,7 @@ export async function generateImageVariants(
     sourceBuffer, format, quality, effort, limitInputPixels, aspectRatio, crop,
     mainWidth, mainHeight, mainUrl, baseStoragePath, baseFilename, bucket,
     storage, variantWidths, upsert = false, contentHash, metadata, mirrorDir, publicUrlBase,
+    signal, onError,
   } = params;
 
   if (format === 'svg' || !variantWidths?.length) {
@@ -89,6 +88,7 @@ export async function generateImageVariants(
     return { variants: [] };
   }
 
+  throwIfAborted(signal);
   const sharp = await loadSharp();
   const baseQuality = Math.max(1, Math.min(100, quality ?? 85));
   const avifEffort = effort ?? PRIMARY_AVIF_EFFORT;
@@ -103,6 +103,7 @@ export async function generateImageVariants(
   try {
     variants = await Promise.all(
       targetWidths.map(async (w): Promise<ImageVariant> => {
+        throwIfAborted(signal);
         let branch = basePipeline
           .clone()
           .resize(
@@ -115,50 +116,37 @@ export async function generateImageVariants(
                   withoutEnlargement: true,
                   kernel: 'lanczos3',
                 }
-              : {
-                  width: w,
-                  withoutEnlargement: true,
-                  kernel: 'lanczos3',
-                },
+              : { width: w, withoutEnlargement: true, kernel: 'lanczos3' },
           );
 
-        if (format === 'jpeg') {
-          branch = branch.jpeg({ quality: baseQuality, mozjpeg: true });
-        } else if (format === 'png') {
-          branch = branch.png({ compressionLevel: 9 });
-        } else if (format === 'webp') {
-          branch = branch.webp({ quality: baseQuality, effort: 4 });
-        } else {
-          branch = branch.avif({
-            quality: baseQuality,
-            effort: avifEffort,
-            chromaSubsampling: '4:2:0',
-            bitdepth: 8,
-          });
-        }
+        if (format === 'jpeg') branch = branch.jpeg({ quality: baseQuality, mozjpeg: true });
+        else if (format === 'png') branch = branch.png({ compressionLevel: 9 });
+        else if (format === 'webp') branch = branch.webp({ quality: baseQuality, effort: 4 });
+        else branch = branch.avif({ quality: baseQuality, effort: avifEffort, chromaSubsampling: '4:2:0', bitdepth: 8 });
 
         const out = await branch.toBuffer({ resolveWithObject: true });
+        throwIfAborted(signal);
         const variantPath = buildVariantStoragePath(baseStoragePath, w);
         const variantFilename = buildVariantStoragePath(baseFilename, w);
 
-        const uploaded = await storage.upload({
-          bucket,
-          path: variantPath,
-          data: out.data,
-          contentType: `image/${format}`,
-          upsert,
-          contentHash,
-          metadata,
-        });
+        const uploaded = await storage
+          .upload({
+            bucket, path: variantPath, data: out.data, contentType: `image/${format}`,
+            upsert, contentHash, metadata, ...(signal ? { signal } : {}),
+          })
+          .catch((uploadErr: unknown) => {
+            if (uploadErr instanceof Error && uploadErr.name === 'AbortError') throw uploadErr;
+            if (!isUploadKitError(uploadErr) && hasStorageErrorMetadata(uploadErr)) {
+              throw normalizeStorageError(uploadErr, { operation: 'upload' });
+            }
+            throw uploadErr;
+          });
         uploadedVariantPaths.push(uploaded.path);
+        throwIfAborted(signal);
 
         const resolvedUrl = await mirrorBufferLocally({
-          buffer: out.data,
-          filename: variantFilename,
-          storagePath: uploaded.path,
-          fallbackUrl: uploaded.url,
-          mirrorDir,
-          publicUrlBase,
+          buffer: out.data, filename: variantFilename, storagePath: uploaded.path,
+          fallbackUrl: uploaded.url, mirrorDir, publicUrlBase,
         });
 
         return {
@@ -176,14 +164,13 @@ export async function generateImageVariants(
     );
   } catch (err) {
     const mirrorDirs = mirrorDir ? [mirrorDir] : [];
-    await storage.delete(bucket, baseStoragePath).catch(() => {});
-    await deleteMirroredFiles(mirrorDirs, baseStoragePath);
+    await storage.delete(bucket, baseStoragePath).catch((cleanupErr: unknown) => {
+      safeReportUploaderError(onError, cleanupErr, 'cleanup');
+    });
+    await deleteMirroredFiles(mirrorDirs, baseStoragePath, onError);
     await deleteStoredVariants({
-      storage,
-      bucket,
-      basePath: baseStoragePath,
-      mirrorDirs,
-      knownVariantPaths: uploadedVariantPaths,
+      storage, bucket, basePath: baseStoragePath, mirrorDirs,
+      knownVariantPaths: uploadedVariantPaths, onError,
     });
     throw err;
   }
@@ -211,6 +198,15 @@ export function collectCandidateVariantWidths(
   return [...widths];
 }
 
+function isMissingObjectError(err: unknown): boolean {
+  if (isUploadKitError(err) && err.status === 404) return true;
+  const code =
+    err && typeof err === 'object' && 'code' in err
+      ? String((err as { code?: unknown }).code).toUpperCase()
+      : '';
+  return code === 'ENOENT' || code === 'NOSUCHKEY' || code === 'NOTFOUND';
+}
+
 export async function deleteStoredVariants(params: {
   storage: StorageAdapter;
   bucket: string;
@@ -218,16 +214,14 @@ export async function deleteStoredVariants(params: {
   mirrorDirs: string[];
   knownVariantPaths?: string[];
   candidateWidths?: number[];
+  onError?: UploaderErrorHook;
 }): Promise<void> {
   const {
-    storage,
-    bucket,
-    basePath,
-    mirrorDirs,
-    knownVariantPaths = [],
-    candidateWidths = [],
+    storage, bucket, basePath, mirrorDirs,
+    knownVariantPaths = [], candidateWidths = [], onError,
   } = params;
 
+  const knownSet = new Set<string>(knownVariantPaths);
   const paths = new Set<string>(knownVariantPaths);
   for (const w of candidateWidths) {
     paths.add(buildVariantStoragePath(basePath, w));
@@ -237,8 +231,12 @@ export async function deleteStoredVariants(params: {
 
   await Promise.all(
     [...paths].map(async (vPath) => {
-      await storage.delete(bucket, vPath).catch(() => {});
-      await deleteMirroredFiles(mirrorDirs, vPath);
+      await storage.delete(bucket, vPath).catch((cleanupErr: unknown) => {
+        if (knownSet.has(vPath) || !isMissingObjectError(cleanupErr)) {
+          safeReportUploaderError(onError, cleanupErr, 'cleanup');
+        }
+      });
+      await deleteMirroredFiles(mirrorDirs, vPath, onError);
     }),
   );
 }
@@ -252,18 +250,11 @@ export async function invokeRecordHookWithRollback(params: {
   mainPath: string;
   variantPaths: string[];
   mirrorDirs: string[];
-  onError?: (error: unknown, ctx: { action: 'recordHook' | 'mirrorCleanup' }) => void;
+  onError?: UploaderErrorHook;
 }): Promise<void> {
   const {
-    onUploadRecord,
-    awaitRecordHook,
-    record,
-    storage,
-    bucket,
-    mainPath,
-    variantPaths,
-    mirrorDirs,
-    onError,
+    onUploadRecord, awaitRecordHook, record, storage,
+    bucket, mainPath, variantPaths, mirrorDirs, onError,
   } = params;
   if (!onUploadRecord) return;
 
@@ -271,20 +262,19 @@ export async function invokeRecordHookWithRollback(params: {
     try {
       await onUploadRecord(record);
     } catch (hookError) {
-      await storage.delete(bucket, mainPath).catch(() => {});
-      await deleteMirroredFiles(mirrorDirs, mainPath);
+      await storage.delete(bucket, mainPath).catch((cleanupErr: unknown) => {
+        safeReportUploaderError(onError, cleanupErr, 'cleanup');
+      });
+      await deleteMirroredFiles(mirrorDirs, mainPath, onError);
       await deleteStoredVariants({
-        storage,
-        bucket,
-        basePath: mainPath,
-        mirrorDirs,
-        knownVariantPaths: variantPaths,
+        storage, bucket, basePath: mainPath, mirrorDirs,
+        knownVariantPaths: variantPaths, onError,
       });
       throw hookError;
     }
   } else {
     Promise.resolve(onUploadRecord(record)).catch((err: unknown) => {
-      onError?.(err, { action: 'recordHook' });
+      safeReportUploaderError(onError, err, 'recordHook');
     });
   }
 }

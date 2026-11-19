@@ -9,6 +9,8 @@ export interface StorageUploadParams {
   cacheControl?: string;
   contentHash?: string;
   metadata?: Record<string, string>;
+  /** Optional cancellation signal. Adapters may forward it to the transport or ignore it. */
+  signal?: AbortSignal;
 }
 
 export interface StorageUploadResult {

@@ -80,8 +80,12 @@ export function sanitizeSvg(
         continue;
       }
 
+      const isRootSvg = canonical === 'svg' && openStack.length === 0 && !sawRootSvg;
       if (canonical === 'svg') sawRootSvg = true;
-      const cleanAttrs = sanitizeSvgAttributes(canonical, token.attrs);
+      let cleanAttrs = sanitizeSvgAttributes(canonical, token.attrs);
+      if (isRootSvg && !/(?:^|\s)xmlns="/i.test(cleanAttrs)) {
+        cleanAttrs = ` xmlns="http://www.w3.org/2000/svg"${cleanAttrs}`;
+      }
       if (token.selfClosing) {
         out.push(`<${canonical}${cleanAttrs}/>`);
       } else {

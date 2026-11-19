@@ -155,14 +155,16 @@ export function normalizeStorageError(
   }
 
   if (
-    status === 503 ||
-    codeStr === 'serviceunavailable' ||
     codeStr === 'enospc' ||
     codeStr === 'quotaexceeded' ||
     msgStr.includes('quota') ||
     msgStr.includes('no space left')
   ) {
     return make('RESOURCE_LIMIT_EXCEEDED', 503, true, 'Storage capacity or quota exceeded');
+  }
+
+  if (status === 503 || codeStr === 'serviceunavailable') {
+    return make('STORAGE_ERROR', 503, true, 'Storage service unavailable');
   }
 
   if (
@@ -207,4 +209,27 @@ export function normalizeStorageError(
     true,
     'Storage backend error',
   );
+}
+
+/**
+ * Converts a raw storage failure into a normalized `UploadKitError` while passing
+ * through `UploadKitError` instances and `AbortError`s (cancellation) unchanged.
+ */
+export function toStorageFailure(err: unknown, context?: StorageErrorContext): unknown {
+  if (err instanceof Error && err.name === 'AbortError') return err;
+  return normalizeStorageError(err, context);
+}
+
+/**
+ * Detects whether an unknown error carries provider/HTTP/errno metadata indicating
+ * a storage or network error rather than an unannotated generic application `Error`.
+ */
+export function hasStorageErrorMetadata(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  if (isUploadKitError(err)) return true;
+  const shape = err as RawStorageErrorShape;
+  if (readHttpStatus(shape) !== undefined) return true;
+  if (typeof shape.code === 'string' && shape.code.trim().length > 0) return true;
+  if (err instanceof Error && err.name !== 'Error' && err.name !== '') return true;
+  return false;
 }
