@@ -22,7 +22,7 @@ export default defineConfig({
           name: 'dom',
           environment: 'jsdom',
           include: ['tests/**/*.dom.test.{ts,tsx}'],
-          setupFiles: ['./tests/setup.ts', './tests/setup-dom.ts'],
+          setupFiles: ['./tests/setup-undici-prime.ts', './tests/setup.ts', './tests/setup-dom.ts'],
         },
       },
     ],
