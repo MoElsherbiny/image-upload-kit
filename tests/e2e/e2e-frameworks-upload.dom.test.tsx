@@ -203,6 +203,7 @@ describe('Full-Stack Framework E2E Uploads (jsdom -> Live HTTP -> Sharp -> Local
     const singleData = await uploadPromise;
     unsub();
 
+    expect(single.error()).toBe('');
     expect(single.isUploading()).toBe(false);
     expect(progressObserved.some((p) => p > 0)).toBe(true);
     expect(single.value()?.url).toBe(singleData?.url);
