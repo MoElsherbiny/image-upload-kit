@@ -33,7 +33,11 @@ function createMockNgSignal<T>(initial: T) {
   return sig;
 }
 
-describe('Full-Stack Framework E2E Uploads (jsdom -> Live HTTP -> Sharp -> LocalFS)', { timeout: 20_000 }, () => {
+// Node 20's bundled undici captures jsdom's `File` when vitest's jsdom env loads it, so an
+// in-process server cannot parse multipart there. Node 20 server paths are covered by node-env suites.
+const NODE_MAJOR = Number(process.versions.node.split('.')[0]);
+
+describe.skipIf(NODE_MAJOR < 22)('Full-Stack Framework E2E Uploads (jsdom -> Live HTTP -> Sharp -> LocalFS)', { timeout: 20_000 }, () => {
   let server: LiveTestServer;
   let xhrBridge: { restore(): void };
   let pngBlue: Buffer;
