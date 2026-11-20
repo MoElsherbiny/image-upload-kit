@@ -223,12 +223,16 @@ describe('npm production packaging & docs.npmjs.com best practices', () => {
           cwd: rootDir,
           encoding: 'utf8',
         });
-        const jsonStart = rawOutput.indexOf('[');
-        const jsonEnd = rawOutput.lastIndexOf(']');
+        // npm <= 11 prints an array of entries; npm >= 12 prints an object keyed by package name.
+        const jsonStart = rawOutput.search(/^[[{]/m);
         expect(jsonStart).toBeGreaterThanOrEqual(0);
+        const closer = rawOutput[jsonStart] === '[' ? ']' : '}';
+        const jsonEnd = rawOutput.lastIndexOf(closer);
         expect(jsonEnd).toBeGreaterThan(jsonStart);
 
-        const parsed = JSON.parse(rawOutput.slice(jsonStart, jsonEnd + 1)) as NpmPackDryRunEntry[];
+        const raw = JSON.parse(rawOutput.slice(jsonStart, jsonEnd + 1)) as
+          | NpmPackDryRunEntry[] | Record<string, NpmPackDryRunEntry>;
+        const parsed = Array.isArray(raw) ? raw : Object.values(raw);
         expect(parsed.length).toBe(1);
 
         const packedPaths = parsed[0].files.map((f) => f.path.replace(/\\/g, '/'));

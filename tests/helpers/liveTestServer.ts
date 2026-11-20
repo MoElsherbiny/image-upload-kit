@@ -179,7 +179,7 @@ async function readBlobBytes(blob: Blob): Promise<Uint8Array> {
 }
 
 async function encodeFetchBody(
-  body: unknown, headers: Record<string, string>, rnMap: WeakMap<FormData, RnFormPart[]>, signal: AbortSignal,
+  body: unknown, headers: Record<string, string>, rnMap: WeakMap<FormData, RnFormPart[]>,
 ): Promise<Uint8Array<ArrayBuffer> | undefined> {
   if (body instanceof FormData) {
     const boundary = `----iukLive${Math.random().toString(16).slice(2)}`;
@@ -197,7 +197,7 @@ async function encodeFetchBody(
     for (const rn of rnMap.get(body) ?? []) {
       const bytes = rn.uri.startsWith('data:')
         ? Buffer.from(rn.uri.slice(rn.uri.indexOf(',') + 1), 'base64')
-        : new Uint8Array(await (await globalThis.fetch(rn.uri, { signal })).arrayBuffer());
+        : new Uint8Array(await (await globalThis.fetch(rn.uri)).arrayBuffer());
       pushPart(`Content-Disposition: form-data; name="${rn.field}"; filename="${rn.name}"\r\nContent-Type: ${rn.type}`, bytes);
     }
     chunks.push(Buffer.from(`--${boundary}--\r\n`, 'utf8'));
@@ -241,24 +241,31 @@ export function installFetchBackedXhr(): { restore(): void } {
     private method = 'POST';
     private url = '';
     private reqHeaders: Record<string, string> = {};
-    private controller = new AbortController();
+    // jsdom's AbortSignal is rejected by Node's native fetch (undici), so abort is tracked locally.
+    private aborted = false;
     open(method: string, url: string | URL): void { this.method = method.toUpperCase(); this.url = String(url); }
     setRequestHeader(k: string, v: string): void { this.reqHeaders[k] = v; }
-    abort(): void { this.controller.abort(); }
+    abort(): void {
+      if (this.aborted) return;
+      this.aborted = true;
+      this.onabort?.();
+    }
     send(body?: unknown): void {
       void (async () => {
         const headers = { ...this.reqHeaders };
-        const payload = await encodeFetchBody(body, headers, rnMap, this.controller.signal);
+        const payload = await encodeFetchBody(body, headers, rnMap);
+        if (this.aborted) return;
         const total = payload?.byteLength ?? 0;
         if (total > 0) this.upload.onprogress?.({ lengthComputable: true, loaded: Math.ceil(total / 2), total });
-        const res = await globalThis.fetch(this.url, { method: this.method, headers, body: payload, signal: this.controller.signal });
+        const res = await globalThis.fetch(this.url, { method: this.method, headers, body: payload });
+        const text = await res.text();
+        if (this.aborted) return;
         if (total > 0) this.upload.onprogress?.({ lengthComputable: true, loaded: total, total });
         this.status = res.status;
-        this.responseText = await res.text();
+        this.responseText = text;
         this.onload?.();
       })().catch(() => {
-        if (this.controller.signal.aborted) this.onabort?.();
-        else this.onerror?.();
+        if (!this.aborted) this.onerror?.();
       });
     }
   }

@@ -21,10 +21,9 @@ describe('M-2: In-flight dedupe coalescing isolates caller AbortSignals', () => 
     const base = createMemoryStorageAdapter({ baseUrl: 'https://cdn.test' });
     const baseDedupe = createMemoryDedupeStore();
     let uploadCalls = 0;
-    let secondQueued!: () => void;
-    const secondReady = new Promise<void>((r) => { secondQueued = r; });
-    let releaseProcessing!: () => void;
-    const gate = new Promise<void>((r) => { releaseProcessing = r; });
+    let secondQueued!: () => void; const secondReady = new Promise<void>((r) => { secondQueued = r; });
+    let releaseProcessing!: () => void; const gate = new Promise<void>((r) => { releaseProcessing = r; });
+    let primaryProcessing!: () => void; const primaryInFlight = new Promise<void>((r) => { primaryProcessing = r; });
     let lookups = 0;
 
     const uploader = createImageUploader({
@@ -40,7 +39,7 @@ describe('M-2: In-flight dedupe coalescing isolates caller AbortSignals', () => 
           },
         },
       },
-      transformCache: { async get() { await gate; return undefined; }, async set() {} },
+      transformCache: { async get() { primaryProcessing(); await gate; return undefined; }, async set() {} },
     });
 
     const buf = await makePng(64, 64, 55);
@@ -49,6 +48,7 @@ describe('M-2: In-flight dedupe coalescing isolates caller AbortSignals', () => 
       { buffer: buf, name: 'a.png', type: 'image/png' },
       { signal: primaryAbort.signal, altText: 'Primary' },
     );
+    await primaryInFlight; // second caller starts only once the primary owns the in-flight run
     const p2 = uploader.uploadImage(
       { buffer: buf, name: 'b.png', type: 'image/png' },
       { altText: 'Innocent' },

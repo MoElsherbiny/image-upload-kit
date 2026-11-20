@@ -22,6 +22,7 @@ import {
 } from '../../src/vue';
 import { solidImage, toFile } from '../helpers/imageFixtures';
 import { installFetchBackedXhr, type LiveTestServer, startLiveTestServer } from '../helpers/liveTestServer';
+import { installNodeWebGlobals } from '../helpers/nodeWebGlobals';
 import { createMockExpoImagePicker } from '../helpers/reactNativeStub';
 
 function createMockNgSignal<T>(initial: T) {
@@ -37,8 +38,10 @@ describe('Full-Stack Framework E2E Uploads (jsdom -> Live HTTP -> Sharp -> Local
   let xhrBridge: { restore(): void };
   let pngBlue: Buffer;
   let pngCoral: Buffer;
+  let webGlobals: { restore(): void } | undefined;
 
   beforeAll(async () => {
+    webGlobals = await installNodeWebGlobals();
     [pngBlue, pngCoral] = await Promise.all([
       solidImage(480, 360, 'png', '#2563eb'),
       solidImage(480, 360, 'png', '#e11d48'),
@@ -46,7 +49,7 @@ describe('Full-Stack Framework E2E Uploads (jsdom -> Live HTTP -> Sharp -> Local
     server = await startLiveTestServer();
   });
 
-  afterAll(async () => { await server?.close(); });
+  afterAll(async () => { await server?.close(); webGlobals?.restore(); });
   beforeEach(() => { xhrBridge = installFetchBackedXhr(); });
   afterEach(() => { xhrBridge.restore(); resetVueConfig(); resetAngularConfig(); });
 
